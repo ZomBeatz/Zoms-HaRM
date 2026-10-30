@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Zom's HaRM
+GenericName=Hardware and rack manager
+Comment=Know where every piece of hardware is
+Exec=zoms-harm
+Icon=zoms-harm
+Terminal=false
+Categories=Utility;System;Network;
+Keywords=hardware;rack;inventory;homelab;server;
+StartupWMClass=zoms-harm

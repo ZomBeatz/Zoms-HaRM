@@ -142,15 +142,23 @@ def ensure(names: list[str]) -> bool:
     return True
 
 
-if __name__ == "__main__":
-    args = sys.argv[1:]
+def main(args: list[str]) -> int:
+    if args[:1] == ["--names"]:  # for the desktop app: the names the certificate covers, as JSON
+        import json
+        print(json.dumps(sorted(cert_names())))
+        return 0
     if args[:1] == ["--ensure"]:
         names = args[1:] or local_names()
         print("Certificate issued for:" if ensure(names) else "Certificate already covers:", ", ".join(sorted(cert_names())))
-        sys.exit(0)
+        return 0
     if any(a.startswith("-") for a in args):
         print(__doc__.strip())
-        sys.exit(0 if args[0] in ("-h", "--help") else 2)
+        return 0 if args[0] in ("-h", "--help") else 2
     covered = make_server_cert(args or local_names())
     print("Certificate for:", ", ".join(covered))
     print(f"Trust it on phones by installing: {CA_CRT}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

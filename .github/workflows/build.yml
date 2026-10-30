@@ -1,0 +1,127 @@
+# Builds the Zom's HaRM installers on GitHub's machines: a Windows setup .exe, and Linux .deb, .rpm
+# and AppImage files. Push a tag like v0.3.2 (matching harm/__init__.py), or run it from the Actions tab.
+# Every run keeps the files under the run's "Artifacts"; a tag also makes a DRAFT release with them and
+# that version's CHANGELOG.md section as the notes. Check the draft, then press Publish.
+name: Build installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - id: v
+        name: "Version (set in one place: harm/__init__.py)"
+        run: |
+          v=$(python -c "import harm; print(harm.__version__)")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.ref_type }}" = "tag" ] && [ "${{ github.ref_name }}" != "v$v" ]; then
+            echo "::error::Tag ${{ github.ref_name }} doesn't match harm/__init__.py ($v)"; exit 1
+          fi
+      - name: Tests (a failed test means no installers)
+        run: |
+          python tests/smoke.py
+          python tests/full_test.py
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install pyinstaller -r requirements.txt -r requirements-desktop.txt
+      - name: Freeze the app
+        run: pyinstaller --noconfirm --distpath dist --workpath build packaging/zoms-harm.spec
+      - name: Check the frozen app starts
+        run: dist\zoms-harm\zoms-harm.exe --version
+        shell: cmd
+      - name: Make the setup file
+        shell: pwsh
+        run: |
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) {
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+            if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+            $env:PATH += ";${env:ProgramFiles(x86)}\Inno Setup 6"
+          }
+          iscc /DAppVersion=${{ needs.test.outputs.version }} packaging\windows\zoms-harm.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/Zoms-HaRM_*_x64-setup.exe
+
+  linux:
+    needs: test
+    runs-on: ubuntu-22.04  # an older system, so the files run on older and newer distros
+    env:
+      VERSION: ${{ needs.test.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install pyinstaller -r requirements.txt -r requirements-desktop.txt
+      - name: Freeze the app
+        run: pyinstaller --noconfirm --distpath dist --workpath build packaging/zoms-harm.spec
+      - name: Check the frozen app starts
+        run: dist/zoms-harm/zoms-harm --version
+      - name: Make the .deb and .rpm
+        run: |
+          echo 'deb [trusted=yes] https://repo.goreleaser.com/apt/ /' | sudo tee /etc/apt/sources.list.d/goreleaser.list
+          sudo apt-get update && sudo apt-get install -y nfpm
+          nfpm package -f packaging/linux/nfpm.yaml -p deb -t "dist/zoms-harm_${VERSION}_amd64.deb"
+          nfpm package -f packaging/linux/nfpm.yaml -p rpm -t dist/
+      - name: Make the AppImage
+        run: |
+          curl -sSLo appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool && sudo mv appimagetool /usr/local/bin/
+          APPIMAGE_EXTRACT_AND_RUN=1 packaging/linux/make-appimage.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.AppImage
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [test, windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: files
+          merge-multiple: true
+      - name: Release notes from CHANGELOG.md
+        run: |
+          python3 - <<'PY'
+          import re
+          v = "${{ needs.test.outputs.version }}"
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          m = re.search(rf"^## {re.escape(v)}\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+          open("notes.md", "w", encoding="utf-8").write((m.group(1).strip() if m else f"Zom's HaRM {v}") + "\n")
+          PY
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Zom's HaRM ${{ needs.test.outputs.version }}
+          body_path: notes.md
+          files: files/*

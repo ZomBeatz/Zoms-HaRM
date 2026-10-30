@@ -1,0 +1,37 @@
+# Linux packages for Zom's HaRM (.deb and .rpm), built by .github/workflows/build.yml:
+#   VERSION=0.3.2 nfpm package -f packaging/linux/nfpm.yaml -p deb -t dist/
+# Run from the repository root after PyInstaller has made dist/zoms-harm/.
+name: zoms-harm
+arch: amd64
+platform: linux
+version: ${VERSION}
+release: 1
+section: utils
+priority: optional
+maintainer: ZomBeatz Media <info@zombeatzmedia.com>
+vendor: ZomBeatz Media
+homepage: https://github.com/ZomBeatz/Zoms-HaRM
+license: MIT
+description: |
+  Zom's HaRM: a hardware and rack manager.
+  Keeps track of where every device lives, what's inside it, how it's networked,
+  how to log into it, and what still needs doing. Runs on your own computer.
+overrides:
+  deb:
+    depends: [libxkbcommon-x11-0, libxcb-cursor0, libegl1, libfontconfig1, libdbus-1-3]
+  rpm:
+    depends: [libxkbcommon-x11, xcb-util-cursor, mesa-libEGL, fontconfig, dbus-libs]
+contents:
+  - src: dist/zoms-harm/
+    dst: /opt/zoms-harm/
+  - src: /opt/zoms-harm/zoms-harm
+    dst: /usr/bin/zoms-harm
+    type: symlink
+  - src: packaging/linux/zoms-harm.desktop
+    dst: /usr/share/applications/zoms-harm.desktop
+  - src: branding/harm-icon-256.png
+    dst: /usr/share/icons/hicolor/256x256/apps/zoms-harm.png
+  - src: branding/harm-icon.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/zoms-harm.svg
+  - src: LICENSE
+    dst: /usr/share/doc/zoms-harm/LICENSE

@@ -29,20 +29,54 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QFrame, QGridLayout, QHB
                                QMenu, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
                                QSystemTrayIcon, QToolButton, QVBoxLayout, QWidget)
 
-ROOT = Path(__file__).resolve().parent.parent
-DATA = ROOT / "data"
+FROZEN = getattr(sys, "frozen", False)  # the installed app (PyInstaller), not a copy run from source
+ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+WINDOWS = os.name == "nt"
+
+
+def _data_dir() -> Path:
+    """The same rule as harm.db.data_dir(): HARM_DATA, else the per-user folder when installed, else data/."""
+    if os.environ.get("HARM_DATA"):
+        return Path(os.environ["HARM_DATA"])
+    if FROZEN:
+        base = (Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") if WINDOWS
+                else Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share"))
+        return base / "com.zombeatz.zoms-harm"
+    return ROOT / "data"
+
+
+DATA = _data_dir()
 CONF = DATA / "launcher.json"
 LOG = DATA / "logs" / "server.log"
 CERT, KEY = DATA / "tls" / "harm.crt", DATA / "tls" / "harm.key"
 ICON = ROOT / "branding" / "harm-icon.svg"
-CHECK = (Path(__file__).resolve().parent / "check.svg").as_posix()
-WINDOWS = os.name == "nt"
+CHECK = (ROOT / "launcher" / "check.svg").as_posix() if FROZEN else (Path(__file__).resolve().parent / "check.svg").as_posix()
 VENV_PY = ROOT / ".venv" / ("Scripts/python.exe" if WINDOWS else "bin/python")
+
+
+def harm_cmd(kind: str, *args: str) -> list[str]:
+    """How to run a part of HaRM: from the installed program, or with the source copy's .venv Python."""
+    if FROZEN:
+        return [app_program(), f"--{kind}", *args]
+    return [str(VENV_PY), *{"server": ["-m", "uvicorn"], "certs": ["-m", "harm.certs"], "python": []}[kind], *args]
+
+
+def app_program() -> str:
+    """The installed program. In an AppImage that's the .AppImage file itself: the folder it unpacks
+    to disappears when this window closes, and the server has to keep running."""
+    return os.environ.get("APPIMAGE") or sys.executable
+
+
+def harm_ready() -> bool:
+    return FROZEN or VENV_PY.exists()
 SERVER_INFO = DATA / "server.json"  # written when this app starts the server (used where /proc doesn't exist)
 APP_ID = "zoms-harm"
 try:
-    VERSION = re.search(r'__version__ = "([^"]+)"', (ROOT / "harm" / "__init__.py").read_text()).group(1)
-except (OSError, AttributeError):
+    if FROZEN:
+        from harm import __version__ as VERSION
+    else:  # read, not imported: the panel may run with a Python that doesn't have HaRM's packages
+        VERSION = re.search(r'__version__ = "([^"]+)"', (ROOT / "harm" / "__init__.py").read_text()).group(1)
+except (OSError, AttributeError, ImportError):
     VERSION = ""
 DEFAULTS = {"network": True, "https": True, "port": 8077, "autostart": False, "close_to_tray": True,
             "tray_hint_shown": False}
@@ -116,13 +150,13 @@ set_theme(True)
 
 # ---------------------------------------------------------------- self-update
 
-_LOADED_MTIME = Path(__file__).stat().st_mtime
+_LOADED_MTIME = 0.0 if FROZEN else Path(__file__).stat().st_mtime
 
 
 def code_changed() -> bool:
     """True when this file was updated after the panel started (so it can offer to reload)."""
     try:
-        return Path(__file__).stat().st_mtime > _LOADED_MTIME + 1
+        return not FROZEN and Path(__file__).stat().st_mtime > _LOADED_MTIME + 1
     except OSError:
         return False
 
@@ -194,7 +228,7 @@ def harm_servers() -> list[dict]:
             args = [a.decode(errors="replace") for a in args if a]
         except OSError:
             continue
-        if "harm.main:app" not in args or not any("uvicorn" in a for a in args[:3]):
+        if "harm.main:app" not in args or not any("uvicorn" in a or a == "--server" for a in args[:3]):
             continue
         opt = lambda flag, default=None: args[args.index(flag) + 1] if flag in args and args.index(flag) + 1 < len(args) else default
         found.append({"pid": int(p.name), "host": opt("--host", "127.0.0.1"), "port": int(opt("--port", "8000")),
@@ -246,15 +280,21 @@ def _fallback_ips() -> list[str]:
 _CERT_CACHE: dict = {}
 
 
+def _env() -> dict:
+    """The server and certificate tools use the same data folder as this panel."""
+    return {**os.environ, "HARM_DATA": str(DATA), "HARM_LOG": str(LOG)}
+
+
 def cert_names() -> set[str]:
     """Names the HTTPS certificate covers (read with HaRM's own Python, cached until the file changes)."""
     try:
         mtime = CERT.stat().st_mtime
     except OSError:
         return set()
-    if _CERT_CACHE.get("mtime") != mtime and VENV_PY.exists():
-        p = subprocess.run([str(VENV_PY), "-c", "import json; from harm import certs; print(json.dumps(sorted(certs.cert_names())))"],
-                           cwd=ROOT, capture_output=True, text=True, **_no_window())
+    if _CERT_CACHE.get("mtime") != mtime and harm_ready():
+        cmd = harm_cmd("certs", "--names") if FROZEN else harm_cmd(
+            "python", "-c", "import json; from harm import certs; print(json.dumps(sorted(certs.cert_names())))")
+        p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, env=_env(), **_no_window())
         try:
             _CERT_CACHE.update(mtime=mtime, names=set(json.loads(p.stdout)))
         except ValueError:
@@ -370,6 +410,18 @@ class Panel(QWidget):
         btns.addWidget(self.b_open)
         lay.addLayout(btns)
         root.addWidget(c)
+
+        # The installed app keeps data in its own folder; offer to bring in an older copy's data once.
+        if FROZEN and not (DATA / "harm.db").exists():
+            c, lay = card("Used HaRM before?")
+            lay.addWidget(QLabel("If you ran an older HaRM from a folder (with <b>Install HaRM.cmd</b> or <b>install.sh</b>), "
+                                 "bring its devices, logins and certificates in here. The old folder isn't changed.",
+                                 wordWrap=True, objectName="muted"))
+            b = QPushButton("Bring in data from an older HaRM…")
+            b.clicked.connect(self.import_old_data)
+            lay.addWidget(b, alignment=Qt.AlignLeft)
+            self.import_card = c
+            root.addWidget(c)
 
         # addresses
         c, self.addr_lay = card("Where to open it")
@@ -573,7 +625,7 @@ class Panel(QWidget):
         self.refresh()
 
     def ensure_ready(self) -> bool:
-        if not VENV_PY.exists():
+        if not harm_ready():
             QMessageBox.information(self, "First-time setup",
                                     "HaRM needs to install its parts first (about a minute). The log below shows progress; "
                                     "press Start again when it finishes.")
@@ -605,7 +657,7 @@ class Panel(QWidget):
         if not self.ensure_ready():
             return
         cur = self.current()
-        args = [str(VENV_PY), "-m", "uvicorn", "harm.main:app", "--host", cur["host"], "--port", str(cur["port"]),
+        args = [*harm_cmd("server"), "harm.main:app", "--host", cur["host"], "--port", str(cur["port"]),
                 "--proxy-headers", "--forwarded-allow-ips", os.environ.get("HARM_TRUSTED_PROXIES", "127.0.0.1"),
                 "--no-server-header"]
         if cur["https"]:
@@ -620,7 +672,7 @@ class Panel(QWidget):
                 extra = {"creationflags": 0x00000200 | 0x08000000}
             else:
                 extra = {"start_new_session": True, "preexec_fn": lambda: os.umask(0o077)}
-            p = subprocess.Popen(args, cwd=ROOT, stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **extra)
+            p = subprocess.Popen(args, cwd=ROOT, env=_env(), stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **extra)
         self.proc_started_here = p.pid
         SERVER_INFO.write_text(json.dumps({"pid": p.pid, "host": cur["host"], "port": cur["port"],
                                            "https": cur["https"], "started": time.time()}))
@@ -663,7 +715,7 @@ class Panel(QWidget):
         names = sorted(cert_names() - {"localhost", "127.0.0.1"})
         host = socket.gethostname()
         wanted = list(dict.fromkeys([host, *[ip for ip, _ in lan_ips()], *names]))
-        p = subprocess.run([str(VENV_PY), "-m", "harm.certs", *wanted], cwd=ROOT,
+        p = subprocess.run(harm_cmd("certs", *wanted), cwd=ROOT, env=_env(),
                            capture_output=True, text=True, **_no_window())
         _CERT_CACHE.clear()
         if p.returncode != 0:
@@ -682,13 +734,51 @@ class Panel(QWidget):
             self.state = None
             self.refresh()
 
+    def import_old_data(self):
+        """Copy an older HaRM folder's data/ into this installation's data folder."""
+        from PySide6.QtWidgets import QFileDialog
+        folder = QFileDialog.getExistingDirectory(self, "Choose the older HaRM folder (or its data folder)", str(Path.home()))
+        if not folder:
+            return
+        src = Path(folder)
+        src = src / "data" if (src / "data" / "harm.db").exists() else src
+        if not (src / "harm.db").exists():
+            QMessageBox.warning(self, "No HaRM data there", f"There's no harm.db in {src}. Pick the folder you ran HaRM from, "
+                                "or the data folder inside it.")
+            return
+        self.stop(wait=True)
+        try:
+            DATA.mkdir(parents=True, exist_ok=True)
+            for item in src.iterdir():
+                if item.name in ("logs", "server.json", "launcher.json"):
+                    continue
+                dest = DATA / item.name
+                if item.is_dir():
+                    shutil.copytree(item, dest, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(item, dest)
+        except OSError as e:
+            QMessageBox.warning(self, "Couldn't copy the data", str(e))
+            return
+        _CERT_CACHE.clear()
+        if hasattr(self, "import_card"):
+            self.import_card.hide()
+        QMessageBox.information(self, "Data brought in", f"Your data from {src} is now in {DATA}. Press Start to use it. "
+                                "Use the same master password as before.")
+        self.state = None
+        self.refresh()
+
     def set_autostart(self, on: bool):
+        # The installed app starts itself; a source copy starts this script with its Python.
+        launch = [app_program()] if FROZEN else [sys.executable, str(Path(__file__).resolve())]
         if WINDOWS:
             import winreg
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
             if on:
                 pyw = Path(sys.executable).with_name("pythonw.exe")
-                winreg.SetValueEx(key, "Zoms HaRM", 0, winreg.REG_SZ, f'"{pyw if pyw.exists() else sys.executable}" "{Path(__file__).resolve()}" --background')
+                if not FROZEN and pyw.exists():
+                    launch[0] = str(pyw)
+                winreg.SetValueEx(key, "Zoms HaRM", 0, winreg.REG_SZ, " ".join(f'"{a}"' for a in launch) + " --background")
             else:
                 try:
                     winreg.DeleteValue(key, "Zoms HaRM")
@@ -702,7 +792,7 @@ class Panel(QWidget):
             AUTOSTART.parent.mkdir(parents=True, exist_ok=True)
             AUTOSTART.write_text(
                 "[Desktop Entry]\nType=Application\nName=Zom's HaRM\nComment=Start the HaRM server in the tray\n"
-                f'Exec={sys.executable} "{Path(__file__).resolve()}" --background\n'
+                "Exec=" + " ".join(f'"{a}"' for a in launch) + " --background\n"
                 f"Icon={APP_ID}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n")
         elif AUTOSTART.exists():
             AUTOSTART.unlink()

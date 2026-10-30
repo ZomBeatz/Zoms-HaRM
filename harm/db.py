@@ -1,9 +1,31 @@
 import os
 import sqlite3
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = Path(os.environ.get("HARM_DB", ROOT / "data" / "harm.db"))
+APP_DATA_NAME = "com.zombeatz.zoms-harm"
+
+
+def data_dir() -> Path:
+    """Where HaRM keeps its database, certificates, backups and logs.
+
+    HARM_DATA wins. The installed app (frozen by PyInstaller) uses the person's own data folder, so
+    updating or reinstalling never touches it: %APPDATA%\\com.zombeatz.zoms-harm on Windows,
+    ~/.local/share/com.zombeatz.zoms-harm on Linux. A copy run from source keeps data/ next to the code.
+    """
+    if os.environ.get("HARM_DATA"):
+        return Path(os.environ["HARM_DATA"])
+    if getattr(sys, "frozen", False):
+        if os.name == "nt":
+            base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+        else:
+            base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+        return base / APP_DATA_NAME
+    return ROOT / "data"
+
+
+DB_PATH = Path(os.environ.get("HARM_DB") or data_dir() / "harm.db")
 
 SCHEMA_VERSION = 7  # highest key in MIGRATIONS
 

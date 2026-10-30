@@ -69,6 +69,10 @@ The full guide, with pictures, is at **[docs.zombeatzmedia.com/harm](https://doc
     <td><img src="docs/screenshots/virtual.png" alt="Virtual machines and clusters"></td>
     <td><img src="docs/screenshots/device-hardware.png" alt="Drive bays, memory and CPUs"></td>
   </tr>
+  <tr>
+    <td><img src="docs/screenshots/status.png" alt="The Status page: which devices are online, by room"></td>
+    <td><img src="docs/screenshots/phone-status.png" alt="The Status page on a phone"></td>
+  </tr>
 </table>
 
 ## What people use it for

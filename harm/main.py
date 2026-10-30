@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from . import __version__, ai, aiproviders, certs, collect, crypto, db, discover, monitor, pcbuild, proxmox, remote, units
+from . import __version__, ai, aiproviders, alerts, certs, collect, crypto, db, discover, monitor, pcbuild, proxmox, remote, units
 from .models import ENTITIES, ENUMS, iface_order
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -863,6 +863,7 @@ def dashboard(_s=Depends(require_session), conn=Depends(get_db)):
         "open_tasks": [n for n in fetch_list(conn, "notes", {"done": "0"}, limit=500) if n["kind"] in ("task", "issue")][:40],
         "recent": group("SELECT * FROM audit ORDER BY id DESC LIMIT 12"),
         "offline": monitor.offline(conn),
+        "services_down": monitor.services_down(conn),
     }
 
 
@@ -1380,6 +1381,8 @@ def rack_layout(rid: int, _s=Depends(require_session), conn=Depends(get_db)):
         "rack": fetch_one(conn, "racks", rid),
         "devices": fetch_list(conn, "devices", {"rack_id": rid}),
         "components": fetch_list(conn, "components", {"rack_id": rid, "device_id": "null"}),
+        "online": {d["id"]: monitor.device_state(conn, d, with_history=False)["state"]
+                   for d in fetch_list(conn, "devices", {"rack_id": rid})},
     }
 
 
@@ -2713,8 +2716,9 @@ async def status_check(request: Request, _s=Depends(require_session)):
     if DEMO:  # made-up devices keep their made-up states; only the time of the check moves
         conn = db.connect()
         try:
-            conn.execute("UPDATE device_status SET checked_at = ?" + (" WHERE device_id = ?" if did else ""),
-                         (monitor._now(), int(did)) if did else (monitor._now(),))
+            for table in ("device_status", "service_status"):
+                conn.execute(f"UPDATE {table} SET checked_at = ?" + (" WHERE device_id = ?" if did else ""),
+                             (monitor._now(), int(did)) if did else (monitor._now(),))
             conn.commit()
         finally:
             conn.close()
@@ -2864,6 +2868,43 @@ def action_runs(aid: int, s=Depends(require_session), conn=Depends(get_db)):
             r["output"] = "(can't be read)"
         out.append(r)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Alerts (ntfy, email, webhook)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/alerts")
+def alerts_get(_s=Depends(require_session), conn=Depends(get_db)):
+    return {**alerts.public(conn), "recent": alerts.recent(conn)}
+
+
+@app.post("/api/alerts")
+async def alerts_set(request: Request, _s=Depends(require_session), conn=Depends(get_db)):
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    try:
+        out = alerts.save(conn, body)
+    except alerts.AlertError as e:
+        raise HTTPException(400, str(e))
+    audit(conn, request, "settings", None, None, "alerts: " + ", ".join(
+        f"{k} on" for k in ("enabled", "ntfy_on", "email_on", "webhook_on") if out[k]) or "alerts off")
+    conn.commit()
+    return out
+
+
+@app.post("/api/alerts/test")
+async def alerts_test(request: Request, _s=Depends(require_session)):
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    results = await asyncio.to_thread(alerts.send, "Test from Zom's HaRM",
+                                      "Alerts work. You'll get one like this when a device stops answering.", False,
+                                      {"kind": "test"}, body.get("channel"))
+    if not results:
+        raise HTTPException(400, "Turn on ntfy, email or a webhook first, and save")
+    return {"results": results}
 
 
 # ---------------------------------------------------------------------------

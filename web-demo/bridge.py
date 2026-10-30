@@ -129,6 +129,7 @@ def _touch_status(minutes_ago: int) -> None:
         mod = f"{int(shift):+d} seconds"
         conn.execute("UPDATE device_status SET checked_at = datetime(checked_at, ?), changed_at = datetime(changed_at, ?)", (mod, mod))
         conn.execute("UPDATE status_events SET at = datetime(at, ?)", (mod,))
+        conn.execute("UPDATE service_status SET checked_at = datetime(checked_at, ?), changed_at = datetime(changed_at, ?)", (mod, mod))
         conn.commit()
     finally:
         conn.close()

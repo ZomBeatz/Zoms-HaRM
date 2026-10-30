@@ -892,3 +892,10 @@ body.wall .st-name { font-size: 16px; }
 }
 .banner-x { margin-left: auto; }
 .stats.st-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 560px; }
+.st-tile.st-svc-down:not(.st-down) { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
+/* Offline on the rack drawing: the word, and a red outline, when a device isn't answering. */
+.u-dev-net { font-size: 10px; font-weight: 600; border-radius: 3px; padding: 0 4px; white-space: nowrap; background: rgba(0,0,0,.35); }
+.u-dev-net.net-down { color: #fff; background: var(--bad); }
+.u-dev.net-down-dev { outline: 2px solid var(--bad); outline-offset: -2px; }
+.rack-net-note { margin-top: 6px; max-width: 312px; }
+.u-dev.net-down-dev .u-dev-sub { display: none; }

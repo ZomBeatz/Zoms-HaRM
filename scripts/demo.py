@@ -247,6 +247,13 @@ def seed_status(db_path: Path) -> None:
                          "VALUES (?,?,?,?,?,?,?)", (did, addr, state, latency.get(addr, 0.9) if state == "up" else None,
                                                     ("port 8006" if addr.startswith("10.20.0.1") else "port 443") if state == "up" else None,
                                                     ts(minutes=1), ts(**ago)))
+    # Services: all answering, except Pi-hole, which stopped 20 minutes ago.
+    for r in conn.execute("SELECT id, device_id, name FROM services").fetchall():
+        bad = r["name"] == "Pi-hole"
+        conn.execute("INSERT OR REPLACE INTO service_status (service_id, device_id, state, code, latency_ms, detail, checked_at, changed_at) "
+                     "VALUES (?,?,?,?,?,?,?,?)", (r["id"], r["device_id"], "down" if bad else "up", None if bad else 200,
+                                                  None if bad else 12.0, "connection refused" if bad else "HTTP 200",
+                                                  ts(minutes=1), ts(minutes=20) if bad else ts(days=3)))
     conn.commit()
     conn.close()
 

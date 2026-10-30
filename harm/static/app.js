@@ -74,7 +74,7 @@ const ICON_FOR = {
   '🔳': 'qr-code', '🔧': 'wrench', '🛠': 'wrench', '🔒': 'lock', '✎': 'pencil', '⚑': 'flag', '★': 'star', '☆': 'star',
   '▾': 'chevron-down', '▸': 'chevron-right', '🧭': 'compass', '🛡': 'shield', '🖨': 'printer', '📍': 'map-pin',
   '💾': 'hard-drive', '🎥': 'video', '🌙': 'moon', '☀': 'sun', '◐': 'sun-moon', '⟳': 'rotate-cw', '🧩': 'boxes',
-  '⚠': 'triangle-alert', '▶': 'play', '■': 'square', '⎘': 'copy', '💬': 'message-square', '⌨': 'keyboard', '📶': 'activity', '⚡': 'zap', '⏻': 'power', '⛶': 'maximize', '🎉': '',
+  '⚠': 'triangle-alert', '▶': 'play', '■': 'square', '⎘': 'copy', '💬': 'message-square', '⌨': 'keyboard', '📶': 'activity', '⚡': 'zap', '⏻': 'power', '⛶': 'maximize', '🔔': 'bell', '🎉': '',
 };
 const NO_ICONS = new Set(['OPTION', 'TEXTAREA', 'TITLE', 'STYLE', 'SCRIPT', 'CODE', 'PRE']);
 const ICON_KEYS = Object.keys(ICON_FOR).filter(k => k.length <= 2).sort((a, b) => b.length - a.length);
@@ -426,7 +426,7 @@ function buildForm(fields, rec = {}) {
       input = h('input', { id, type: 'password', value: v ?? '', autocomplete: 'new-password', spellcheck: 'false' });
       control = h('div', { class: 'pw-row' }, input,
         eyeButton(on => { input.type = on ? 'text' : 'password'; }),
-        small('Generate', () => { input.value = genPassword(); input.type = 'text'; input.dispatchEvent(new Event('input', { bubbles: true })); }));
+        f.noGenerate ? null : small('Generate', () => { input.value = genPassword(); input.type = 'text'; input.dispatchEvent(new Event('input', { bubbles: true })); }));
     } else {
       input = h('input', {
         id, type: f.type || 'text', value: v ?? '', placeholder: f.ph, step: f.step, min: f.min,
@@ -697,6 +697,7 @@ const FORMS = {
     { k: 'status', label: 'Status', type: 'select', options: S.enums.device_statuses, required: true, default: 'Active' },
     { k: 'connected', label: 'Hooked up (cabled & powered)', type: 'checkbox' },
     { k: 'watch', label: 'Check if it’s online', type: 'checkbox', default: true, help: 'While it’s hooked up, the Status page shows whether it answers.' },
+    { k: 'alerts', label: 'Send alerts about it', type: 'checkbox', default: true, showIf: v => !!v.watch, help: 'When alerts are set up in Settings, you get one when it stops answering.' },
     { k: 'manufacturer', label: 'Manufacturer', chips: ['Dell', 'HPE', 'Supermicro', 'Lenovo', 'Cisco', 'Ubiquiti', 'Synology', 'Custom'] },
     { k: 'model', label: 'Model', scan: true, ph: 'PowerEdge R515' },
     { k: 'serial', label: 'Serial number / service tag', scan: true, wide: true, help: 'Dell’s service tag, HPE’s serial, etc.: whatever identifies this exact unit.', showIf: v => !isVirtual(v) },
@@ -1801,6 +1802,8 @@ async function viewDashboard() {
   const item = (ico, body, cls = '') => att.push(h('li', { class: cls }, h('span', { class: 'a-ico' }, ico), h('span', null, body)));
   (d.offline || []).forEach(r => item('📶', [link(`#/devices/${r.id}`, r.label), ' ', h('span', { class: 'badge bad' }, 'Offline'),
     h('span', { class: 'muted' }, r.since ? ` since ${clock(r.since)}, ${forHowLong(r.since)}` : '')]));
+  (d.services_down || []).forEach(r => item('📶', [r.name, ' on ', link(`#/devices/${r.device_id}`, r.device_name), ' ', h('span', { class: 'badge bad' }, 'Not answering'),
+    h('span', { class: 'muted' }, r.detail ? ` ${r.detail}` : '')]));
   d.ip_conflicts.forEach(r => item('⚠', [h('b', { class: 'mono bad-text' }, r.label), ` is used by more than one device: ${r.devices}`]));
   (d.needs_repair || []).forEach(r => item('🛠', [link(`#/devices/${r.id}`, r.label), ' ', badge(r.status)]));
   d.warranty_soon.forEach(r => item('🛡', [link(r.kind === 'device' ? `#/devices/${r.id}` : `#/components?id=${r.id}`, r.label), ' warranty ends ', warrantyCell(r.warranty_until)]));
@@ -2219,6 +2222,7 @@ async function viewDevice(id, q) {
           { label: 'URL', get: r => extLink(r.url) },
           { label: 'Version', get: r => r.version || '' },
           { label: 'Status', get: r => badge(r.status) },
+          { label: 'Answering', get: r => { const sv = (on.services || []).find(x => x.id === r.id); return sv ? servicePill(sv) : ''; } },
           { label: '', nosort: true, get: r => rowActions('services', r, back) },
         ], d.services, { empty: 'No services recorded.' }), small('+ Add', () => editEntity('services', preset, back))),
         card('Cables & connections', connTable(d.connections, back, id),
@@ -2240,6 +2244,12 @@ async function viewDevice(id, q) {
             { label: 'Checked', get: r => r.checked_at ? timeAgo(r.checked_at) : '' },
           ], [{ ...on, label: 'main' }, ...on.others]),
           historyStrip(on),
+          on.services?.length ? table([
+            { label: 'Service', get: r => r.name },
+            { label: 'State', get: r => servicePill(r) },
+            { label: 'Answer', get: r => nz(r.detail, r.state === 'up' && r.latency_ms != null ? `· ${fmtMs(r.latency_ms)}` : '') },
+            { label: 'Checked', get: r => r.checked_at ? timeAgo(r.checked_at) : '' },
+          ], on.services) : null,
           ['off', 'unwatched'].includes(on.state) ? h('p', { class: 'muted small' }, onlineTitle(on), '.') : null)
           : h('div', { class: 'empty' }, 'Add an IP address on the Network tab, and HaRM checks whether it answers.'),
           small('⟳ Check now', async () => { await checkDevice(id, dev.name); back(); }),
@@ -2346,11 +2356,12 @@ function elevation(rack, devices, face, onEmpty) {
     const start = Math.min(rowOf(d.rack_u), rowOf(top));
     const typeCls = 'cat-' + deviceCategory(d.device_type)[0];
     const el = h('a', {
-      class: `u-dev ${typeCls}${mine ? '' : ' ghost'}${d.connected ? '' : ' unplugged'} st-${badgeClass(d.status)}`,
+      class: `u-dev ${typeCls}${mine ? '' : ' ghost'}${d.connected ? '' : ' unplugged'} st-${badgeClass(d.status)}${d._online === 'down' ? ' net-down-dev' : ''}`,
       href: `#/devices/${d.id}`,
       title: `${d.name}, U${d.rack_u}${d.u_height > 1 ? '-' + top : ''}${mine ? '' : ` (mounted ${d.rack_face}, full depth)`}`,
     }, h('span', { class: 'u-dev-name' }, d.name), d.u_height > 1 || d.device_type ? h('span', { class: 'u-dev-sub' }, nz(d.device_type, d.model)) : null,
     d.status !== 'Active' ? h('span', { class: 'u-dev-status' }, d.status) : null,
+    mine && d._online === 'down' ? h('span', { class: 'u-dev-net net-down' }, 'Offline') : null,
     mine ? taskFlag(d._sum) : null, dot(d.connected));
     el.style.gridRow = `${start} / span ${d.u_height}`;
     el.style.gridColumn = '2';
@@ -2359,12 +2370,13 @@ function elevation(rack, devices, face, onEmpty) {
   const kinds = [...new Map(devices.filter(d => d.rack_u && (d.rack_face === face || d.full_depth))
     .map(d => deviceCategory(d.device_type)).map(c => [c[0], c])).values()].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
   return h('div', { class: 'rack-col' }, h('div', { class: 'rack-face-label' }, face === 'front' ? 'Front' : 'Rear'), h('div', { class: 'rack-frame' }, grid),
-    kinds.length ? h('div', { class: 'cat-legend', 'aria-label': 'Kinds of device' }, kinds.map(([n, label]) => h('span', { class: `cat-${n}` }, h('i'), label))) : null);
+    kinds.length ? h('div', { class: 'cat-legend', 'aria-label': 'Kinds of device' }, kinds.map(([n, label]) => h('span', { class: `cat-${n}` }, h('i'), label))) : null,
+    devices.some(d => d._online === 'down' && d.rack_face === face) ? h('div', { class: 'muted small rack-net-note' }, 'Outlined in red: not answering right now (', link('#/status', 'Status'), ').') : null);
 }
 
 async function viewRack(id) {
-  const [{ rack, devices, components }, rackNotes, sum] = await Promise.all([GET(`/racks/${id}/layout`), GET(`/notes?entity=racks&entity_id=${id}`), GET('/devices/summary')]);
-  for (const d of devices) d._sum = sum.devices[d.id];
+  const [{ rack, devices, components, online }, rackNotes, sum] = await Promise.all([GET(`/racks/${id}/layout`), GET(`/notes?entity=racks&entity_id=${id}`), GET('/devices/summary')]);
+  for (const d of devices) { d._sum = sum.devices[d.id]; d._online = (online || {})[d.id]; }
   const back = () => viewRack(id);
   const unplaced = devices.filter(d => !d.rack_u);
 
@@ -2677,7 +2689,8 @@ async function viewSearch(q) {
 // ---------------------------------------------------------------- views: settings
 
 async function viewSettings() {
-  [S.auth, S.caps, S.appSettings] = await Promise.all([api('GET', '/auth/status'), GET('/meta/capabilities'), GET('/settings/app').catch(() => ({}))]);
+  [S.auth, S.caps, S.appSettings, S.alerts] = await Promise.all([api('GET', '/auth/status'), GET('/meta/capabilities'),
+    GET('/settings/app').catch(() => ({})), GET('/alerts').catch(() => ({}))]);
   const totpBody = h('div');
   const drawTotp = () => {
     if (S.auth.totp_enabled) {
@@ -2750,7 +2763,7 @@ async function viewSettings() {
         ['Barcode reader (server)', S.caps.barcodes ? 'Available' : 'Not installed (the phone reads barcodes itself)'],
         ['Address', mono(location.origin)],
       ]), h('p', null, h('a', { class: 'button', href: '#/help?s=mobile' }, 'How scanning works'))))),
-    group('Status and actions', onlineChecksCard(), card('Actions', h('div', null,
+    group('Status and actions', onlineChecksCard(), alertsCard(), card('Actions', h('div', null,
       h('p', null, 'Saved commands HaRM sends to your devices over SSH with one click. They use the logins in your Vault, so they only run while HaRM is unlocked.'),
       h('a', { class: 'button', href: '#/actions' }, '⚡ Actions')))),
     group('AI Assist', aiSettingsCard()),
@@ -2803,6 +2816,81 @@ function onlineChecksCard() {
     h('p', null, 'HaRM checks whether each hooked-up device answers on its addresses, and shows it on the ', link('#/status', 'Status'), ' page.'),
     h('label', { class: 'disc-field' }, h('span', null, 'Check'), pick),
     h('p', { class: 'muted small' }, 'Only the addresses you’ve recorded are contacted. Turn it off for one device with “Check if it’s online” when you edit it.')));
+}
+
+/* Settings > Status and actions > Alerts: a message when a device or service stops answering. */
+function alertsCard() {
+  const a = S.alerts || {};
+  const ways = [a.ntfy_on && 'ntfy', a.email_on && 'email', a.webhook_on && 'a webhook'].filter(Boolean);
+  const wait = !a.delay ? 'right away' : `after ${a.delay} minutes`;
+  const recent = (a.recent || []).slice(0, 5);
+  return card('Alerts', h('div', null,
+    a.enabled && ways.length
+      ? h('p', null, h('span', { class: 'badge ok' }, 'On'), ` By ${ways.join(' and ')}, ${wait} when a device${a.services ? ' or service' : ''} stops answering${a.recovery ? ', and when it’s back' : ''}.`)
+      : h('p', null, h('span', { class: 'badge muted' }, 'Off'), ' Get a message on your phone (ntfy), by email or by webhook when a device or service stops answering.'),
+    h('div', { class: 'inline' }, btn('🔔 Set up alerts…', () => editAlerts(), 'primary'), ways.length ? btn('Send a test', testAlerts) : null),
+    recent.length ? h('ul', { class: 'plain alert-log' }, recent.map(r => h('li', { class: 'small' },
+      h('span', { class: r.ok ? 'ok-text' : 'bad-text' }, r.ok ? '✓ ' : '✗ '), h('b', null, r.channel), ` · ${r.title} · `,
+      h('span', { class: 'muted' }, timeAgo(r.at)), r.error ? h('div', { class: 'bad-text' }, r.error) : null))) : null,
+    h('p', { class: 'muted small' }, 'Alerts are sent while HaRM is locked too, so their passwords are kept encrypted with a key of their own (alerts.key in HaRM’s data folder), not with your master password.')));
+}
+
+function editAlerts(after) {
+  const a = S.alerts || {};
+  const kept = has => has ? 'Saved. Leave it empty to keep it.' : null;
+  formDialog({
+    title: 'Alerts', rec: { ...a, delay: String(a.delay ?? 5) }, saveLabel: 'Save',
+    fields: [
+      { k: 'enabled', wide: true, label: 'Send alerts', type: 'checkbox' },
+      { k: 'delay', label: 'When a device stops answering', type: 'select', required: true, options: [
+        { value: '0', label: 'Alert right away' }, { value: '5', label: 'Wait 5 minutes' }, { value: '10', label: 'Wait 10 minutes' },
+        { value: '15', label: 'Wait 15 minutes' }, { value: '30', label: 'Wait 30 minutes' }, { value: '60', label: 'Wait an hour' }],
+        help: 'Waiting skips short blips, like a restart.' },
+      { k: 'recovery', wide: true, label: 'Also tell me when it’s back', type: 'checkbox' },
+      { k: 'services', wide: true, label: 'Also when a service stops answering', type: 'checkbox', help: 'A web page or port on a device’s Network tab, while the device itself answers.' },
+      { section: 'ntfy (notifications on your phone)' },
+      { k: 'ntfy_on', wide: true, label: 'Send by ntfy', type: 'checkbox', help: 'Install the ntfy app and subscribe to a topic name only you know. ntfy.sh is free; you can also run your own server.' },
+      { k: 'ntfy_url', label: 'Server and topic', wide: true, inputmode: 'url', ph: 'https://ntfy.sh/a-long-name-only-you-know', showIf: v => v.ntfy_on },
+      { k: 'ntfy_token', noGenerate: true, label: 'Access token (optional)', type: 'password', wide: true, showIf: v => v.ntfy_on, help: kept(a.has_ntfy_token) || 'Only for a server or topic that needs one.' },
+      { section: 'Email' },
+      { k: 'email_on', wide: true, label: 'Send by email', type: 'checkbox' },
+      { k: 'email_host', label: 'Mail server', ph: 'smtp.gmail.com', showIf: v => v.email_on },
+      { k: 'email_port', label: 'Port', type: 'number', min: 1, ph: '587', showIf: v => v.email_on },
+      { k: 'email_security', label: 'Security', type: 'select', required: true, wide: true, showIf: v => v.email_on, options: [
+        { value: 'starttls', label: 'STARTTLS (usually port 587)' }, { value: 'ssl', label: 'SSL/TLS (usually port 465)' },
+        { value: 'none', label: 'None (port 25, a mail server on your own network only)' }] },
+      { k: 'email_username', label: 'Username', raw: true, showIf: v => v.email_on },
+      { k: 'email_password', noGenerate: true, label: 'Password', type: 'password', showIf: v => v.email_on,
+        help: kept(a.has_email_password) || 'For Gmail and Outlook, make an app password in your account’s security settings.' },
+      { k: 'email_from', label: 'From', ph: 'harm@example.com', showIf: v => v.email_on, help: 'Leave empty to use the username.' },
+      { k: 'email_to', label: 'Send to', ph: 'you@example.com', showIf: v => v.email_on, help: 'Several addresses: separate them with commas.' },
+      { section: 'Webhook' },
+      { k: 'webhook_on', wide: true, label: 'Send to a webhook', type: 'checkbox', help: 'Home Assistant, Discord, Slack, Gotify or your own script. HaRM posts JSON with the title and message.' },
+      { k: 'webhook_url', noGenerate: true, label: 'Webhook address', type: 'password', wide: true, showIf: v => v.webhook_on,
+        help: kept(a.has_webhook_url) || 'Kept secret like a password: anyone with it could post to your channel.' },
+    ],
+    submit: v => {
+      const body = { ...v, delay: +v.delay, email_port: +(v.email_port || 587) };
+      for (const k of ['ntfy_token', 'email_password', 'webhook_url']) if (!body[k]) delete body[k];
+      return api('POST', '/alerts', body);
+    },
+    onDone: async r => {
+      S.alerts = { ...S.alerts, ...r };
+      toast(r.enabled ? 'Alerts are on. Send a test to check they arrive.' : 'Saved');
+      (after || (() => location.hash.startsWith('#/settings') && viewSettings()))();
+    },
+  });
+}
+
+async function testAlerts() {
+  toast('Sending a test…');
+  try {
+    const r = await api('POST', '/alerts/test', {});
+    const bad = r.results.filter(x => !x.ok);
+    if (!bad.length) toast(`✓ Test sent by ${r.results.map(x => x.channel).join(' and ')}. Check it arrived.`);
+    else toast(bad.map(x => `${x.channel}: ${x.error}`).join(' · '), 'bad');
+  } catch (e) { toast(e.message, 'bad'); }
+  if (location.hash.startsWith('#/settings')) viewSettings();
 }
 
 /* Settings > About: an opt-in check for a newer release on GitHub. */
@@ -3504,10 +3592,13 @@ const HELP = [
       ['HaRM knocks on a few ports of each address (the device’s own services, then SSH, the web and the like). Any answer counts. If none answers, it tries one ping.'],
       ['It checks devices that are hooked up and not retired or sold. To leave one out, edit it and untick ', B('Check if it’s online'), '.'],
       ['A management port (iLO, iDRAC, IPMI) is checked too and shown under the device, so you can tell “the server is off” from “the whole box lost power”.'],
+      ['Its services (Network tab) are checked too once it answers: a web address must reply, and a port must accept the connection. Each shows ', B('Answering'), ' or ', B('Not answering'), '.'],
       ['The bars show the last 24 hours, one per hour, with how much of the time it answered.']),
     P('HaRM checks every 5 minutes (change it in ', link('#/settings', 'Settings > Status and actions'), '), and every minute while the Status page is open. Devices that go offline also show on ', B('Home'), '.'),
     P(B('Wake-on-LAN: '), 'a device with a MAC address gets a ', B('Wake'), ' button while it’s offline. Wake-on-LAN has to be turned on in its BIOS or network card. HaRM in Docker can only wake devices with ', h('code', null, 'network_mode: host'), '.'),
     P(B('On a wall screen: '), '⋯ > ', B('Full screen'), ' hides the sidebar and keeps the page up to date by itself.'),
+    P(B('Alerts: '), 'in ', link('#/settings', 'Settings > Status and actions > Alerts'), ', get a message by ntfy (a phone app), email or a webhook when a device or service stops answering, and when it’s back. A short wait skips blips like restarts. Many changes at once (a power cut) arrive as one message.'),
+    P(B('In the rack: '), 'each device in the rack drawing says ', B('Online'), ' or ', B('Offline'), ', and one that isn’t answering is outlined in red.'),
   ]],
   ['actions', 'Actions: one-click commands', () => [
     P('An action is a command you save once and send to a device over SSH with one click: quieting a server’s fans, updating, restarting, powering on through the iLO.'),
@@ -5585,6 +5676,11 @@ const ONLINE = {
   up: ['Online', 'ok'], down: ['Offline', 'bad'], unknown: ['Not checked yet', 'muted'],
   unwatched: ['Not checked', 'muted'], off: ['Not hooked up', 'muted'], 'no-address': ['No address', 'muted'],
 };
+const SERVICE_STATE = { up: ['Answering', 'ok'], down: ['Not answering', 'bad'], unknown: ['Not checked', 'muted'] };
+function servicePill(sv) {
+  const [word, cls] = SERVICE_STATE[sv.state] || SERVICE_STATE.unknown;
+  return h('span', { class: `badge ${cls}`, title: nz(sv.detail, sv.checked_at ? `checked ${timeAgo(sv.checked_at)}` : '') }, word);
+}
 const fmtMs = ms => ms == null ? '' : ms < 1 ? 'under 1 ms' : `${Math.round(ms)} ms`;
 const utcDate = ts => new Date(String(ts).replace(' ', 'T') + 'Z');
 const clock = ts => utcDate(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -5662,7 +5758,7 @@ function statusTile(d, after) {
     d.can_wake && d.state === 'down' ? small('⏻ Wake', () => wakeDevice(d.id, d.name)) : null,
     d.mgmt_url ? h('a', { class: 'button sm', href: d.mgmt_url, target: '_blank', rel: 'noopener noreferrer' }, 'Manage ↗') : null,
   ].filter(Boolean);
-  return h('div', { class: `st-tile cat-${cat} st-${d.state}` },
+  return h('div', { class: `st-tile cat-${cat} st-${d.state}${svcDown(d) ? ' st-svc-down' : ''}` },
     h('div', { class: 'st-head' }, h('a', { class: 'st-name', href: `#/devices/${d.id}` }, d.name), onlinePill(d)),
     h('div', { class: 'st-line small' },
       d.address ? h('span', { class: 'mono' }, d.address) : null,
@@ -5671,9 +5767,11 @@ function statusTile(d, after) {
     h('div', { class: 'muted small' }, nz(d.device_type, where ? `· ${where}` : '')),
     d.others.length ? h('div', { class: 'st-others' }, d.others.map(o => h('span', { class: 'st-other small', title: onlineTitle(o) },
       o.label || o.address, ' ', h('span', { class: `badge ${(ONLINE[o.state] || ONLINE.unknown)[1]}` }, (ONLINE[o.state] || ONLINE.unknown)[0])))) : null,
+    d.services?.length ? h('div', { class: 'st-others' }, d.services.map(sv => h('span', { class: 'st-other small' }, sv.name, ' ', servicePill(sv)))) : null,
     historyStrip(d),
     acts.length ? h('div', { class: 'st-actions' }, acts) : null);
 }
+const svcDown = d => (d.services || []).filter(sv => sv.state === 'down').length;
 
 async function viewStatus() {
   clearInterval(S.statusTimer);
@@ -5687,17 +5785,22 @@ async function viewStatus() {
       const was = S.statusPrev.get(x.id);
       if (was === 'up' && x.state === 'down') toast(`${x.name} is offline`, 'bad', { label: 'Open', onClick: () => { location.hash = `#/devices/${x.id}`; } });
       if (was === 'down' && x.state === 'up') toast(`${x.name} is back online`);
+      for (const sv of x.services || []) {
+        const before = S.statusPrevSvc?.get(sv.id);
+        if (before === 'up' && sv.state === 'down') toast(`${sv.name} on ${x.name} isn’t answering`, 'bad');
+      }
     }
   }
   S.statusPrev = new Map(d.devices.map(x => [x.id, x.state]));
-  const shown = d.devices.filter(x => filter === 'all' || (filter === 'down' ? x.state === 'down' : ['up', 'down', 'unknown'].includes(x.state)));
+  S.statusPrevSvc = new Map(d.devices.flatMap(x => (x.services || []).map(sv => [sv.id, sv.state])));
+  const shown = d.devices.filter(x => filter === 'all' || (filter === 'down' ? x.state === 'down' || svcDown(x) : ['up', 'down', 'unknown'].includes(x.state)));
   const checkNow = async () => {
     toast('Checking every device…');
     try { await api('POST', '/status/check', { max_age: 0 }); } catch (e) { toast(e.message, 'bad'); }
     viewStatus();
   };
   const pick = h('select', { 'aria-label': 'Show', onchange: e => { prefSet('harm-status-filter', e.target.value); viewStatus(); } },
-    [['all', 'All devices'], ['checked', 'Only the ones checked'], ['down', 'Only offline']].map(([v, l]) => h('option', { value: v, selected: v === filter }, l)));
+    [['all', 'All devices'], ['checked', 'Only the ones checked'], ['down', 'Only problems']].map(([v, l]) => h('option', { value: v, selected: v === filter }, l)));
   const wall = () => {
     const on = !document.body.classList.contains('wall');
     document.body.classList.toggle('wall', on);
@@ -5713,6 +5816,7 @@ async function viewStatus() {
       menuButton('⋯', [
         ['⛶ Full screen (for a wall screen)', wall],
         ['⚙ How often to check…', () => { location.hash = '#/settings'; }],
+        ['🔔 Alerts…', () => editAlerts(() => viewStatus())],
         ['⚡ Actions', () => { location.hash = '#/actions'; }],
         ['❓ How this works', () => { location.hash = '#/help?s=status'; }],
       ])),
@@ -5724,12 +5828,14 @@ async function viewStatus() {
     !d.devices.length ? h('div', { class: 'empty-state' }, h('div', { class: 'empty-ico' }, '📶'),
       h('p', null, 'Devices show up here once they have an IP address. HaRM then checks whether each one answers.'),
       h('a', { class: 'button primary', href: '#/devices' }, 'Go to Devices'))
-      : !shown.length ? h('div', { class: 'all-good' }, filter === 'down' ? '✓ Everything that’s checked is online.' : 'Nothing to show with this filter.')
+      : !shown.length ? h('div', { class: 'all-good' }, filter === 'down' ? '✓ Everything that’s checked is online and answering.' : 'Nothing to show with this filter.')
         : statusGroups(shown).map(([name, list]) => {
           const down = list.filter(x => x.state === 'down').length;
+          const svc = list.reduce((n, x) => n + svcDown(x), 0);
           return h('section', { class: 'st-group' },
             h('h2', { class: 'st-group-head' }, name, h('span', { class: 'muted small' }, ` ${list.length} device${list.length === 1 ? '' : 's'}`),
-              down ? h('span', { class: 'badge bad' }, `${down} offline`) : null),
+              down ? h('span', { class: 'badge bad' }, `${down} offline`) : null,
+              svc ? h('span', { class: 'badge warn' }, `${svc} service${svc === 1 ? '' : 's'} not answering`) : null),
             h('div', { class: 'st-grid' }, list.map(x => statusTile(x, viewStatus))));
         }),
     h('p', { class: 'muted small st-foot' }, every,

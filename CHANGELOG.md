@@ -6,6 +6,9 @@
 - **Status** (in the sidebar, and the phone's bottom bar) shows every device with an address, grouped by where it is, each with **Online**, **Offline**, **Not checked** or **Not hooked up**, how fast it answered, and a bar for each of the last 24 hours.
 - A server's management port (iLO, iDRAC, IPMI) is checked too and shown under it, so "the server is off" and "the whole box lost power" look different.
 - HaRM checks every 5 minutes, and every minute while the page is open. Change it, or turn it off, in **Settings > Status and actions**. Devices that go offline also show on **Home**.
+- **Services are checked too:** each web page or port on a device's **Network** tab says **Answering** or **Not answering** (a 502 from a proxy counts as not answering), on its tile, on the device's page and on **Home**.
+- **Alerts:** a message by **ntfy** (a phone app), **email** or a **webhook** (Home Assistant, Discord, Slack, Gotify…) when a device or service stops answering, and when it's back. A short wait skips blips like restarts, many changes at once arrive as one message, and **Send a test** checks it works. Set it up in **Settings > Status and actions > Alerts**; turn it off for one device with **Send alerts about it**.
+- **The rack drawing** outlines a device in red and says **Offline** when it isn't answering.
 - **Wake** sends a Wake-on-LAN packet to an offline device with a MAC address.
 - **⋯ > Full screen** turns the page into a wall display.
 
@@ -13,7 +16,7 @@
 - Save a command once and send it to a device over SSH with one click: quiet a server's fans, update, restart, power on through the iLO or iDRAC.
 - Send it as one shell script (Linux, Proxmox, NAS boxes), or one command per line (iLO, iDRAC, switches, Windows). **Older SSH** connects to old management ports that refuse modern SSH, and **Other SSH settings** takes the `-o` settings from a command that already works.
 - Actions use your saved logins, run only while HaRM is unlocked, keep their last 50 results (encrypted), and are recorded in the audit log. Start from examples for Proxmox, Debian and Ubuntu, iLO, iDRAC and Windows.
-- Run them from **Actions**, a device's **Actions** tab, or the buttons on the Status page.
+- Run them from **Actions**, a device's **Actions** tab, or the buttons on the Status page. They run when you press the button, never on a schedule.
 
 **Installing**
 - **One-click installers.** Windows gets a normal setup file (`Zoms-HaRM_0.3.2_x64-setup.exe`) and Linux gets `.deb`, `.rpm` and AppImage files, with everything inside. Nothing else to install first, and no administrator rights needed on Windows.

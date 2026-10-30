@@ -1391,15 +1391,22 @@ const THEMES = {
   coolant: { name: 'Coolant', blurb: '❄ You found it. Liquid-cooled servers, mint and cyan.', icon: '/static/icon-coolant.svg', anim: '/static/icon-coolant-anim.svg', hidden: true,
     swatches: { dark: ['#14161c', '#5ff7cf', '#22d3ee'], light: ['#f4f5f8', '#0e9f8c', '#0891b2'] } },
 };
-const MODES = [['dark', '🌙 Dark'], ['light', '☀ Light'], ['auto', '◐ Match system']];
+/* "this phone", "this tablet", "this computer": the words the design system uses for the device in hand. */
+function deviceWord() {
+  const ua = navigator.userAgent;
+  if (/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) || (/Android/.test(ua) && !/Mobile/.test(ua))) return 'tablet';
+  if (/iPhone|iPod|Android|Mobile/.test(ua)) return 'phone';
+  return 'computer';
+}
+const MODES = [['auto', `Match my ${deviceWord()}`], ['light', 'Light'], ['dark', 'Dark']];
 const themeName = () => (document.documentElement.dataset.product === 'harm-coolant' ? 'coolant' : 'zombeatz');
 /* The sidebar logo may be animated (Coolant); tab icons and theme previews stay still. */
 const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const themeIcon = () => { const t = THEMES[themeName()]; return t.anim && !calm() ? t.anim : t.icon; };
 const brandName = () => h('div', { class: 'brand-name' }, "Zom's ", h('span', { class: 'brand-accent' }, 'HaRM'));
 function themePrefs() {
-  try { return { theme: localStorage.getItem('harm-theme') || 'zombeatz', mode: localStorage.getItem('harm-mode') || 'dark' }; }
-  catch { return { theme: 'zombeatz', mode: 'dark' }; }
+  try { return { theme: localStorage.getItem('harm-theme') || 'zombeatz', mode: localStorage.getItem('harm-mode') || 'auto' }; }
+  catch { return { theme: 'zombeatz', mode: 'auto' }; }
 }
 /* Theme and light/dark are remembered per device (phone and PC can differ). */
 function applyTheme(theme, mode) {
@@ -1452,7 +1459,7 @@ function appearanceCard() {
       h('div', { class: 'chips' }, MODES.map(([k, l]) => h('button', {
         type: 'button', class: 'chip' + (p.mode === k ? ' on' : ''), onclick: () => { applyTheme(null, k); draw(); },
       }, l))),
-      h('p', { class: 'muted small' }, 'Saved on this device only, so your phone and PC can each have their own. The installed phone app keeps the ZomBeatz icon on the home screen.'));
+      h('p', { class: 'muted small' }, `Saved on this ${deviceWord()} only, so your phone and computer can each have their own. Match my ${deviceWord()} follows its light or dark setting.`));
   };
   draw();
   return card('Appearance', body);
@@ -1553,7 +1560,7 @@ const NAV_GROUPS = [
   ['More', [['locations', 'Locations', '⌂'], ['connections', 'Cables', '⇄'], ['library', 'Parts Library', '▦'],
     ['export', 'Export & Share', '⇪'], ['audit', 'Audit log', '📜'], ['settings', 'Settings', '⚙'], ['help', 'Help & guide', '❓']]],
 ];
-const navLink = ([k, label, ico]) => h('a', { href: `#/${k}`, 'data-nav': k }, h('span', { class: 'ico' }, ico), label);
+const navLink = ([k, label, ico]) => h('a', { href: `#/${k}`, 'data-nav': k, title: label }, h('span', { class: 'ico' }, ico), h('span', { class: 'nav-label' }, label));
 function navTree() {
   return NAV_GROUPS.map(([title, items]) => {
     if (title !== 'More') return h('div', { class: 'nav-group' }, title ? h('div', { class: 'nav-title' }, title) : null, items.map(navLink));
@@ -1601,16 +1608,18 @@ function renderShell() {
   for (const [name, list] of Object.entries(S.enums)) {
     document.body.append(h('datalist', { id: 'dl_' + name }, list.map(v => h('option', { value: v }))));
   }
-  const search = h('input', { type: 'search', placeholder: 'Search devices, IPs, serials, parts…', 'aria-label': 'Search', autocomplete: 'off' });
+  const search = h('input', { type: 'search', placeholder: 'Search devices, IPs, serials, parts…', 'aria-label': 'Search', autocomplete: 'off',
+    title: hasKeyboard() ? `Search everything (${MOD} K)` : null });
   const searchBox = searchTypeahead(search);
   const app = document.getElementById('app');
+  document.body.classList.toggle('nav-folded', prefGet('harm-nav-folded') === '1');
   app.replaceChildren(
     h('aside', { class: 'sidebar' },
       h('a', { class: 'brand', href: '#/dashboard', onclick: brandClicks }, h('img', { class: 'brand-icon', src: themeIcon(), alt: '' }),
         h('div', null, brandName(), h('div', { class: 'brand-sub' }, 'Hardware & Rack Manager'))),
       h('nav', null, navTree()),
       h('button', { class: 'install-btn', type: 'button', hidden: !S.installPrompt, onclick: installApp }, '⤓ Install app'),
-      h('button', { class: 'lock', type: 'button', onclick: lockNow }, '🔒 Lock')),
+      h('button', { class: 'lock', type: 'button', onclick: lockNow, title: 'Lock now' }, '🔒 ', h('span', { class: 'nav-label' }, 'Lock now'))),
     h('div', { class: 'main' },
       h('header', { class: 'topbar' },
         h('button', { class: 'icon-btn menu', type: 'button', 'aria-label': 'Menu', onclick: () => document.body.classList.toggle('nav-open') }, '☰'),
@@ -2217,6 +2226,20 @@ async function viewRacks() {
     rows.length ? h('div', { class: 'tiles' }, rows.map(rackTile)) : h('div', { class: 'empty' }, 'No racks or holders yet. Loose gear can live directly in a location.'));
 }
 
+
+// Kinds of device for the rack drawing, in the design system's category order (--zb-cat-1 to 6, then Other).
+const DEVICE_CATEGORIES = [
+  ['Servers and computers', ['Server', 'Hypervisor Host', 'Workstation', 'Desktop', 'Laptop', 'Mini PC', 'SBC (Raspberry Pi etc.)']],
+  ['Network', ['Switch', 'Router', 'Firewall', 'Access Point', 'Modem / ONT', 'Patch Panel']],
+  ['Storage', ['NAS', 'SAN / DAS']],
+  ['Power', ['UPS', 'PDU']],
+  ['Other gear', ['KVM', 'Console Server', 'Printer', 'Camera / NVR', 'IoT', 'Monitor', 'Phone', 'Tablet', 'TV / Streaming', 'Game Console', 'Smart Home', 'Wearable']],
+  ['Accessories', ['Cable Manager', 'Shelf / Tray']],
+];
+function deviceCategory(type) {
+  const i = DEVICE_CATEGORIES.findIndex(([, types]) => types.includes(type));
+  return i < 0 ? ['other', 'Other'] : [i + 1, DEVICE_CATEGORIES[i][0]];
+}
 function elevation(rack, devices, face, onEmpty) {
   const H = rack.height_u;
   const rowOf = u => rack.numbering_desc ? u : H - u + 1;
@@ -2239,7 +2262,7 @@ function elevation(rack, devices, face, onEmpty) {
     if (!mine && !d.full_depth) continue;
     const top = d.rack_u + d.u_height - 1;
     const start = Math.min(rowOf(d.rack_u), rowOf(top));
-    const typeCls = 't' + (Math.abs([...(d.device_type || 'x')].reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7)) % 6);
+    const typeCls = 'cat-' + deviceCategory(d.device_type)[0];
     const el = h('a', {
       class: `u-dev ${typeCls}${mine ? '' : ' ghost'}${d.connected ? '' : ' unplugged'} st-${badgeClass(d.status)}`,
       href: `#/devices/${d.id}`,
@@ -2251,7 +2274,10 @@ function elevation(rack, devices, face, onEmpty) {
     el.style.gridColumn = '2';
     grid.append(el);
   }
-  return h('div', { class: 'rack-col' }, h('div', { class: 'rack-face-label' }, face === 'front' ? 'Front' : 'Rear'), h('div', { class: 'rack-frame' }, grid));
+  const kinds = [...new Map(devices.filter(d => d.rack_u && (d.rack_face === face || d.full_depth))
+    .map(d => deviceCategory(d.device_type)).map(c => [c[0], c])).values()].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  return h('div', { class: 'rack-col' }, h('div', { class: 'rack-face-label' }, face === 'front' ? 'Front' : 'Rear'), h('div', { class: 'rack-frame' }, grid),
+    kinds.length ? h('div', { class: 'cat-legend', 'aria-label': 'Kinds of device' }, kinds.map(([n, label]) => h('span', { class: `cat-${n}` }, h('i'), label))) : null);
 }
 
 async function viewRack(id) {
@@ -2597,14 +2623,17 @@ async function viewSettings() {
   };
   drawTotp();
   const ents = ['devices', 'components', 'racks', 'locations', 'networks', 'interfaces', 'services', 'connections', 'device_slots', 'credentials'];
+  const group = (title, ...cards) => [h('h2', { class: 'settings-group' }, title), h('div', { class: 'grid two' }, cards)];
   render(
-    pageHead('Settings', S.auth.release ? `Zom's HaRM ${S.auth.release}` : null),
-    h('div', { class: 'grid two' },
-      appearanceCard(),
-      aiSettingsCard(),
+    pageHead('Settings', 'Grouped like the guide’s Settings page. Each one says what it does.'),
+    group('Appearance', appearanceCard()),
+    group('Locking and security',
+      card('Locking', h('div', null,
+        h('p', null, `Locked after ${S.auth.idle_minutes} minutes without use, and whenever the HaRM server restarts. Unlocking needs your master password${S.auth.totp_enabled ? ' and a 2FA code' : ''}.`),
+        btn('🔒 Lock now', lockNow))),
       card('Master password', h('div', null,
-        h('p', null, 'Changing it re-encrypts the vault key. Stored logins stay intact.'),
-        btn('Change password', () => formDialog({
+        h('p', null, 'Unlocks HaRM and the saved logins inside it. Changing it keeps every saved login.'),
+        btn('Change password…', () => formDialog({
           title: 'Change master password',
           fields: [
             { k: 'current_password', label: 'Current password', type: 'password', required: true },
@@ -2612,46 +2641,75 @@ async function viewSettings() {
             { k: 'confirm', label: 'Confirm new password', type: 'password', required: true },
           ],
           submit: v => {
-            if (v.new_password !== v.confirm) throw new Error('Passwords do not match');
+            if (v.new_password !== v.confirm) throw new Error('The two new passwords don’t match.');
             return api('POST', '/auth/change-password', { current_password: v.current_password, new_password: v.new_password });
           },
           onDone: () => toast('Password changed'),
         })))),
       card('Two-factor authentication', totpBody),
       card('Recovery code', h('div', null,
-        h('p', null, 'Generate a new recovery code if you lost the old one. The old code stops working immediately.'),
-        btn('Generate new recovery code', () => formDialog({
-          title: 'New recovery code', fields: [{ k: 'password', label: 'Master password', type: 'password', required: true }], saveLabel: 'Generate',
+        h('p', null, 'Unlocks HaRM if you forget the master password. Without your password or recovery code, saved logins can’t be recovered.'),
+        btn('New recovery code…', () => formDialog({
+          title: 'New recovery code', fields: [{ k: 'password', label: 'Master password', type: 'password', required: true }], saveLabel: 'Make a new code',
           submit: v => api('POST', '/auth/recovery-code', v), onDone: r => showRecoveryCode(r.recovery_code),
-        })))),
-      card('Phone & scanning', h('div', null, kv([
-        ['This connection', window.isSecureContext ? h('span', { class: 'ok-text' }, '✓ Secure (HTTPS or localhost)') : h('span', { class: 'warn-text' }, 'Plain HTTP')],
+        })),
+        h('p', { class: 'muted small' }, 'The old code stops working as soon as you make a new one.')))),
+    group('Phones & tablets',
+      card('Phone app', h('div', null,
+        h('p', null, 'Put HaRM on your phone’s home screen so it opens like an app, with shortcuts for scanning, devices and tasks. Both need to be on the same Wi‑Fi.'),
+        h('div', { class: 'inline' }, btn('How to connect a phone…', phoneAppHelp, 'primary'),
+          h('button', { type: 'button', class: 'install-btn', hidden: !S.installPrompt, onclick: installApp }, '⤓ Install on this device'),
+          S.caps.ca_cert ? h('a', { class: 'button', href: '/harm-ca.crt', download: 'harm-ca.crt' }, '⬇ Certificate') : null))),
+      card('Camera and scanning', h('div', null, kv([
+        ['This connection', window.isSecureContext ? h('span', { class: 'ok-text' }, '✓ Secure (HTTPS or this computer)') : h('span', { class: 'warn-text' }, 'Plain HTTP')],
         ['Live camera scanning', window.isSecureContext && navigator.mediaDevices?.getUserMedia ? 'Available' : 'Needs HTTPS'],
         ['Photo scanning', 'Available'],
         ['Text recognition (server)', S.caps.ocr ? 'Available' : h('span', { class: 'warn-text' }, 'Not installed (install tesseract)')],
-        ['Barcode reader (server)', S.caps.barcodes ? 'Available' : 'Not installed (the phone decodes barcodes itself)'],
+        ['Barcode reader (server)', S.caps.barcodes ? 'Available' : 'Not installed (the phone reads barcodes itself)'],
         ['Address', mono(location.origin)],
-      ]), h('p', null, h('a', { class: 'button', href: '#/help?s=mobile' }, 'Set up phone access')))),
-      card('Phone app', h('div', null,
-        h('p', null, 'Install HaRM on your phone’s home screen so it opens like an app, with shortcuts for scanning parts and tasks.'),
-        h('div', { class: 'inline' }, btn('📱 How to install', phoneAppHelp, 'primary'),
-          h('button', { type: 'button', class: 'install-btn', hidden: !S.installPrompt, onclick: installApp }, '⤓ Install now'),
-          S.caps.ca_cert ? h('a', { class: 'button', href: '/harm-ca.crt', download: 'harm-ca.crt' }, '⬇ Certificate') : null))),
+      ]), h('p', null, h('a', { class: 'button', href: '#/help?s=mobile' }, 'How scanning works'))))),
+    group('AI Assist', aiSettingsCard()),
+    group('Data & backups',
       card('Automatic backups', h('div', null,
-        h('p', null, 'HaRM saves a snapshot every day and keeps the last 14. Logins inside stay encrypted.'),
-        S.caps.backups?.length ? h('ul', { class: 'plain' }, S.caps.backups.slice(0, 5).map(b => h('li', { class: 'mono small' }, `${b.name} · ${(b.size / 1048576).toFixed(1)} MB`)))
+        h('p', null, 'HaRM saves a copy every day and keeps the last 14. Saved logins stay encrypted inside.'),
+        S.caps.backups?.length ? h('ul', { class: 'plain' }, S.caps.backups.slice(0, 5).map(b => h('li', { class: 'mono small' }, `${b.name} · ${(b.size / 1e6).toFixed(1)} MB`)))
           : h('p', { class: 'muted small' }, 'The first one is made a few seconds after the server starts.'),
-        h('p', { class: 'muted small' }, `Stored on the server in ${S.caps.backup_dir || 'data/backups'}. Copy that folder somewhere else (another disk or machine) now and then.`))),
-      card('Guides', h('div', { class: 'inline' }, h('a', { class: 'button primary', href: '#/setup' }, '🧭 Setup guide'), h('a', { class: 'button', href: '#/help' }, '? Help & guide'))),
-      card('Session', kv([
-        ['Auto-lock after', `${S.auth.idle_minutes} minutes idle`],
-        ['Lock now', btn('🔒 Lock', lockNow)],
-      ])),
-      card('Backup', h('div', null,
-        h('p', null, 'Download a full snapshot of the database. Stored logins stay encrypted inside it and can only be opened with your master password or recovery code.'),
-        h('a', { class: 'button primary', href: '/api/backup' }, 'Download backup (.db)'))),
-      card('Export CSV', h('div', { class: 'export-links' }, ents.map(e => h('a', { class: 'button sm', href: `/api/export/${e}.csv` }, e.replace('_', ' ')))),
-        h('p', { class: 'muted small' }, 'The credentials export contains labels and usernames only, never passwords.'))));
+        h('p', { class: 'muted small' }, `Kept on the HaRM computer in ${S.caps.backup_dir || 'data/backups'}. Copy that folder to another disk now and then.`))),
+      card('Download a backup', h('div', null,
+        h('p', null, 'The whole database in one file. Saved logins stay encrypted and only open with your master password or recovery code.'),
+        h('a', { class: 'button primary', href: '/api/backup' }, '⬇ Download backup (.db)'))),
+      card('Export CSV', h('div', null, h('div', { class: 'export-links' }, ents.map(e => h('a', { class: 'button sm', href: `/api/export/${e}.csv` }, e.replace('_', ' ')))),
+        h('p', { class: 'muted small' }, 'The logins file has names and usernames only, never passwords. More ways out: ', link('#/export', 'Export & Share'), '.')))),
+    hasKeyboard() ? group('Shortcuts', card('Keyboard shortcuts', h('div', null, shortcutsList()))) : null,
+    group('About', aboutCard()));
+}
+
+/* Settings > About: version, license, the guide and Send feedback (the design system's About). */
+function aboutCard() {
+  const v = S.auth?.release || '';
+  return card('About Zom’s HaRM', h('div', { class: 'about-row' },
+    h('img', { src: '/static/icon.svg', alt: '', width: 48, height: 48 }),
+    h('div', null,
+      h('p', null, h('b', null, 'Zom’s HaRM'), ' ', v),
+      h('p', { class: 'muted small' }, 'Hardware and rack manager, kept on your own computer. Made by ZomBeatz Media.'),
+      h('p', { class: 'muted small' }, 'Free and open source under the MIT license. ',
+        h('a', { href: 'https://github.com/ZomBeatz/Zoms-HaRM', target: '_blank', rel: 'noopener' }, 'See the code'), ' · ',
+        h('a', { href: 'https://github.com/ZomBeatz/Zoms-HaRM/blob/main/CHANGELOG.md', target: '_blank', rel: 'noopener' }, 'What’s new')),
+      h('div', { class: 'inline' },
+        btn('💬 Send feedback', sendFeedback),
+        h('a', { class: 'button', href: 'https://docs.zombeatzmedia.com/harm/', target: '_blank', rel: 'noopener' }, 'Read the guide'),
+        h('a', { class: 'button', href: '#/setup' }, '🧭 Setup guide')))));
+}
+
+/* An email to ZomBeatz Media with the version and device filled in. */
+function sendFeedback() {
+  const ua = navigator.userAgent;
+  const system = /Android/.test(ua) ? 'Android' : /iPhone/.test(ua) ? 'iPhone' : deviceWord() === 'tablet' && /Mac|iPad/.test(ua) ? 'iPad'
+    : /Windows/.test(ua) ? 'Windows' : /Mac/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : 'an unknown system';
+  const v = S.auth?.release || '';
+  const body = ['What happened, or what would you like?', '', '', 'Steps, if something went wrong:', '1. ', '', '---',
+    `Zom's HaRM ${v}, a browser on ${system} (this ${deviceWord()}).`].join('\n');
+  location.href = `mailto:info@zombeatzmedia.com?subject=${encodeURIComponent(`Zom's HaRM feedback (${v})`)}&body=${encodeURIComponent(body)}`;
 }
 
 // ---------------------------------------------------------------- shared bits for the newer views
@@ -3340,22 +3398,25 @@ const HELP = [
       ['Keep your recovery code offline. With neither the password nor the recovery code, stored logins cannot be recovered. The rest of your inventory is not encrypted and is unaffected.'],
       ['Download backups from Settings. CSV exports never include passwords.']),
   ]],
-  ['search', 'Search & shortcuts', () => [
+  ['keys', 'Keyboard shortcuts', () => [P('The same keys work in every ZomBeatz app. Single keys don’t fire while you’re typing in a box.'), shortcutsList()], { keyboard: true }],
+  ['search', 'Search and adding', () => [
     UL(
       ['The top search box finds devices, IPs, MACs, serials, services, parts, holders, locations, networks and logins (labels and usernames only).'],
       ['Click any table header to sort by it.'],
       [B('+ New'), ' in the top bar adds anything from any page.'],
+      ['The box at the top of a list (devices, parts, logins) filters just that list.'],
       ['Device pages have ', B('Clone'), ' for adding several identical machines.']),
   ]],
 ];
 
 function viewHelp(section) {
+  const HELP_HERE = HELP.filter(([, , , o]) => !(o && o.keyboard) || hasKeyboard());
   render(
     pageHead('Help & guide', 'How HaRM works and how to get the most out of it.',
       h('a', { class: 'button primary', href: '#/setup' }, '🧭 Setup guide')),
-    h('nav', { class: 'card help-toc' }, h('ul', null, HELP.map(([id, title]) =>
+    h('nav', { class: 'card help-toc' }, h('ul', null, HELP_HERE.map(([id, title]) =>
       h('li', null, h('a', { href: `#/help?s=${id}` }, title))))),
-    HELP.map(([id, title, body]) => h('section', { class: 'card help-sec', id: `help-${id}` }, h('h2', null, title), body())));
+    HELP_HERE.map(([id, title, body]) => h('section', { class: 'card help-sec', id: `help-${id}` }, h('h2', null, title), body())));
   if (section) setTimeout(() => document.getElementById(`help-${section}`)?.scrollIntoView({ block: 'start' }), 0);
 }
 
@@ -4582,10 +4643,70 @@ async function installApp() {
   S.installPrompt = null;
   document.querySelectorAll('.install-btn').forEach(b => { b.hidden = true; });
 }
+// ---------------------------------------------------------------- keyboard shortcuts
+
+/* The same keys as every ZomBeatz product. Listed in Help and Settings > Shortcuts, and never
+   mentioned on touch screens. Ctrl +/−/0 is the browser's own zoom. */
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+const MOD = IS_MAC ? '⌘' : 'Ctrl';
+const hasKeyboard = () => matchMedia('(hover: hover) and (pointer: fine)').matches;
+const SHORTCUTS = [
+  ['Getting around', [
+    [[MOD, 'K'], 'Search everything'],
+    [['/'], 'Filter the list on this page'],
+    [['['], 'Fold the sidebar'],
+    [['?'], 'Help and this list of shortcuts'],
+  ]],
+  ['Adding and closing', [
+    [['N'], 'Add a new item (opens + New)'],
+    [['Esc'], 'Close the dialog, menu or search'],
+  ]],
+  ['Zoom', [
+    [[MOD, '+'], 'Zoom in'],
+    [[MOD, '−'], 'Zoom out'],
+    [[MOD, '0'], 'Back to normal size'],
+  ]],
+];
+function shortcutsList() {
+  return SHORTCUTS.map(([group, rows]) => h('div', { class: 'keys-group' }, h('h4', null, group),
+    h('table', { class: 'keys' }, h('tbody', null, rows.map(([keys, does]) =>
+      h('tr', null, h('td', null, keys.map(k => h('kbd', null, k))), h('td', null, does)))))));
+}
+function toggleNavFold() {
+  const on = !document.body.classList.contains('nav-folded');
+  document.body.classList.toggle('nav-folded', on);
+  prefSet('harm-nav-folded', on ? '1' : '0');
+}
 addEventListener('keydown', e => {
-  if (e.key === '/' && !e.target.closest('input,textarea,select,[contenteditable]') && !document.querySelector('.modal-back')) {
+  if (!S.authed || e.isComposing) return;
+  const typing = e.target.closest && e.target.closest('input,textarea,select,[contenteditable]');
+  const inDialog = document.querySelector('.modal-back');
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
+    if (inDialog) return;
     const box = document.querySelector('.topbar input[type=search]');
+    if (box) { e.preventDefault(); box.focus(); box.select(); }
+    return;
+  }
+  if (e.key === 'Escape') {
+    const menu = document.querySelector('.qa-menu:not([hidden])');
+    if (menu) { menu.hidden = true; return; }
+    if (typing && e.target.matches('.topbar input[type=search]')) { e.target.value = ''; e.target.dispatchEvent(new Event('input')); e.target.blur(); }
+    return;
+  }
+  // Single keys never fire while typing, with a dialog open, or with Ctrl/⌘/Alt held.
+  if (typing || inDialog || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === '/') {
+    const box = document.querySelector('#view input[type=search]') || document.querySelector('.topbar input[type=search]');
     if (box) { e.preventDefault(); box.focus(); }
+  } else if (e.key === 'n' || e.key === 'N') {
+    const b = document.querySelector('.qa-btn');
+    if (b) { e.preventDefault(); b.click(); document.querySelector('.qa-menu button')?.focus(); }
+  } else if (e.key === '?') {
+    e.preventDefault();
+    location.hash = '#/help?s=keys';
+  } else if (e.key === '[' && matchMedia('(min-width: 701px)').matches) {
+    e.preventDefault();
+    toggleNavFold();
   }
 });
 

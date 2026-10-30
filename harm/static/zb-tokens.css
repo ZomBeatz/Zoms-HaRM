@@ -38,6 +38,16 @@
   --zb-warn: #d97706;
   --zb-ok: #16a34a;
 
+  /* Categories the product colors (device types, kinds of items): white text on them, the same in
+     both themes, used in this order. Always shown with the category's name. */
+  --zb-cat-1: #2f5d7c;
+  --zb-cat-2: #3d6b4f;
+  --zb-cat-3: #6a4f7d;
+  --zb-cat-4: #7a5a33;
+  --zb-cat-5: #3e6470;
+  --zb-cat-6: #6e3f4a;
+  --zb-cat-other: #5b6375;
+
   /* Shape and depth */
   --zb-radius-sm: 7px;           /* inputs, small buttons, chips */
   --zb-radius: 10px;             /* cards, panels, menus */

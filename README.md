@@ -80,7 +80,7 @@ The full guide, with pictures, is at **[docs.zombeatzmedia.com/harm](https://doc
 
 ## Try it with demo data
 
-**[Open the online demo](https://zombeatz.github.io/Zoms-HaRM/)**: the real app with a made-up home lab, running entirely in your browser. Nothing is installed and nothing you type leaves your device. Your changes stay in that browser until you press **Start over** (or a newer demo is published). The password, if you lock it, is `demo-password`. Features that reach out to other machines (network scan, UniFi, Proxmox, spec import, AI Assist) need HaRM on your own network.
+**[Open the online demo](https://zombeatz.github.io/Zoms-HaRM/)**: the real app with a made-up home lab, running entirely in your browser. Nothing is installed and nothing you type leaves your device. Your changes stay in that browser until you press **Reset demo** (or a newer demo is published). The password, if you lock it, is `demo-password`. Features that reach out to other machines (network scan, UniFi, Proxmox, spec import, AI Assist) need HaRM on your own network.
 
 Or run the same demo on your computer, in a separate copy that never touches your data:
 

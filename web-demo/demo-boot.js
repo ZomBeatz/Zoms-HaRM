@@ -63,7 +63,7 @@
   }, true);
 
   function reset() {
-    if (confirm('Start the demo over? Your changes in this browser will be removed.')) worker.postMessage({ type: 'reset' });
+    if (confirm('Reset the demo? Your changes in this browser will be removed.')) worker.postMessage({ type: 'reset' });
   }
 
   function toastSoon(text) {
@@ -77,27 +77,28 @@
     el.className = 'demo-badge';
     el.setAttribute('role', 'note');
     const label = document.createElement('span');
+    const b = document.createElement('strong');
+    b.textContent = 'Live demo.';
     const long = document.createElement('span');
     long.className = 'demo-long';
-    long.textContent = 'Online demo · made-up data · password ';
-    const short = document.createElement('span');
-    short.className = 'demo-short';
-    short.textContent = 'Password ';
-    label.append(long, short);
-    const pw = document.createElement('code');
-    pw.textContent = 'demo-password';
+    long.textContent = ' Try anything. Changes are only saved in this browser.';
+    label.append(b, long);
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.textContent = 'Start over';
+    btn.textContent = 'Reset demo';
     btn.addEventListener('click', reset);
     const get = document.createElement('a');
     get.href = 'https://github.com/ZomBeatz/Zoms-HaRM#quick-start';
     get.target = '_blank';
     get.rel = 'noopener';
-    get.textContent = 'Get HaRM';
-    label.append(pw);
+    get.textContent = 'Get Zom\u2019s HaRM';
     el.append(label, btn, get);
     document.body.append(el);
+    // If a visitor locks the demo, the unlock box says what to type.
+    new MutationObserver(() => {
+      const pw = document.querySelector('.auth-card input[type=password]:not([data-demo])');
+      if (pw) { pw.dataset.demo = '1'; pw.placeholder = 'Demo password: demo-password'; }
+    }).observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
   }
   if (document.body) badge(); else document.addEventListener('DOMContentLoaded', badge);
 

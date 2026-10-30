@@ -1,4 +1,4 @@
-# Zom's HaRM — Hardware and Rack Manager
+# Zom's HaRM: Hardware and Rack Manager
 
 A self-hosted, single-owner web app for tracking your computer and network
 hardware: where it lives, how it's racked, what's inside it, what it runs, how
@@ -9,7 +9,7 @@ which ones fit in which devices.
 
 | Area | Details |
 |---|---|
-| **Locations** | Nested tree: site › building › room › closet… Each room has a page listing its holders plus **loose** devices and parts (piles, desks, the floor), each with a “spot” note. |
+| **Locations** | Nested tree: site > building > room > closet… Each room has a page listing its holders plus **loose** devices and parts (piles, desks, the floor), each with a “spot” note. |
 | **Racks & Storage** | Anything that holds hardware: racks and cabinets (with U heights), shelves, bins, totes, drawers, desks, piles. In forms, the holder list is filtered to the chosen location. Racks get a front/rear elevation view where you click an empty U to add or place a device. |
 | **Devices** | Type, make/model, serial, asset tag, status (Active/Standby/Spare/In Repair/Broken/Retired…), **hooked up** toggle, hostname, OS, CPU/RAM/storage, PSU and power draw, management URL, purchase/vendor/warranty, tags, notes. Rack placement checks bounds and overlaps, including front vs. rear and full-depth gear. |
 | **Slots & bays** | What a device can take: e.g. 12× SAS3 3.5" bays, 8× DDR4 RDIMM, 1× PCIe x16. Shows used/total. |
@@ -26,12 +26,12 @@ which ones fit in which devices.
 | **Home** | One **Needs attention** list (IP conflicts, broken or in-repair devices, warranties ending within 90 days, active gear not hooked up, logins not changed in a year) next to your open tasks, plus rack space, spares and storage. Breakdowns and recent activity are folded under **More**. |
 | **Search** | One box for devices, IPs, MACs, serials, services, parts, holders, locations, and credentials. |
 | **Notes & tasks** | A journal on every device, rack and room: notes, tasks (tick them off), actions taken ("replaced PSU 2") and issues. Type and press Enter. Open tasks appear on the dashboard and the Tasks page; marking a drive failed adds an issue automatically. |
-| **Processors & memory** | CPUs come from the library (it also has common server CPUs: Opteron 4100–4300/6100, Xeon 5500/5600/X3400/E5 v1–v4/Scalable, EPYC) or from specs you enter. Totals are shown, e.g. "2 × Opteron 4234 = 12 cores / 12 threads". Memory is grouped by size and type with totals and a slot map. |
+| **Processors & memory** | CPUs come from the library (it also has common server CPUs: Opteron 4100 to 4300 and 6100, Xeon 5500/5600/X3400/E5 v1 to v4/Scalable, EPYC) or from specs you enter. Totals are shown, e.g. "2 × Opteron 4234 = 12 cores / 12 threads". Memory is grouped by size and type with totals and a slot map. |
 | **Drive bays** | Named bay groups (Front, Rear…) that can accept several connections (SAS/SATA), each with its own RAID/controller label, a tap-to-fill bay map, per-array totals and a RAID calculator. You can mark a single drive in a bay as failed. |
 | **QR labels** | Print stickers with name, model, serial, IP and a QR code that opens the device in HaRM. |
 | **Calm layout** | The sidebar groups everyday pages (Inventory, Network) and folds the rest under **More**. Phones get a bottom bar (Home, Devices, Racks, Tasks). Device pages open with a summary (where it is, IP, management link, one-tap logins) and tabs: Overview, Hardware, Network, Logins. Rarely used actions sit in a **⋯** menu. |
-| **Themes** | **ZomBeatz** (brand blue with orange highlights) in dark (default), light, or matching the system, chosen in Settings › Appearance and saved per device. There's also a hidden theme to find. Logos are in `branding/` (`make-logos.py` rebuilds them). |
-| **Installable app** | Works as a phone app (PWA) once the phone trusts HaRM's certificate (Settings › Phone app walks you through it, and `/harm-ca.crt` downloads the CA). Long-press shortcuts open Scan, Devices and Tasks. |
+| **Themes** | **ZomBeatz** (brand blue with orange highlights) in dark (default), light, or matching the system, chosen in Settings > Appearance and saved per device. There's also a hidden theme to find. Logos are in `branding/` (`make-logos.py` rebuilds them). |
+| **Installable app** | Works as a phone app (PWA) once the phone trusts HaRM's certificate (Settings > Phone app walks you through it, and `/harm-ca.crt` downloads the CA). Long-press shortcuts open Scan, Devices and Tasks. |
 | **Automatic backups** | A daily snapshot goes to `data/backups/` (newest 14 kept; set `HARM_BACKUP_KEEP`, or `HARM_AUTO_BACKUP=0` to turn it off). |
 | **Import specs** | From the device page: **Over SSH** (HaRM connects with a saved vault login or SSH keys, runs the read-only collector with optional sudo, Linux/macOS/Windows OpenSSH; host keys pinned in `data/ssh/known_hosts`), **This computer** (the HaRM server itself), or run a small read-only script yourself and paste its output. It fills in hostname, OS, model, serial, CPU and RAM, and adds each drive, memory stick, GPU and network card (IP and MAC). Already-recorded serials and MACs are skipped. Scripts are in `harm/static/collect/` and are served by HaRM. |
 | **Storage math** | Drive sizes are standardized ("4tb" becomes "4 TB"; tap-to-pick sizes). Every device has a Storage card with drives grouped by size, the raw total, and a usable-capacity calculator for JBOD, RAID 0/1/5/6/10 and RAIDZ1-3. Spare Parts and the dashboard show totals too. |
@@ -50,7 +50,7 @@ Download the release, then follow **[GUIDE.md](GUIDE.md)**, which covers setup, 
 - **Windows:** extract the zip to your user folder and double-click `Install HaRM.cmd`.
 - **Linux:** `./install.sh`
 
-Run it on a server with **Docker** (`docker compose up -d --build`) or as a **Linux service** (`./scripts/install-server.sh`): see GUIDE.md › Run on a server.
+Run it on a server with **Docker** (`docker compose up -d --build`) or as a **Linux service** (`./scripts/install-server.sh`): see GUIDE.md > Run on a server.
 
 Build a release yourself with `python3 scripts/package.py` (writes `dist/zoms-harm-<version>.zip` and `.tar.gz`; your `data/` folder is never included). Tests: `.venv/bin/python tests/smoke.py` (quick) and `tests/full_test.py` (every feature).
 
@@ -82,7 +82,7 @@ Settings come from environment variables:
 ### Parts library
 
 The PC Builder's library is downloaded into your own database on demand from
-**Parts Library › Download library** (about 16 MB; this is the only feature that
+**Parts Library > Download library** (about 16 MB; this is the only feature that
 needs internet access). You can also run it from the command line, or import a
 snapshot you downloaded yourself:
 
@@ -111,9 +111,9 @@ HARM_HOST=0.0.0.0 HARM_TLS=1 ./run.sh
 Then open `https://192.168.1.50:8077` on the phone. To stop the certificate
 warning, install `data/tls/harm-ca.crt` on the phone as a trusted CA:
 
-- **iOS:** Settings › Profile Downloaded › Install, then Settings › General ›
-  About › Certificate Trust Settings.
-- **Android:** Settings › Security › Install a certificate › CA certificate.
+- **iOS:** Settings > Profile Downloaded > Install, then Settings > General >
+  About > Certificate Trust Settings.
+- **Android:** Settings > Security > Install a certificate > CA certificate.
 
 Use "Add to Home Screen" for an app icon. Label text recognition needs
 `tesseract` on the server, and the server-side barcode reader needs `zbarimg`.
@@ -184,7 +184,7 @@ Needs PySide6 (`sudo pacman -S pyside6` on Arch/CachyOS). The panel finds a serv
   frontend never uses `innerHTML`. Every write needs a custom header (CSRF).
   `X-Frame-Options: DENY`, `no-referrer`, and `no-store` on API responses. API
   docs are disabled.
-- **Backups.** Settings › Backup downloads a consistent SQLite snapshot.
+- **Backups.** Settings > Backup downloads a consistent SQLite snapshot.
   Secrets stay encrypted inside it and only your master password or recovery
   code opens them. CSV exports never include secrets, and cells are escaped
   against spreadsheet formula injection.

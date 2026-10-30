@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Zom's HaRM — desktop control panel for the HaRM server (Qt / PySide6).
+"""Zom's HaRM: desktop control panel for the HaRM server (Qt / PySide6).
 
 Start, stop and restart the server, see the addresses phones should use, open HaRM,
 and keep it running from the system tray. The server runs as its own process, so it
@@ -48,7 +48,7 @@ DEFAULTS = {"network": True, "https": True, "port": 8077, "autostart": False, "c
             "tray_hint_shown": False}
 AUTOSTART = Path.home() / ".config" / "autostart" / f"{APP_ID}.desktop"
 
-COLORS = {"bg": "#12151b", "panel": "#1a1e27", "panel2": "#222733", "line": "#2e3442", "text": "#e6e9ef",
+COLORS = {"bg": "#14161c", "panel": "#1a1e27", "panel2": "#222733", "line": "#2e3442", "text": "#e6e9ef",
           "muted": "#9aa3b5", "blue": "#4fb0ec", "blue_dk": "#2580c3", "orange": "#ec6a3f",
           "ok": "#46c2a0", "warn": "#e8b04a", "bad": "#ef6b6b"}
 
@@ -236,6 +236,26 @@ def _no_window() -> dict:
 
 # ---------------------------------------------------------------- UI helpers
 
+_LUCIDE: dict | None = None
+
+
+def lucide(name: str, color: str = "#e6e8ef", size: int = 16) -> QIcon:
+    """A Lucide icon (same set as the web app, from harm/static/icons.js) as a QIcon."""
+    global _LUCIDE
+    from PySide6.QtGui import QPixmap
+    if _LUCIDE is None:
+        try:
+            text = (ROOT / "harm" / "static" / "icons.js").read_text()
+            _LUCIDE = json.loads(text[text.index("{"): text.rindex("}") + 1])
+        except (OSError, ValueError):
+            _LUCIDE = {}
+    parts = "".join(f"<{tag} " + " ".join(f'{k}="{v}"' for k, v in attrs.items()) + "/>" for tag, attrs in _LUCIDE.get(name, []))
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{size * 2}" height="{size * 2}" viewBox="0 0 24 24" fill="none" '
+           f'stroke="{color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{parts}</svg>')
+    pm = QPixmap()
+    pm.loadFromData(svg.encode(), "SVG")
+    return QIcon(pm)
+
 def card(title: str | None = None) -> tuple[QFrame, QVBoxLayout]:
     f = QFrame(objectName="card")
     lay = QVBoxLayout(f)
@@ -286,7 +306,7 @@ class Panel(QWidget):
                        "HARDWARE &amp; RACK MANAGER · SERVER</span>")
         head.addWidget(title, 1)
         root.addLayout(head)
-        self.update_bar = QPushButton("⟳  The control panel was updated. Click to reload it (the server keeps running).",
+        self.update_bar = QPushButton(lucide("rotate-cw", "#0a0c10"), " The control panel was updated. Click to reload it (the server keeps running).",
                                       objectName="primary", clicked=lambda: self.reload_self())
         self.update_bar.hide()
         root.addWidget(self.update_bar)
@@ -306,10 +326,10 @@ class Panel(QWidget):
         row.addLayout(col, 1)
         lay.addLayout(row)
         btns = QHBoxLayout()
-        self.b_start = QPushButton("▶  Start", objectName="primary", clicked=lambda: self.start())
-        self.b_stop = QPushButton("■  Stop", objectName="danger", clicked=lambda: self.stop())
-        self.b_restart = QPushButton("⟳  Restart", clicked=lambda: self.restart())
-        self.b_open = QPushButton("Open HaRM  ↗", objectName="primary", clicked=lambda: self.open_harm())
+        self.b_start = QPushButton(lucide("play", "#0a0c10"), " Start", objectName="primary", clicked=lambda: self.start())
+        self.b_stop = QPushButton(lucide("square", COLORS["bad"]), " Stop", objectName="danger", clicked=lambda: self.stop())
+        self.b_restart = QPushButton(lucide("rotate-cw"), " Restart", clicked=lambda: self.restart())
+        self.b_open = QPushButton(lucide("external-link", "#0a0c10"), " Open HaRM", objectName="primary", clicked=lambda: self.open_harm())
         for b in (self.b_start, self.b_stop, self.b_restart):
             btns.addWidget(b)
         btns.addStretch(1)
@@ -331,7 +351,7 @@ class Panel(QWidget):
         phone = QHBoxLayout(self.phone_row)
         phone.setContentsMargins(0, 0, 0, 0)
         phone.addWidget(QLabel("Setting up a phone? Step-by-step guide with QR codes and a live checklist.", objectName="muted", wordWrap=True), 1)
-        phone.addWidget(QPushButton("📱  Phone setup", objectName="primary", clicked=lambda: self.phone_setup()))
+        phone.addWidget(QPushButton(lucide("smartphone", "#0a0c10"), " Phone setup", objectName="primary", clicked=lambda: self.phone_setup()))
         self.addr_lay.addWidget(self.phone_row)
         self.addr_card = c
         root.addWidget(c)
@@ -369,7 +389,8 @@ class Panel(QWidget):
         root.addWidget(c)
 
         # log
-        self.b_log = QToolButton(objectName="small", text="▸ Server log", checkable=True)
+        self.b_log = QToolButton(objectName="small", text=" Server log", checkable=True, icon=lucide("chevron-right"),
+                                 toolButtonStyle=Qt.ToolButtonTextBesideIcon)
         self.b_log.toggled.connect(self.toggle_log)
         root.addWidget(self.b_log, 0, Qt.AlignLeft)
         self.log = QPlainTextEdit(readOnly=True)
@@ -655,7 +676,7 @@ class Panel(QWidget):
         save_conf(self.conf)
 
     def toggle_log(self, on: bool):
-        self.b_log.setText(("▾" if on else "▸") + " Server log")
+        self.b_log.setIcon(lucide("chevron-down" if on else "chevron-right"))
         self.log.setVisible(on)
         if on:
             self.read_log()
@@ -857,8 +878,8 @@ TROUBLE = {
         "Using Samsung Internet? Use Chrome for HaRM: it handles installed certificates and “Install app” best.",
     ],
     "iphone": [
-        "<b>Clear old HaRM data first:</b> Settings › Apps › Safari › Advanced › Website Data, search <b>192.168</b>, swipe to delete. Remove the HaRM home-screen icon.",
-        "Still a warning in Safari? <b>Settings › General › About › Certificate Trust Settings</b>: the switch for Zom's HaRM local CA must be on. Not listed there? The profile isn't installed yet (step 2).",
+        "<b>Clear old HaRM data first:</b> Settings > Apps > Safari > Advanced > Website Data, search <b>192.168</b>, swipe to delete. Remove the HaRM home-screen icon.",
+        "Still a warning in Safari? <b>Settings > General > About > Certificate Trust Settings</b>: the switch for Zom's HaRM local CA must be on. Not listed there? The profile isn't installed yet (step 2).",
         "Works in Safari but not from the home screen? That means the trust switch is off. Turn it on, then delete and re-add the home-screen icon.",
         "Stopped working after an update or a new certificate? Press Restart above, close Safari completely, and open HaRM again.",
     ],
@@ -871,21 +892,21 @@ COMMON_TROUBLE = [
 
 GUIDES = {
     "android": ("Android", [
-        "Open <b>Settings › Security &amp; privacy › More security &amp; privacy › Encryption &amp; credentials</b>.",
-        "Tap <b>Install a certificate › CA certificate › Install anyway</b>.",
+        "Open <b>Settings > Security &amp; privacy > More security &amp; privacy > Encryption &amp; credentials</b>.",
+        "Tap <b>Install a certificate > CA certificate > Install anyway</b>.",
         "Pick <b>harm-ca.crt</b> from Downloads. Confirm with your PIN or fingerprint.",
     ]),
     "samsung": ("Samsung Galaxy", [
-        "Open <b>Settings › Security and privacy › More security settings</b>.",
-        "Tap <b>Install from device storage › CA certificate › Install anyway</b>.",
+        "Open <b>Settings > Security and privacy > More security settings</b>.",
+        "Tap <b>Install from device storage > CA certificate > Install anyway</b>.",
         "Pick <b>harm-ca.crt</b> from Downloads. Confirm with your PIN or fingerprint.",
     ]),
     "iphone": ("iPhone / iPad", [
-        "Opened HaRM on this device before? First clear it: <b>Settings › Apps › Safari › Advanced › Website Data</b>, "
+        "Opened HaRM on this device before? First clear it: <b>Settings > Apps > Safari > Advanced > Website Data</b>, "
         "search <b>192.168</b> and delete it, and remove any HaRM icon from the home screen.",
         "Scan with the <b>Camera</b> app and open the link in <b>Safari</b>, then tap <b>Allow</b>.",
-        "Open <b>Settings › General › VPN &amp; Device Management</b>, tap <b>Zom's HaRM local CA</b> › <b>Install</b>.",
-        "Open <b>Settings › General › About › Certificate Trust Settings</b> and turn on <b>Zom's HaRM local CA</b>. "
+        "Open <b>Settings > General > VPN &amp; Device Management</b>, tap <b>Zom's HaRM local CA</b> > <b>Install</b>.",
+        "Open <b>Settings > General > About > Certificate Trust Settings</b> and turn on <b>Zom's HaRM local CA</b>. "
         "<b>Don't skip this</b>: without it HaRM only works in Safari, never from the home screen.",
     ]),
 }
@@ -1002,9 +1023,9 @@ class PhoneSetup(QWidget):
         c, lay = card()
         lay.addWidget(QLabel("STEP 4 · ADD IT AS AN APP", objectName="step"))
         lay.addWidget(QLabel(
-            "<b>Android (Chrome):</b> tap <b>⋮ › Add to Home screen › Install</b>. HaRM gets its own icon and opens "
+            "<b>Android (Chrome):</b> tap <b>⋮ > Add to Home screen > Install</b>. HaRM gets its own icon and opens "
             "without the browser bars. Long-press the icon for Scan, Devices and Tasks shortcuts.<br><br>"
-            "<b>iPhone (Safari):</b> tap <b>Share › Add to Home Screen</b>.", wordWrap=True, textFormat=Qt.RichText))
+            "<b>iPhone (Safari):</b> tap <b>Share > Add to Home Screen</b>.", wordWrap=True, textFormat=Qt.RichText))
         root.addWidget(c)
 
         c, lay = card()
@@ -1031,7 +1052,7 @@ class PhoneSetup(QWidget):
         label, steps = GUIDES[key]
         dl = "Scan the code with the Camera app." if key == "iphone" else (
             "Scan the code with the camera. Chrome shows <b>“Your connection is not private”</b> this one time: "
-            "tap <b>Advanced › Proceed</b>, and <b>harm-ca.crt</b> downloads.")
+            "tap <b>Advanced > Proceed</b>, and <b>harm-ca.crt</b> downloads.")
         items = "".join(f"<li>{s}</li>" for s in steps)
         self.guide.setText(f"{dl}<ol style='margin-left:-20px'>{items}</ol>")
         tips = "".join(f"<li>{t}</li>" for t in TROUBLE.get(key, []) + COMMON_TROUBLE)

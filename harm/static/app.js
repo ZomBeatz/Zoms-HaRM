@@ -1,5 +1,5 @@
 'use strict';
-/* Zom's HaRM — Hardware and Rack Manager (frontend).
+/* Zom's HaRM: Hardware and Rack Manager (frontend).
  * No framework, no build step. All DOM is built with h(), which only ever
  * sets textContent / attributes, so stored data can never inject markup. */
 
@@ -35,12 +35,51 @@ function h(tag, attrs, ...kids) {
   return el;
 }
 function append(el, kids) {
+  const plain = NO_ICONS.has(el.tagName);
   for (const k of [kids].flat(Infinity)) {
     if (k == null || k === false) continue;
-    el.append(k instanceof Node ? k : document.createTextNode(String(k)));
+    if (k instanceof Node) { el.append(k); continue; }
+    const text = String(k);
+    if (plain || !ICON_RX.test(text)) { el.append(document.createTextNode(text)); continue; }
+    // Interface symbols (📷 ⚙ ▤ …) are drawn as Lucide icons, per the ZomBeatz design system.
+    for (const part of text.split(ICON_SPLIT)) {
+      if (!part) continue;
+      const name = ICON_FOR[part];
+      if (name === '') continue;
+      el.append(name ? ic(name) : document.createTextNode(part));
+    }
   }
   return el;
 }
+
+/* Lucide icon as an inline SVG (CSP-safe: built from data, never from HTML strings). */
+function ic(name, cls = '') {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  for (const [k, v] of Object.entries({ viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2,
+    'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true', class: `ic ${cls}`.trim() })) svg.setAttribute(k, v);
+  for (const [tag, attrs] of (typeof LUCIDE !== 'undefined' && LUCIDE[name]) || []) {
+    const el = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    svg.append(el);
+  }
+  return svg;
+}
+const ICON_FOR = {
+  '◧': 'house', '☑': 'list-checks', '▤': 'monitor', '⧉': 'layers', '▥': 'server', '◫': 'package', '⚒': 'hammer',
+  '⌗': 'network', '⌖': 'radar', '🔑': 'key-round', '⌂': 'map-pin', '⇄': 'cable', '▦': 'library', '⇪': 'share-2',
+  '📜': 'scroll-text', '⚙': 'settings', '❓': 'circle-help', '☰': 'menu', '📷': 'camera', '📸': 'camera', '🤖': 'bot',
+  '⬇': 'download', '⇩': 'download', '⤓': 'download', '🗑': 'trash-2', '📝': 'notebook-pen', '🖥': 'monitor', '📱': 'smartphone',
+  '📋': 'clipboard', '🏷': 'tag', '↗': 'external-link', '🔌': 'plug', '📌': 'pin', '🌐': 'globe', '❄': 'snowflake',
+  '🔳': 'qr-code', '🔧': 'wrench', '🛠': 'wrench', '🔒': 'lock', '✎': 'pencil', '⚑': 'flag', '★': 'star', '☆': 'star',
+  '▾': 'chevron-down', '▸': 'chevron-right', '🧭': 'compass', '🛡': 'shield', '🖨': 'printer', '📍': 'map-pin',
+  '💾': 'hard-drive', '🎥': 'video', '🌙': 'moon', '☀': 'sun', '◐': 'sun-moon', '⟳': 'rotate-cw', '🧩': 'boxes',
+  '⚠': 'triangle-alert', '▶': 'play', '■': 'square', '⎘': 'copy', '🎉': '',
+};
+const NO_ICONS = new Set(['OPTION', 'TEXTAREA', 'TITLE', 'STYLE', 'SCRIPT', 'CODE', 'PRE']);
+const ICON_KEYS = Object.keys(ICON_FOR).filter(k => k.length <= 2).sort((a, b) => b.length - a.length);
+const ICON_SPLIT = new RegExp(`(${ICON_KEYS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\uFE0F?`, 'u');
+const ICON_RX = new RegExp(ICON_SPLIT.source, 'u');
 const view = () => document.getElementById('view');
 /* replaceChildren that, like h(), flattens arrays and skips null/false. */
 const fillEl = (el, ...kids) => { el.replaceChildren(); return append(el, kids); };
@@ -235,12 +274,12 @@ function locPath(id) {
     parts.unshift(cur.name);
     cur = S.lk.locations.find(l => l.id === cur.parent_id);
   }
-  return parts.join(' › ');
+  return parts.join(' > ');
 }
 function lkLabel(entity, r) {
   if (entity === 'racks') return `${r.name} (${nz(r.kind, r.location_name ? '· ' + r.location_name : '')})`;
   if (entity === 'locations') return locPath(r.id);
-  if (entity === 'services') return `${r.name} — ${r.device_name}`;
+  if (entity === 'services') return `${r.name} (${r.device_name})`;
   if (entity === 'devices') return r.name + (r.device_type ? ` (${r.device_type})` : '');
   if (entity === 'networks') return r.name + (r.vlan_id ? ` · VLAN ${r.vlan_id}` : '') + (r.cidr ? ` · ${r.cidr}` : '');
   return r.name;
@@ -345,7 +384,7 @@ function buildForm(fields, rec = {}) {
       list = opts(f.options || []);
     }
     input.replaceChildren(...[
-      f.required && f.type !== 'fk' ? null : h('option', { value: '' }, f.none || '—'),
+      f.required && f.type !== 'fk' ? null : h('option', { value: '' }, f.none || 'None'),
       ...list.map(o => h('option', { value: o.value }, o.label)),
     ].filter(Boolean));
     input.value = keep == null ? '' : String(keep);
@@ -632,7 +671,7 @@ const FORMS = {
   locations: rec => [
     { k: 'name', label: 'Name', required: true, ph: 'Basement lab' },
     { k: 'kind', label: 'Kind', list: 'location_kinds' },
-    { k: 'parent_id', label: 'Inside of', type: 'fk', entity: 'locations', none: '— top level —',
+    { k: 'parent_id', label: 'Inside of', type: 'fk', entity: 'locations', none: 'Top level',
       filter: l => !rec.id || !locDescendants(rec.id).has(l.id) },
     { k: 'address', label: 'Address / description' },
     { k: 'notes', label: 'Notes', type: 'textarea', wide: true },
@@ -657,17 +696,17 @@ const FORMS = {
     { k: 'manufacturer', label: 'Manufacturer', chips: ['Dell', 'HPE', 'Supermicro', 'Lenovo', 'Cisco', 'Ubiquiti', 'Synology', 'Custom'] },
     { k: 'model', label: 'Model', scan: true, ph: 'PowerEdge R515' },
     { k: 'serial', label: 'Serial number / service tag', scan: true, wide: true, help: 'Dell’s service tag, HPE’s serial, etc.: whatever identifies this exact unit.', showIf: v => !isVirtual(v) },
-    { k: 'host_id', label: 'Runs on (host)', type: 'fk', entity: 'devices', none: '— not set —', showIf: isVirtual,
+    { k: 'host_id', label: 'Runs on (host)', type: 'fk', entity: 'devices', none: 'Not set', showIf: isVirtual,
       help: 'The physical machine (hypervisor) this VM or container runs on.' },
     { k: 'vm_id', label: 'VM / container ID', ph: '100', showIf: isVirtual },
     { k: 'vcpus', label: 'vCPUs', type: 'number', min: 0, showIf: isVirtual, chips: ['1', '2', '4', '8', '16'] },
     { k: 'vm_ram_gb', label: 'Memory (GB)', type: 'number', step: '0.5', min: 0, showIf: isVirtual, chips: ['1', '2', '4', '8', '16', '32'] },
     { k: 'vm_disk_gb', label: 'Disk (GB)', type: 'number', step: '1', min: 0, showIf: isVirtual, chips: ['32', '64', '128', '256', '500'] },
-    { k: 'cluster_id', label: 'Cluster', type: 'fk', entity: 'clusters', none: '— not in a cluster —', adv: true,
+    { k: 'cluster_id', label: 'Cluster', type: 'fk', entity: 'clusters', none: 'Not in a cluster', adv: true,
       help: 'For hypervisor hosts and nodes: which cluster they belong to.' },
     { section: 'Where it lives' },
     { k: 'location_id', label: 'Location (room)', type: 'fk', entity: 'locations' },
-    { k: 'rack_id', label: 'Rack / holder', type: 'fk', entity: 'racks', none: '— none: loose in the room —',
+    { k: 'rack_id', label: 'Rack / holder', type: 'fk', entity: 'racks', none: 'None (loose in the room)',
       scopeBy: ['location_id'], scope: rackInLocation, onChange: rackPicked, showIf: v => !isVirtual(v), clearWhenHidden: true,
       help: 'Only holders in the chosen location are listed.' },
     { k: 'rack_u', label: 'Lowest rack unit (U)', type: 'number', min: 1, showIf: v => rackHasUnits(v.rack_id), clearWhenHidden: true },
@@ -728,11 +767,11 @@ const FORMS = {
     { k: 'serial', label: 'Serial number', scan: true, showIf: v => !v.quantity || +v.quantity <= 1, help: 'For several identical parts, put serials in Notes.' },
     { k: 'catalog_id', type: 'hidden' },
     { section: 'Where it is' },
-    { k: 'device_id', label: 'Installed in device', type: 'fk', entity: 'devices', none: '— not installed (spare) —',
+    { k: 'device_id', label: 'Installed in device', type: 'fk', entity: 'devices', none: 'Not installed (spare)',
       onChange: (input, form) => { const st = form.get('status'); if (input.value && st === 'In Stock') form.set({ status: 'Installed' }); else if (!input.value && st === 'Installed') form.set({ status: 'In Stock' }); } },
     { k: 'status', label: 'Status', type: 'select', options: S.enums.component_statuses, required: true, default: 'In Stock' },
     { k: 'location_id', label: 'Location (room)', type: 'fk', entity: 'locations', showIf: v => !v.device_id },
-    { k: 'rack_id', label: 'Stored in (holder)', type: 'fk', entity: 'racks', none: '— none: loose in the room —',
+    { k: 'rack_id', label: 'Stored in (holder)', type: 'fk', entity: 'racks', none: 'None (loose in the room)',
       scopeBy: ['location_id'], scope: rackInLocation, onChange: rackPicked, showIf: v => !v.device_id, clearWhenHidden: true },
     { k: 'position', label: 'Spot', ph: 'Bin 4, anti-static bag', showIf: v => !v.device_id, clearWhenHidden: true },
     { section: 'Details', adv: true },
@@ -791,7 +830,7 @@ const FORMS = {
       { k: 'wifi_ssid', label: 'Wi-Fi SSID', showIf: v => /wi-?fi|wlan|wireless/i.test(v.kind || '') },
       { section: 'Addressing' },
       { k: 'assignment', label: 'Assignment', type: 'select', options: S.enums.ip_assignments },
-      { k: 'network_id', label: 'Network', type: 'fk', entity: 'networks', none: '— detect from IP —' },
+      { k: 'network_id', label: 'Network', type: 'fk', entity: 'networks', none: 'Detect from IP' },
       { k: 'ip', label: 'IPv4 address', ph: '10.0.10.5 or 10.0.10.5/24', inputmode: 'decimal' },
       { k: 'subnet', label: 'Subnet / prefix', ph: '/24' },
       { k: 'gateway', label: 'Gateway', inputmode: 'decimal' },
@@ -811,7 +850,7 @@ const FORMS = {
     { k: 'purpose', label: 'Purpose', list: 'build_purposes' },
     { k: 'status', label: 'Status', type: 'select', options: S.enums.build_statuses, required: true, default: 'Planning' },
     { k: 'budget', label: 'Budget', type: 'number', step: '0.01', min: 0 },
-    { k: 'device_id', label: 'Linked device (for upgrades / once built)', type: 'fk', entity: 'devices', none: '— none —', wide: true },
+    { k: 'device_id', label: 'Linked device (for upgrades / once built)', type: 'fk', entity: 'devices', none: 'None', wide: true },
     { k: 'notes', label: 'Notes', type: 'textarea', wide: true },
   ],
   services: () => [
@@ -839,7 +878,7 @@ const FORMS = {
   connections: () => [
     { k: 'a_device_id', label: 'From device', type: 'fk', entity: 'devices', required: true },
     { k: 'a_port', label: 'From port', ph: 'eth0, port 12, SFP+ 1' },
-    { k: 'b_device_id', label: 'To device', type: 'fk', entity: 'devices', none: '— untracked endpoint —' },
+    { k: 'b_device_id', label: 'To device', type: 'fk', entity: 'devices', none: 'Untracked endpoint' },
     { k: 'b_port', label: 'To port', showIf: v => !!v.b_device_id },
     { k: 'b_endpoint', label: 'Untracked endpoint', ph: 'ISP modem, wall jack 3B', wide: true, showIf: v => !v.b_device_id, clearWhenHidden: true },
     { k: 'medium', label: 'Medium / cable', list: 'mediums' },
@@ -1214,7 +1253,7 @@ function scanDialog({ title = 'Scan label', targets, onPick, single = false }) {
     h('div', { class: 'scan-buttons' }, liveBtn,
       h('button', { type: 'button', class: canLive ? '' : 'primary', onclick: () => fileInput.click() }, '📸 Take or choose photo'),
       fileInput),
-    canLive ? null : h('p', { class: 'muted small' }, 'Live camera needs HTTPS (see Help › Phone & scanning). Photo mode works everywhere.'),
+    canLive ? null : h('p', { class: 'muted small' }, 'Live camera needs HTTPS (see Help > Phone & scanning). Photo mode works everywhere.'),
     viewfinder, status, results,
     h('div', { class: 'actions' }, h('button', { type: 'button', onclick: () => m.close(true) }, 'Done'))));
   m.onClose = () => { if (stopLive) stopLive(); };
@@ -1346,12 +1385,12 @@ async function revealCredential(c) {
 
 const THEMES = {
   zombeatz: { name: 'ZomBeatz', blurb: 'Brand blue with orange highlights. The default.', icon: '/static/icon.svg',
-    swatches: { dark: ['#12151b', '#4fb0ec', '#ec6a3f'], light: ['#f2f4f7', '#2580c3', '#d9562b'] } },
+    swatches: { dark: ['#14161c', '#4fb0ec', '#ec6a3f'], light: ['#f4f5f8', '#2580c3', '#ec6a3f'] } },
   coolant: { name: 'Coolant', blurb: '❄ You found it. Liquid-cooled servers, mint and cyan.', icon: '/static/icon-coolant.svg', anim: '/static/icon-coolant-anim.svg', hidden: true,
-    swatches: { dark: ['#0b1716', '#5ff7cf', '#22d3ee'], light: ['#eef6f4', '#0e8f7e', '#0891b2'] } },
+    swatches: { dark: ['#14161c', '#5ff7cf', '#22d3ee'], light: ['#f4f5f8', '#0e9f8c', '#0891b2'] } },
 };
 const MODES = [['dark', '🌙 Dark'], ['light', '☀ Light'], ['auto', '◐ Match system']];
-const themeName = () => (document.documentElement.dataset.theme === 'coolant' ? 'coolant' : 'zombeatz');
+const themeName = () => (document.documentElement.dataset.product === 'harm-coolant' ? 'coolant' : 'zombeatz');
 /* The sidebar logo may be animated (Coolant); tab icons and theme previews stay still. */
 const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const themeIcon = () => { const t = THEMES[themeName()]; return t.anim && !calm() ? t.anim : t.icon; };
@@ -1367,9 +1406,9 @@ function applyTheme(theme, mode) {
   mode = mode || p.mode;
   try { localStorage.setItem('harm-theme', theme); localStorage.setItem('harm-mode', mode); } catch { /* not saved */ }
   const r = document.documentElement;
-  r.dataset.theme = theme;
+  r.dataset.product = theme === 'coolant' ? 'harm-coolant' : 'harm';
   r.dataset.modePref = mode;
-  r.dataset.mode = mode === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : mode;
+  r.dataset.theme = mode === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : mode;
   document.querySelectorAll('img.brand-icon').forEach(i => { i.src = themeIcon(); });
   const fav = document.querySelector('link[rel="icon"]');
   if (fav) fav.href = THEMES[theme].icon;
@@ -1394,7 +1433,7 @@ function brandClicks(e) {
   prefSet('harm-coolant', '1');
   const next = themeName() === 'coolant' ? 'zombeatz' : 'coolant';
   applyTheme(next);
-  toast(next === 'coolant' ? (first ? '❄ Coolant unlocked! Switch any time in Settings › Appearance.' : '❄ Coolant on') : 'Back to ZomBeatz');
+  toast(next === 'coolant' ? (first ? '❄ Coolant unlocked! Switch any time in Settings > Appearance.' : '❄ Coolant on') : 'Back to ZomBeatz');
   if (location.hash.startsWith('#/settings')) route();
 }
 
@@ -1402,7 +1441,7 @@ function appearanceCard() {
   const body = h('div');
   const draw = () => {
     const p = themePrefs();
-    const scheme = document.documentElement.dataset.mode;
+    const scheme = document.documentElement.dataset.theme;
     fillEl(body,
       h('div', { class: 'theme-picks' }, Object.entries(THEMES).filter(([, t]) => !t.hidden || coolantUnlocked()).map(([k, t]) => h('button', {
         type: 'button', class: 'theme-pick' + (p.theme === k ? ' on' : ''), onclick: () => { applyTheme(k); draw(); },
@@ -1510,7 +1549,7 @@ const NAV_GROUPS = [
   ['Inventory', [['devices', 'Devices', '▤'], ['virtual', 'Virtual & Clusters', '⧉'], ['racks', 'Racks & Storage', '▥'], ['components', 'Spare Parts', '◫'], ['builds', 'PC Builder', '⚒']]],
   ['Network', [['networks', 'Networks & IPs', '⌗'], ['discover', 'Discover', '⌖'], ['vault', 'Logins (Vault)', '🔑']]],
   ['More', [['locations', 'Locations', '⌂'], ['connections', 'Cables', '⇄'], ['library', 'Parts Library', '▦'],
-    ['export', 'Export & Share', '⇪'], ['audit', 'Audit Log', '☰'], ['settings', 'Settings', '⚙'], ['help', 'Help & Guide', '?']]],
+    ['export', 'Export & Share', '⇪'], ['audit', 'Audit log', '📜'], ['settings', 'Settings', '⚙'], ['help', 'Help & guide', '❓']]],
 ];
 const navLink = ([k, label, ico]) => h('a', { href: `#/${k}`, 'data-nav': k }, h('span', { class: 'ico' }, ico), label);
 function navTree() {
@@ -1714,10 +1753,10 @@ async function viewDashboard() {
     isEmpty ? h('div', { class: 'card onboarding' },
       h('h3', null, 'Getting started'),
       h('ol', null,
-        h('li', null, link('#/locations', 'Add a location'), ' — your house, the basement, the closet.'),
-        h('li', null, link('#/racks', 'Add a rack or holder'), ' — a 42U rack, a wire shelf, a bin of spare drives.'),
+        h('li', null, link('#/locations', 'Add a location'), ': your house, the basement, the closet.'),
+        h('li', null, link('#/racks', 'Add a rack or holder'), ': a 42U rack, a wire shelf, a bin of spare drives.'),
         h('li', null, link('#/devices', 'Add devices'), ', or pull them in from your network with ', link('#/discover', 'Discover'), '.'),
-        h('li', null, link('#/components', 'Catalog spare parts'), ' — drives, RAM, NICs, cables — and see what fits where.')),
+        h('li', null, link('#/components', 'Catalog spare parts'), ' Drives, RAM, NICs, cables and see what fits where.')),
       h('p', null, h('a', { class: 'button primary', href: '#/setup' }, '🧭 Start the setup guide'), ' ', h('span', { class: 'muted small' }, 'Walks you through all of this in about 10 minutes.'))) : null,
     isEmpty ? null : h('div', { class: 'stats' },
       stat(c.devices, `Devices · ${c.connected} hooked up`, '#/devices'),
@@ -1748,7 +1787,7 @@ async function viewDashboard() {
 function auditList(rows) {
   return rows.length ? h('ul', { class: 'plain audit' }, rows.map(a => h('li', null,
     h('span', { class: 'muted mono' }, a.ts.slice(5, 16)), ' ',
-    h('b', null, a.action), ' ', a.entity ? `${a.entity}` : '', a.detail ? h('span', { class: 'muted' }, ` — ${a.detail}`) : ''))) : h('div', { class: 'empty' }, 'No activity yet.');
+    h('b', null, a.action), ' ', a.entity ? `${a.entity}` : '', a.detail ? h('span', { class: 'muted' }, `: ${a.detail}`) : ''))) : h('div', { class: 'empty' }, 'No activity yet.');
 }
 
 // ---------------------------------------------------------------- views: devices
@@ -1876,7 +1915,7 @@ function storageBody(st, legacy, { raid = true } = {}) {
       : h('div', { class: 'empty' }, 'No drives recorded yet. Add them as parts (or use Import specs) and totals appear here.');
   }
   return h('div', null,
-    h('div', { class: 'storage-total' }, h('b', null, st.total || '—'), h('span', { class: 'muted' }, ` raw across ${st.drives} drive${st.drives === 1 ? '' : 's'}`)),
+    h('div', { class: 'storage-total' }, h('b', null, st.total || 'None'), h('span', { class: 'muted' }, ` raw across ${st.drives} drive${st.drives === 1 ? '' : 's'}`)),
     h('ul', { class: 'plain storage-groups' }, st.groups.map(g => h('li', null,
       h('b', null, `${g.count} × ${g.capacity}`), ` ${g.category}`, h('span', { class: 'muted' }, ` = ${fmtGB(g.gb * g.count)}`)))),
     st.unknown ? h('p', { class: 'warn-text small' }, `${st.unknown} drive(s) have no size set.`) : null,
@@ -1957,7 +1996,7 @@ async function viewDevice(id, q) {
   };
 
   const rackInfo = dev.rack_id ? h('span', null, link(`#/racks/${dev.rack_id}`, dev.rack_name),
-    dev.rack_u ? ` — U${dev.rack_u}${dev.u_height > 1 ? '–U' + (dev.rack_u + dev.u_height - 1) : ''}, ${dev.rack_face}${dev.full_depth ? ', full depth' : ''}` : ' (no U position)') : '';
+    dev.rack_u ? `, U${dev.rack_u}${dev.u_height > 1 ? ' to U' + (dev.rack_u + dev.u_height - 1) : ''}, ${dev.rack_face}${dev.full_depth ? ', full depth' : ''}` : ' (no U position)') : '';
 
   const isCpuSlot = sl => !/ddr|dimm|pcie|m\.2|sas|sata|u\.2|ocp|sfp|mezz/i.test(sl.interface) && /lga|am\d|sp\d|c32|g34|str|socket|fm\d/i.test(`${sl.interface} ${sl.label || ''}`);
   const otherSlots = d.slots.filter(sl => !sl.drive_bay && !/ddr|dimm/i.test(sl.interface) && !isCpuSlot(sl));
@@ -2037,11 +2076,11 @@ async function viewDevice(id, q) {
       toggle,
       btn('Edit', actions.edit, 'primary'),
       menuButton('⋯', [
-        ['⇩ Import specs (SSH / script)', actions.importSpecs],
+        ['⇩ Import specs…', actions.importSpecs],
         ['📝 Add note or task', () => { S.tabs.device = 'overview'; back().then(() => document.querySelector('.note-input')?.focus()); }],
         ['⇪ Export / PDF / sell sheet', () => { location.hash = `#/export?ids=${id}`; }],
-        ['🏷 Print label', () => printLabels([id])],
-        ['⧉ Clone (add another like this)', clone],
+        ['🏷 Print label…', () => printLabels([id])],
+        ['⎘ Clone…', clone],
         ['🗑 Delete', deleteDev, 'danger-item'],
       ])),
     facts,
@@ -2149,12 +2188,12 @@ function connTable(rows, after, perspective) {
   return table([
     { label: 'From', get: r => {
       const flip = perspective && r.b_device_id === perspective && r.a_device_id !== perspective;
-      return flip ? h('span', null, r.b_port || '—') : h('span', null, perspective ? '' : link(`#/devices/${r.a_device_id}`, r.a_device_name), perspective ? '' : ' : ', r.a_port || '—');
+      return flip ? h('span', null, r.b_port || 'None') : h('span', null, perspective ? '' : link(`#/devices/${r.a_device_id}`, r.a_device_name), perspective ? '' : ' : ', r.a_port || 'None');
     } },
     { label: 'To', get: r => {
       const flip = perspective && r.b_device_id === perspective && r.a_device_id !== perspective;
-      if (flip) return h('span', null, link(`#/devices/${r.a_device_id}`, r.a_device_name), ' : ', r.a_port || '—');
-      return r.b_device_id ? h('span', null, link(`#/devices/${r.b_device_id}`, r.b_device_name), ' : ', r.b_port || '—') : h('span', { class: 'muted' }, r.b_endpoint || '');
+      if (flip) return h('span', null, link(`#/devices/${r.a_device_id}`, r.a_device_name), ' : ', r.a_port || 'None');
+      return r.b_device_id ? h('span', null, link(`#/devices/${r.b_device_id}`, r.b_device_name), ' : ', r.b_port || 'None') : h('span', { class: 'muted' }, r.b_endpoint || '');
     } },
     { label: 'Medium', get: r => r.medium || '' },
     { label: 'Speed', get: r => r.speed || '' },
@@ -2184,7 +2223,7 @@ function elevation(rack, devices, face, onEmpty) {
   for (let u = 1; u <= H; u++) {
     const lab = h('div', { class: 'u-label' }, u);
     lab.style.gridRow = String(rowOf(u));
-    const slot = h('button', { type: 'button', class: 'u-slot', title: `U${u} — empty`, onclick: () => onEmpty(u, face) });
+    const slot = h('button', { type: 'button', class: 'u-slot', title: `U${u}: empty`, onclick: () => onEmpty(u, face) });
     slot.style.gridRow = String(rowOf(u));
     const lab2 = lab.cloneNode(true);
     lab.style.gridColumn = '1';
@@ -2202,7 +2241,7 @@ function elevation(rack, devices, face, onEmpty) {
     const el = h('a', {
       class: `u-dev ${typeCls}${mine ? '' : ' ghost'}${d.connected ? '' : ' unplugged'} st-${badgeClass(d.status)}`,
       href: `#/devices/${d.id}`,
-      title: `${d.name} — U${d.rack_u}${d.u_height > 1 ? '-' + top : ''}${mine ? '' : ` (mounted ${d.rack_face}, full depth)`}`,
+      title: `${d.name}, U${d.rack_u}${d.u_height > 1 ? '-' + top : ''}${mine ? '' : ` (mounted ${d.rack_face}, full depth)`}`,
     }, h('span', { class: 'u-dev-name' }, d.name), d.u_height > 1 || d.device_type ? h('span', { class: 'u-dev-sub' }, nz(d.device_type, d.model)) : null,
     d.status !== 'Active' ? h('span', { class: 'u-dev-status' }, d.status) : null,
     mine ? taskFlag(d._sum) : null, dot(d.connected));
@@ -2221,12 +2260,12 @@ async function viewRack(id) {
 
   const onEmpty = (u, face) => {
     const cands = S.lk.devices.filter(d => !d.rack_u && d.id);
-    const pick = h('select', null, h('option', { value: '' }, '— choose a device —'),
+    const pick = h('select', null, h('option', { value: '' }, 'Choose a device'),
       cands.map(d => h('option', { value: String(d.id) }, d.name + (d.rack_id ? ` (in ${d.rack_name})` : ''))));
     const height = h('input', { type: 'number', min: 1, value: 1 });
     pick.addEventListener('change', () => { const d = cands.find(x => String(x.id) === pick.value); if (d) height.value = d.u_height || 1; });
     const err = h('div', { class: 'form-error' });
-    const m = modal(`U${u} — ${face}`, h('div', null,
+    const m = modal(`U${u} (${face})`, h('div', null,
       h('p', null, btn(`+ New device at U${u}`, () => {
         m.close();
         editEntity('devices', { rack_id: id, rack_u: u, rack_face: face, u_height: 1, location_id: rack.location_id, status: 'Active', full_depth: true }, back);
@@ -2298,7 +2337,7 @@ async function installDialog(comp, deviceId, after) {
     title: `Install ${nz(comp.manufacturer, comp.model) || comp.category}`,
     fields: [
       { k: 'device_id', label: 'Into device', type: 'select', required: true,
-        options: devs.map(d => ({ value: String(d.id), label: (fitIds.has(d.id) ? `★ ${d.name} — ${fitIds.get(d.id).free} free ${fitIds.get(d.id).slot}` : d.name) })) },
+        options: devs.map(d => ({ value: String(d.id), label: (fitIds.has(d.id) ? `★ ${d.name}: ${fitIds.get(d.id).free} free ${fitIds.get(d.id).slot}` : d.name) })) },
       comp.quantity > 1 ? { k: 'quantity', label: `How many (of ${comp.quantity})`, type: 'number', min: 1, default: 1 } : null,
     ].filter(Boolean),
     rec: { device_id: deviceId ? String(deviceId) : (fits[0] ? String(fits[0].device_id) : ''), quantity: 1 },
@@ -2315,7 +2354,7 @@ function uninstallDialog(comp, after) {
     fields: [
       { k: 'status', label: 'New status', type: 'select', options: S.enums.component_statuses.filter(s => s !== 'Installed'), required: true, default: 'In Stock' },
       { k: 'location_id', label: 'Location (room)', type: 'fk', entity: 'locations' },
-      { k: 'rack_id', label: 'Store in (holder)', type: 'fk', entity: 'racks', none: '— none: loose in the room —', scopeBy: ['location_id'], scope: rackInLocation, onChange: rackPicked },
+      { k: 'rack_id', label: 'Store in (holder)', type: 'fk', entity: 'racks', none: 'None (loose in the room)', scopeBy: ['location_id'], scope: rackInLocation, onChange: rackPicked },
       { k: 'position', label: 'Spot', ph: 'Bin 2' },
     ],
     saveLabel: 'Remove',
@@ -2370,7 +2409,7 @@ async function viewComponents(q) {
     sumBox.replaceChildren(...storageSummaryLine(list, F.tab));
     holder.replaceChildren(table([
       { label: 'Category', get: r => r.category },
-      { label: 'Part', get: r => h('span', null, h('b', null, nz(r.manufacturer, r.model) || '—'), r.part_number ? h('div', { class: 'muted small mono' }, r.part_number) : null) },
+      { label: 'Part', get: r => h('span', null, h('b', null, nz(r.manufacturer, r.model) || 'None'), r.part_number ? h('div', { class: 'muted small mono' }, r.part_number) : null) },
       { label: 'Capacity', get: r => r.capacity || '' },
       { label: 'Interface', get: r => nz(r.interface, r.form_factor) },
       { label: 'Speed', get: r => r.speed || '' },
@@ -2700,7 +2739,7 @@ function rackTile(r) {
 
 function ifaceTable(rows, after) {
   return table([
-    { label: 'Name', get: r => h('span', null, h('b', null, r.name || '—'), r.is_primary ? h('span', { class: 'ip-star', title: 'Main address' }, ' ★') : null,
+    { label: 'Name', get: r => h('span', null, h('b', null, r.name || 'None'), r.is_primary ? h('span', { class: 'ip-star', title: 'Main address' }, ' ★') : null,
       r.kind ? h('div', { class: 'muted small' }, r.kind) : null) },
     { label: 'Network', get: r => r.network_id ? link(`#/networks/${r.network_id}`, r.network_name + (r.network_vlan ? ` · VLAN ${r.network_vlan}` : '')) : '' },
     { label: 'Address', get: r => h('div', null,
@@ -2709,7 +2748,7 @@ function ifaceTable(rows, after) {
       r.assignment ? h('div', null, h('span', { class: 'badge muted' }, r.assignment)) : null) },
     { label: 'MAC', get: r => mono(r.mac) },
     { label: 'VLANs', get: r => /trunk|hybrid/i.test(r.port_mode || '')
-      ? `${r.port_mode}: native ${r.native_vlan || '—'}, tagged ${r.tagged_vlans || '—'}`
+      ? `${r.port_mode}: native ${r.native_vlan || 'None'}, tagged ${r.tagged_vlans || 'None'}`
       : nz(r.port_mode, r.vlan ? `VLAN ${r.vlan}` : '') },
     { label: 'Link', get: r => [r.speed, r.mtu ? `MTU ${r.mtu}` : '', r.poe && r.poe !== 'None' ? r.poe : '', r.link_state, r.parent ? `in ${r.parent}` : ''].filter(Boolean).join(' · ') },
     { label: 'DNS / SSID', get: r => [r.dns_name, r.wifi_ssid ? `SSID ${r.wifi_ssid}` : ''].filter(Boolean).join(' · ') },
@@ -2743,7 +2782,7 @@ async function viewLocation(id) {
       btn('+ Device here', () => editEntity('devices', { location_id: id, status: 'Active' }, back)),
       btn('+ Part here', () => editEntity('components', { location_id: id, status: 'In Stock', quantity: 1 }, back)),
       btn('🤖 AI Assist here', () => aiAssist({ location_id: id })),
-      menuButton('⋯', [['✎ Edit', () => editEntity('locations', loc, back)],
+      menuButton('⋯', [['✎ Edit…', () => editEntity('locations', loc, back)],
         ['🗑 Delete', () => deleteEntity('locations', loc, () => goBackOr('#/locations'), 'Things inside it will keep existing without a location.'), 'danger-item']])),
     loc.notes ? h('div', { class: 'card notes' }, loc.notes) : null,
     journalCard('locations', id, d.notes, back),
@@ -2787,7 +2826,7 @@ async function viewNetworks() {
       { label: 'Purpose', get: r => r.kind || '' },
       { label: 'Subnet', get: r => mono(r.cidr) },
       { label: 'Gateway', get: r => mono(r.gateway) },
-      { label: 'DHCP pool', get: r => r.dhcp_start ? mono(`${r.dhcp_start} – ${r.dhcp_end || '?'}`) : '' },
+      { label: 'DHCP pool', get: r => r.dhcp_start ? mono(`${r.dhcp_start} to ${r.dhcp_end || '?'}`) : '' },
       { label: 'DNS / domain', get: r => [r.dns_servers, r.domain].filter(Boolean).join(' · ') },
       { label: 'IPs used', get: r => r.ip_count, sort: r => r.ip_count },
       { label: '', nosort: true, get: r => rowActions('networks', r) },
@@ -2827,7 +2866,7 @@ async function viewNetwork(id) {
     h('div', { class: 'grid two' },
       card('Details', kv([
         ['Subnet', mono(n.cidr)], ['Gateway', mono(n.gateway)],
-        ['DHCP pool', n.dhcp_start ? mono(`${n.dhcp_start} – ${n.dhcp_end || '?'}`) : ''],
+        ['DHCP pool', n.dhcp_start ? mono(`${n.dhcp_start} to ${n.dhcp_end || '?'}`) : ''],
         ['DNS servers', mono(n.dns_servers)], ['Search domain', n.domain], ['IPv6 prefix', mono(n.ipv6_prefix)],
         ['Wi-Fi SSID', n.ssid], ['Location', n.location_id ? link(`#/locations/${n.location_id}`, locPath(n.location_id)) : ''],
       ])),
@@ -2881,10 +2920,10 @@ const WIZ = [
       const box = (t, s) => h('div', { class: 'wd-box' }, h('b', null, t), h('span', null, s));
       body.append(
         h('h2', null, 'Welcome to HaRM'),
-        h('p', null, 'HaRM keeps track of every piece of hardware you own: where it is, what’s inside it, how it’s networked, and how to log in to it. This guide sets up the basics. Skip anything you like and come back later from Help › Setup guide.'),
+        h('p', null, 'HaRM keeps track of every piece of hardware you own: where it is, what’s inside it, how it’s networked, and how to log in to it. This guide sets up the basics. Skip anything you like and come back later from Help > Setup guide.'),
         h('h4', null, 'How things fit together'),
         h('div', { class: 'wiz-diagram' },
-          box('Location', 'House › Basement'), h('span', { class: 'wd-arrow' }, '→'),
+          box('Location', 'House > Basement'), h('span', { class: 'wd-arrow' }, '→'),
           box('Holder', 'Rack A · Shelf 2 · a pile'), h('span', { class: 'wd-arrow' }, '→'),
           box('Device', 'truenas, sw-core'), h('span', { class: 'wd-arrow' }, '→'),
           box('Parts', 'drives, RAM, NICs')),
@@ -2895,7 +2934,7 @@ const WIZ = [
         h('ul', null,
           h('li', null, 'Only a name is required anywhere. Fill in more whenever you like.'),
           h('li', null, 'Forms never lose your typing. Close one by accident and the changes come back when you reopen it.'),
-          h('li', null, 'On your phone, ', h('b', null, '+ New › Scan'), ' reads serial numbers and part numbers straight off labels.')));
+          h('li', null, 'On your phone, ', h('b', null, '+ New > Scan'), ' reads serial numbers and part numbers straight off labels.')));
     },
   },
   {
@@ -2904,7 +2943,7 @@ const WIZ = [
       const qa = quickAdd('locations', [
         { k: 'name', label: 'Name', required: true, ph: 'Basement' },
         { k: 'kind', label: 'Kind', list: 'location_kinds' },
-        { k: 'parent_id', label: 'Inside of', type: 'fk', entity: 'locations', none: '— top level —' },
+        { k: 'parent_id', label: 'Inside of', type: 'fk', entity: 'locations', none: 'Top level' },
       ], {}, redraw, 'Add location');
       body.append(
         h('h2', null, 'Where is your hardware?'),
@@ -2965,7 +3004,7 @@ const WIZ = [
         { k: 'name', label: 'Name', required: true, ph: 'nas-01, old-thinkpad, sw-core' },
         { k: 'device_type', label: 'Type', list: 'device_types' },
         { k: 'location_id', label: 'Location', type: 'fk', entity: 'locations' },
-        { k: 'rack_id', label: 'Holder', type: 'fk', entity: 'racks', none: '— none: loose in the room —', scopeBy: ['location_id'], scope: rackInLocation, onChange: rackPicked },
+        { k: 'rack_id', label: 'Holder', type: 'fk', entity: 'racks', none: 'None (loose in the room)', scopeBy: ['location_id'], scope: rackInLocation, onChange: rackPicked },
         { k: 'rack_u', label: 'Lowest rack unit (U)', type: 'number', min: 1, showIf: v => rackHasUnits(v.rack_id), clearWhenHidden: true },
         { k: 'u_height', label: 'Height (U)', type: 'number', min: 1, default: 1, showIf: v => rackHasUnits(v.rack_id) },
         { k: 'position', label: 'Spot', ph: 'pile by the door', showIf: v => !rackHasUnits(v.rack_id), clearWhenHidden: true },
@@ -3061,21 +3100,21 @@ function troubleshootingContent() {
     sec('ios', 'iPhone / iPad',
       P('Symptoms: ', B('“Cannot reach the HaRM server”'), ', a warning that the connection isn’t private, it works in Safari but not from the home screen, or the home-screen icon is just a letter.'),
       OL(
-        [B('Clear old HaRM data: '), 'Settings › Apps › Safari › Advanced › Website Data (older versions: Settings › Safari › Advanced › Website Data). Search ', C(location.hostname || '192.168'), ' and swipe to delete. Remove any HaRM icon from the home screen.'],
-        [B('Download the certificate: '), 'on the computer running HaRM, open ', B('📱 Phone setup'), ' in the desktop app and scan the first QR code with the Camera app, or open ', C(`${here}/harm-ca.crt`), ' in Safari. If Safari warns, tap ', B('Show Details › visit this website'), '. Tap ', B('Allow'), ', then Close.'],
-        [B('Install it: '), 'Settings › ', B('Profile Downloaded'), ' (or General › VPN & Device Management) › Zom’s HaRM local CA › ', B('Install'), '.'],
-        [B('Trust it (the step most people miss): '), 'Settings › General › About › ', B('Certificate Trust Settings'), ' › turn on ', B('Zom’s HaRM local CA'), '.'],
+        [B('Clear old HaRM data: '), 'Settings > Apps > Safari > Advanced > Website Data (older versions: Settings > Safari > Advanced > Website Data). Search ', C(location.hostname || '192.168'), ' and swipe to delete. Remove any HaRM icon from the home screen.'],
+        [B('Download the certificate: '), 'on the computer running HaRM, open ', B('📱 Phone setup'), ' in the desktop app and scan the first QR code with the Camera app, or open ', C(`${here}/harm-ca.crt`), ' in Safari. If Safari warns, tap ', B('Show Details > visit this website'), '. Tap ', B('Allow'), ', then Close.'],
+        [B('Install it: '), 'Settings > ', B('Profile Downloaded'), ' (or General > VPN & Device Management) > Zom’s HaRM local CA > ', B('Install'), '.'],
+        [B('Trust it (the step most people miss): '), 'Settings > General > About > ', B('Certificate Trust Settings'), ' > turn on ', B('Zom’s HaRM local CA'), '.'],
         [B('Close Safari completely '), '(swipe it away in the app switcher), then open ', C(here), '. There should be no warning.'],
-        [B('Add to Home Screen: '), 'Share › Add to Home Screen › Add.']),
+        [B('Add to Home Screen: '), 'Share > Add to Home Screen > Add.']),
       UL(
         ['Still a warning at step 5? The trust switch in step 4 isn’t on. Not listed there? Step 3 didn’t finish.'],
         ['Worked before and stopped after HaRM was updated or its certificate re-issued? Update HaRM on the computer (older versions made certificates iPhones reject), restart it, then repeat from step 5.'])),
     sec('android', 'Android',
       OL(
-        ['Open ', B('📱 Phone setup'), ' in the desktop app and scan the first QR code (or open ', C(`${here}/harm-ca.crt`), '). Chrome warns once: Advanced › Proceed. The file downloads.'],
-        ['Settings › Security & privacy › More security & privacy › Encryption & credentials › ', B('Install a certificate › CA certificate'), ' › Install anyway › pick harm-ca.crt. (Samsung: Settings › Security and privacy › More security settings › Install from device storage › CA certificate.)'],
+        ['Open ', B('📱 Phone setup'), ' in the desktop app and scan the first QR code (or open ', C(`${here}/harm-ca.crt`), '). Chrome warns once: Advanced > Proceed. The file downloads.'],
+        ['Settings > Security & privacy > More security & privacy > Encryption & credentials > ', B('Install a certificate > CA certificate'), ' > Install anyway > pick harm-ca.crt. (Samsung: Settings > Security and privacy > More security settings > Install from device storage > CA certificate.)'],
         ['Close Chrome completely (swipe it away), reopen ', C(here), '. There should be a padlock and no warning.'],
-        ['Chrome ⋮ › ', B('Add to Home screen › Install'), '.'])),
+        ['Chrome ⋮ > ', B('Add to Home screen > Install'), '.'])),
     sec('computer', 'Any device',
       UL(
         [B('Same network? '), 'The device must be on the same Wi-Fi/network as the computer running HaRM (not guest Wi-Fi, mobile data or a VPN).'],
@@ -3092,7 +3131,7 @@ const HELP = [
     OL(
       ['Run the ', link('#/setup', 'setup guide'), '. It adds your locations, racks/shelves, networks and first devices.'],
       ['Open a device and fill in what matters: IP addresses, services, logins, drive bays and installed parts.'],
-      ['Catalog spare parts in ', link('#/components', 'Spare Parts'), '. On a phone, use ', B('+ New › Scan'), '.'],
+      ['Catalog spare parts in ', link('#/components', 'Spare Parts'), '. On a phone, use ', B('+ New > Scan'), '.'],
       ['Use the search box at the top for anything: a name, IP, MAC, serial or part number.']),
   ]],
   ['concepts', 'How things fit together', () => [
@@ -3111,7 +3150,7 @@ const HELP = [
   ['piles', 'Gear in piles and random rooms', () => [
     P('Not everything lives in a rack. There are two ways to record loose gear:'),
     OL(
-      [B('Just set the Location'), ' and leave “Rack / holder” empty. The device shows under ', B('Loose devices'), ' on that room’s page (Locations › the room). Use the ', B('Spot'), ' field to say where: “pile by the door”, “under the desk”.'],
+      [B('Just set the Location'), ' and leave “Rack / holder” empty. The device shows under ', B('Loose devices'), ' on that room’s page (Locations > the room). Use the ', B('Spot'), ' field to say where: “pile by the door”, “under the desk”.'],
       [B('Make a Pile, Floor or Tote holder'), ' when you want a particular heap grouped, e.g. “E-waste pile” or “Tote 3”. It gets its own page listing everything in it.']),
     P('When you pick a location in a form, the holder list only shows holders in that location (and rooms inside it). Picking a holder first fills in its location for you.'),
   ]],
@@ -3193,14 +3232,14 @@ const HELP = [
   ]],
   ['hardware', 'CPU, memory and drive bays', () => [
     UL(
-      [B('Processors'), ': ', B('+ Add CPU'), ' to pick a model (the library includes common server CPUs: Opteron 4100–4300/6100, Xeon 5500/5600, X3400, E5 v1–v4, Scalable, EPYC). Cores and threads fill in automatically, with totals for multi-socket servers. Not listed? Enter the specs once and it’s saved for reuse.'],
+      [B('Processors'), ': ', B('+ Add CPU'), ' to pick a model (the library includes common server CPUs: Opteron 4100 to 4300 and 6100, Xeon 5500/5600, X3400, E5 v1 to v4, Scalable, EPYC). Cores and threads fill in automatically, with totals for multi-socket servers. Not listed? Enter the specs once and it’s saved for reuse.'],
       [B('Memory'), ': shows sticks grouped by size and type with the total, plus a slot map if you add memory slots.'],
       [B('Drive bays'), ': add a group per set of bays: a name (Front, Rear…), the size (3.5"/2.5"), how many, what it accepts (tap ', B('SAS'), ' and ', B('SATA'), ' for bays that take both), and its RAID/controller. Two arrays or two cages? Make two groups.'],
       ['Each bay shows as a box. Tap an empty one to add a drive (or fill all empty bays with identical drives); tap a full one to edit it, move it to spares, or mark it failed.'],
       ['Each group shows its own raw total and RAID calculator, and the Storage card adds them all up.']),
   ]],
   ['labels', 'QR labels', () => [
-    P(B('🏷 Label'), ' on a device (or ', B('🔳 QR labels'), ' on Export & Share for several) prints stickers with the name, model, serial, IP and a QR code. Scan the QR with your phone’s camera, or with ', B('+ New › Scan a HaRM label'), ', to jump straight to that device.'),
+    P(B('🏷 Label'), ' on a device (or ', B('🔳 QR labels'), ' on Export & Share for several) prints stickers with the name, model, serial, IP and a QR code. Scan the QR with your phone’s camera, or with ', B('+ New > Scan a HaRM label'), ', to jump straight to that device.'),
     P('Use “Save as PDF” to send them to a label printer, or print on sticker paper.'),
   ]],
   ['backups', 'Automatic backups', () => [
@@ -3251,8 +3290,8 @@ const HELP = [
     P(link('#/discover', 'Discover'), ' finds devices and lets you add them in bulk. Nothing is saved until you press ', B('Apply'), ' or ', B('Import'), '. Pick whichever source fits your setup:'),
     h('dl', { class: 'kv help-kv' },
       h('dt', null, 'Any router'), h('dd', null, 'Works with almost everything (pfSense, OPNsense, OpenWrt, Pi-hole, MikroTik, Omada, ASUS, Netgear, ISP routers…). Copy the router’s list of connected devices or DHCP leases and paste it. HaRM reads IP, MAC and name from tables, lease files, CSV exports and ', C('arp -a'), ' output. The Discover tab lists where each router keeps that list.'),
-      h('dt', null, 'UniFi'), h('dd', null, 'For UniFi OS consoles (UDM, UCG, UDR, UXG, Cloud Key Gen2+) with UniFi Network 9 or newer. Create an API key in the Network app under ', B('Settings › Control Plane › Integrations'), ' (some versions: ', B('Settings › System › Integrations'), ' or ', B('Control Plane › API Access'), '). Brings in UniFi gear, clients with switch port or Wi-Fi, fixed-IP reservations and VLANs. Older self-hosted UniFi Network Server has no API keys: use Any router with its Client Devices list.'),
-      h('dt', null, 'Proxmox'), h('dd', null, 'Imports your cluster, its nodes and every VM and container (vCPU, memory, disk, running or not, and IPs if the QEMU guest agent is installed). Needs a read-only API token: Datacenter › Permissions › API Tokens, with the PVEAuditor role on ', C('/'), '.'),
+      h('dt', null, 'UniFi'), h('dd', null, 'For UniFi OS consoles (UDM, UCG, UDR, UXG, Cloud Key Gen2+) with UniFi Network 9 or newer. Create an API key in the Network app under ', B('Settings > Control Plane > Integrations'), ' (some versions: ', B('Settings > System > Integrations'), ' or ', B('Control Plane > API Access'), '). Brings in UniFi gear, clients with switch port or Wi-Fi, fixed-IP reservations and VLANs. Older self-hosted UniFi Network Server has no API keys: use Any router with its Client Devices list.'),
+      h('dt', null, 'Proxmox'), h('dd', null, 'Imports your cluster, its nodes and every VM and container (vCPU, memory, disk, running or not, and IPs if the QEMU guest agent is installed). Needs a read-only API token: Datacenter > Permissions > API Tokens, with the PVEAuditor role on ', C('/'), '.'),
       h('dt', null, 'Network scan'), h('dd', null, 'Sweeps a private range from the HaRM server: common ports, names and MAC addresses. Good for finding servers and web UIs; phones and locked-down devices may not answer.')),
     h('h4', null, 'Reviewing results'),
     UL(
@@ -3267,7 +3306,7 @@ const HELP = [
       ['On a host’s page, the ', B('VMs'), ' tab lists its guests and how much of the host’s CPU threads and memory they claim (over 100% means overcommitted).'],
       ['A ', B('cluster'), ' groups hosts (Proxmox, Kubernetes, vSphere, Ceph…). Its page shows the nodes, every guest and combined resources. Set a host’s cluster in its form (More details) or with ', B('+ Add node'), '.'],
       [link('#/virtual', 'Virtual & Clusters'), ' lists every cluster, host and VM in one place.'],
-      ['Running Proxmox? ', link('#/discover', 'Discover › Proxmox'), ' imports all of it, and re-importing updates what changed.']),
+      ['Running Proxmox? ', link('#/discover', 'Discover > Proxmox'), ' imports all of it, and re-importing updates what changed.']),
     h('h4', null, 'Main address'),
     P('When a device has several IPs (say, the OS plus an iDRAC), HaRM uses its ', B('main address'), ' for the summary, quick links, logins and lists. Management ports are never picked automatically. To choose, tap the 🌐 address on the device page and pick ', B('☆ Main'), ', or tick ', B('Main address'), ' on the interface.'),
   ]],
@@ -3278,11 +3317,11 @@ const HELP = [
     UL(
       [B('📷 buttons'), ' next to serial number, part number, model, asset tag and MAC fields scan into that one field.'],
       [B('📷 Scan label'), ' at the top of device and part forms reads the whole label and lets you send each value to the right field. Labelled values (“S/N:”, “P/N:”, “MAC”) are pre-matched.'],
-      [B('+ New › New part from label'), ' opens a new part with the scanner already running. Ideal for a stack of drives.'],
+      [B('+ New > New part from label'), ' opens a new part with the scanner already running. Ideal for a stack of drives.'],
       [B('Photo mode'), ' works everywhere. It decodes barcodes and QR codes and, when the server has text recognition installed (tesseract), also reads printed text. Photos are processed and discarded; they are never stored.'],
       [B('Live mode'), ' scans continuously from the camera: hold a barcode inside the box and it’s added to the list (the phone buzzes). Several codes? Aim at each in turn, then choose. ', B('📝 Read text'), ' reads printed text in view. Browsers only allow live mode over HTTPS.'],
       ['Every word read from a label is shown as a chip; tap one to use it if the guesses missed.'],
-      [B('+ New › Scan text or barcode'), ' is a general scanner that just copies what it reads.']),
+      [B('+ New > Scan text or barcode'), ' is a general scanner that just copies what it reads.']),
     h('h4', null, 'Hosting it on a server for your phone'),
     OL(
       ['On the server, run HaRM listening on the network with HTTPS. The simplest built-in way:',
@@ -3494,7 +3533,7 @@ async function partDetail(id) {
       { k: 'condition', label: 'Condition', list: 'component_conditions' },
       { k: 'purchase_price', label: 'Price (each)', type: 'number', step: '0.01', min: 0 },
       { k: 'location_id', label: 'Location (room)', type: 'fk', entity: 'locations' },
-      { k: 'rack_id', label: 'Stored in (holder)', type: 'fk', entity: 'racks', none: '— none: loose in the room —', scopeBy: ['location_id'], scope: rackInLocation, onChange: rackPicked },
+      { k: 'rack_id', label: 'Stored in (holder)', type: 'fk', entity: 'racks', none: 'None (loose in the room)', scopeBy: ['location_id'], scope: rackInLocation, onChange: rackPicked },
       { k: 'position', label: 'Spot' },
     ],
     saveLabel: 'Add to inventory',
@@ -3692,7 +3731,7 @@ async function viewBuild(id) {
       { k: 'name', label: 'Device name', required: true, default: b.name },
       { k: 'device_type', label: 'Type', list: 'device_types', default: BUILD_PURPOSE_DEVICE[b.purpose] || 'Desktop' },
       { k: 'location_id', label: 'Location (room)', type: 'fk', entity: 'locations' },
-      { k: 'rack_id', label: 'Rack / holder', type: 'fk', entity: 'racks', none: '— none: loose in the room —', scopeBy: ['location_id'], scope: rackInLocation, onChange: rackPicked },
+      { k: 'rack_id', label: 'Rack / holder', type: 'fk', entity: 'racks', none: 'None (loose in the room)', scopeBy: ['location_id'], scope: rackInLocation, onChange: rackPicked },
       { k: 'install_inventory', label: 'Install the parts from my inventory into it', type: 'checkbox', default: true, wide: true },
       { k: 'create_components', label: 'Record library/custom parts as installed components', type: 'checkbox', default: true, wide: true },
     ],
@@ -3712,7 +3751,7 @@ async function viewBuild(id) {
       btn('Delete', () => deleteEntity('builds', b, () => goBackOr('#/builds')), 'ghost-danger')),
     h('div', { class: 'build-summary card' },
       statusEl,
-      h('div', { class: 'bs-stat' }, h('b', null, st.est_watts ? `~${st.est_watts} W` : '—'), h('span', null, st.recommended_psu ? `estimated draw · ${st.recommended_psu} W+ PSU` : 'estimated draw')),
+      h('div', { class: 'bs-stat' }, h('b', null, st.est_watts ? `~${st.est_watts} W` : 'None'), h('span', null, st.recommended_psu ? `estimated draw · ${st.recommended_psu} W+ PSU` : 'estimated draw')),
       h('div', { class: 'bs-stat' }, h('b', null, money(st.total_price)), h('span', null, st.to_buy_price ? `${money(st.to_buy_price)} still to buy` : 'total')),
       h('div', { class: 'bs-stat' }, h('b', null, `${st.have}/${d.items.length}`), h('span', null, `parts on hand${st.ordered ? ` · ${st.ordered} ordered` : ''}`)),
       budgetBar ? h('div', { class: 'bs-budget' }, budgetBar) : null),
@@ -3858,7 +3897,7 @@ function importSpecs(dev, d, after) {
       const same = cur === nv;
       const cb = h('input', { type: 'checkbox', checked: !cur });
       devChecks[k] = [cb, nv];
-      rows.push(h('tr', { class: same ? 'muted' : '' }, h('td', null, same ? '✓' : cb), h('td', null, label), h('td', { class: 'muted' }, cur || '—'),
+      rows.push(h('tr', { class: same ? 'muted' : '' }, h('td', null, same ? '✓' : cb), h('td', null, label), h('td', { class: 'muted' }, cur || 'None'),
         h('td', null, same ? 'already set' : h('b', null, nv))));
     }
     const haveSerials = new Set(d.components.map(c => (c.serial || '').toUpperCase()).filter(Boolean));
@@ -3870,7 +3909,7 @@ function importSpecs(dev, d, after) {
       const cb = h('input', { type: 'checkbox', checked: !dup && !p.integrated });
       partChecks.push([cb, p]);
       return h('tr', null, h('td', null, cb),
-        h('td', null, p.category), h('td', null, h('b', null, [p.manufacturer, p.model].filter(Boolean).join(' ') || '—')),
+        h('td', null, p.category), h('td', null, h('b', null, [p.manufacturer, p.model].filter(Boolean).join(' ') || 'None')),
         h('td', null, [p.capacity, p.interface, p.quantity > 1 ? `×${p.quantity}` : null].filter(Boolean).join(' · ')),
         h('td', { class: 'mono small' }, p.serial || ''),
         h('td', { class: 'muted small' }, dup ? 'already recorded' : (p.integrated ? 'built-in graphics' : p.library_match ? '✓ found in parts library' : extraNote || '')));
@@ -4153,7 +4192,7 @@ async function viewExport(q) {
         btn('🖨 Spec sheet (PDF)', async () => { const b = await getBundle(); if (b) printSheet(b, secState, { title: F.title }); }),
         btn('🏷 Sell sheet (PDF)', sellBtn),
         btn('🔳 QR labels', () => { if (!picked.size) return toast('Select at least one device', 'bad'); printLabels([...picked]); })),
-      h('p', { class: 'muted small' }, 'PDFs open your browser’s print dialog: choose “Save as PDF” (on a phone: Share › Print, then pinch out or Save).'),
+      h('p', { class: 'muted small' }, 'PDFs open your browser’s print dialog: choose “Save as PDF” (on a phone: Share > Print, then pinch out or Save).'),
       out)));
   drawList();
 }
@@ -4196,7 +4235,7 @@ function noteItem(n, after, { showTarget = false } = {}) {
     // The checkbox marks it done; everything else is in a small menu.
     h('div', { class: 'note-actions' }, menuButton('⋯', [
       [n.pinned ? '📌 Unpin' : '📌 Pin to top', () => set({ pinned: !n.pinned })],
-      ['✎ Edit', edit],
+      ['✎ Edit…', edit],
       ['🗑 Delete', async () => { if (await confirmBox('Delete this entry?')) { await api('DELETE', `/notes/${n.id}`); after(); } }, 'danger-item'],
     ], 'sm ghost')));
 }
@@ -4498,10 +4537,10 @@ function phoneAppHelp() {
     h('ol', null,
       h('li', null, 'On your phone, open this page and download the certificate: ',
         ca ? h('a', { class: 'button sm', href: '/harm-ca.crt', download: 'harm-ca.crt' }, '⬇ harm-ca.crt') : h('span', { class: 'warn-text' }, 'not created yet: run scripts/make-cert.sh on the server')),
-      h('li', null, h('b', null, 'Android: '), 'Settings › Security & privacy › More security settings › Encryption & credentials › Install a certificate › ', h('b', null, 'CA certificate'), ' › Install anyway › pick harm-ca.crt. (Search Settings for “CA certificate” if the menus differ.)'),
-      h('li', null, h('b', null, 'iPhone: '), 'open the file › Settings › Profile Downloaded › Install, then Settings › General › About › Certificate Trust Settings › turn on “Zom’s HaRM local CA”.'),
+      h('li', null, h('b', null, 'Android: '), 'Settings > Security & privacy > More security settings > Encryption & credentials > Install a certificate > ', h('b', null, 'CA certificate'), ' > Install anyway > pick harm-ca.crt. (Search Settings for “CA certificate” if the menus differ.)'),
+      h('li', null, h('b', null, 'iPhone: '), 'open the file > Settings > Profile Downloaded > Install, then Settings > General > About > Certificate Trust Settings > turn on “Zom’s HaRM local CA”.'),
       h('li', null, 'Close Chrome completely, reopen ', h('code', null, location.origin), '. There should be no warning now.'),
-      h('li', null, 'Chrome menu (⋮) › ', h('b', null, 'Install app'), ' (or “Add to Home screen”). On iPhone: Safari › Share › Add to Home Screen.')),
+      h('li', null, 'Chrome menu (⋮) > ', h('b', null, 'Install app'), ' (or “Add to Home screen”). On iPhone: Safari > Share > Add to Home Screen.')),
     h('p', null, h('button', { type: 'button', class: 'primary install-btn', hidden: !S.installPrompt, onclick: installApp }, '⤓ Install now')),
     h('p', { class: 'muted small' }, `This browser: ${secure ? 'secure connection ✓' : 'NOT trusted yet (step 2 not done)'} · ${standalone ? 'installed' : 'in a browser tab'}. Only install it on your own devices, and keep data/tls/harm-ca.key on the server private: whoever has that key could vouch for other sites to your phone. Long-press the app icon for shortcuts (Scan a part, Devices, Tasks).`)));
 }
@@ -4587,7 +4626,7 @@ async function viewDiscover() {
   const cidr = h('input', { value: cfg.subnets[0]?.cidr || cfg.networks[0]?.cidr || '', placeholder: '192.168.1.0/24', class: 'mono' });
   const sStatus = h('div', { class: 'muted small' });
   const sBtn = btn('Scan', async () => {
-    sBtn.disabled = true; fillEl(sStatus, 'Scanning… this takes 10–30 seconds.');
+    sBtn.disabled = true; fillEl(sStatus, 'Scanning… this takes 10 to 30 seconds.');
     try {
       const out = await api('POST', '/discover/scan', { cidr: cidr.value });
       fillEl(sStatus, `${out.hosts.length} hosts answered out of ${out.scanned} addresses (${out.elapsed}s).`);
@@ -4650,7 +4689,7 @@ async function viewDiscover() {
 
   function actionSelect(x) {
     const k = keyOf(x);
-    const opts = [['', x.match ? '— already in HaRM —' : 'Skip'], ['new', '+ Add as new device']];
+    const opts = [['', x.match ? 'Already in HaRM' : 'Skip'], ['new', '+ Add as new device']];
     if (x.match) opts.push([`link:${x.match.device_id}`, `Update “${x.match.device_name}”`]);
     for (const d of S.lk.devices) if (!x.match || d.id !== x.match.device_id) opts.push([`link:${d.id}`, `Attach to ${d.name}`]);
     const sel = h('select', { class: 'sm', onchange: () => { st.choice[k] = sel.value; draw(); } },
@@ -4711,16 +4750,16 @@ async function viewDiscover() {
       { label: 'VLAN', get: n => n.vlan_id ?? '' },
       { label: 'Subnet', get: n => mono(n.cidr) },
       { label: 'Gateway', get: n => mono(n.gateway) },
-      { label: 'DHCP pool', get: n => n.dhcp_start ? mono(`${n.dhcp_start} – ${n.dhcp_end}`) : '' },
+      { label: 'DHCP pool', get: n => n.dhcp_start ? mono(`${n.dhcp_start} to ${n.dhcp_end}`) : '' },
       { label: 'In HaRM', get: n => n.exists ? badge('Already added') : h('span', { class: 'badge info' }, 'New') },
     ], st.networks)) : null;
     const chip = (k, label) => h('button', { type: 'button', class: 'chip' + (st.filter === k ? ' on' : ''), onclick: () => { st.filter = k; draw(); } }, `${label} (${g[k].length})`);
     const hostTable = table([
-      { label: 'Name', get: x => h('div', null, h('b', null, x.name || x.hostname || '—'),
+      { label: 'Name', get: x => h('div', null, h('b', null, x.name || x.hostname || 'None'),
         x.hostname && x.hostname !== x.name ? h('div', { class: 'muted small mono' }, x.hostname) : null,
         x.model ? h('div', { class: 'muted small' }, x.model) : null,
         x.bmc && !x.match ? h('div', { class: 'warn-text small' }, 'Management port (iDRAC/iLO): attach it to its server') : null) },
-      { label: 'IP', sort: x => x.ip ? x.ip.split('.').map(n => n.padStart(3, '0')).join('.') : '~', get: x => h('div', null, mono(x.ip || '—'),
+      { label: 'IP', sort: x => x.ip ? x.ip.split('.').map(n => n.padStart(3, '0')).join('.') : '~', get: x => h('div', null, mono(x.ip || 'None'),
         x.match?.ip_changed ? h('div', { class: 'warn-text small' }, `HaRM has ${x.match.iface_ip}`) : null,
         x.fixed_ip ? h('div', { class: 'muted small' }, 'reserved') : null) },
       { label: 'MAC / vendor', get: x => h('div', null, mono(x.mac || ''), x.vendor ? h('div', { class: 'muted small' }, x.vendor) : null) },
@@ -4766,7 +4805,7 @@ async function viewDiscover() {
         field('API key', uKey, h('span', null, 'Needs a UniFi OS console (UDM, UCG, UDR, UXG, Cloud Key Gen2+) with UniFi Network 9 or newer. ', helpLink('discover', 'Where do I get one?'))),
         h('details', { class: 'trouble' }, h('summary', null, 'How to create the API key'),
           OL(['Sign in to your console’s UniFi Network app with an admin account.'],
-            ['Open ', B('Settings › Control Plane › Integrations'), '. (Depending on the version it may be ', B('Settings › System › Integrations'), ' or ', B('Control Plane › API Access'), '.)'],
+            ['Open ', B('Settings > Control Plane > Integrations'), '. (Depending on the version it may be ', B('Settings > System > Integrations'), ' or ', B('Control Plane > API Access'), '.)'],
             [B('Create API Key'), ', give it a name like “HaRM”, and pick “Never expires” or remember to renew it.'],
             ['Copy the key right away: UniFi only shows it once.']),
           P(h('span', { class: 'muted small' }, 'Older self-hosted “UniFi Network Server” installs don’t support API keys: use ', B('Any router'), ' with the client list copied from its Client Devices page instead.'))),
@@ -4779,9 +4818,9 @@ async function viewDiscover() {
         field('Proxmox address', pUrl, 'Any node, e.g. https://192.168.1.20:8006'),
         h('div', { class: 'grid two' }, field('Token ID', pTok, 'user@realm!name, e.g. root@pam!harm'), field('Token secret', pSec)),
         h('details', { class: 'trouble' }, h('summary', null, 'How to create a read-only token'),
-          OL(['In the Proxmox web UI: ', B('Datacenter › Permissions › API Tokens › Add'), '. Pick a user (e.g. root@pam), name the token “harm”.'],
+          OL(['In the Proxmox web UI: ', B('Datacenter > Permissions > API Tokens > Add'), '. Pick a user (e.g. root@pam), name the token “harm”.'],
             ['Untick ', B('Privilege Separation'), ' (or give the token its own permission in the next step).'],
-            [B('Datacenter › Permissions › Add › API Token Permission'), ': path ', C('/'), ', role ', B('PVEAuditor'), ' (read-only).'],
+            [B('Datacenter > Permissions > Add > API Token Permission'), ': path ', C('/'), ', role ', B('PVEAuditor'), ' (read-only).'],
             ['Copy the secret: Proxmox only shows it once.'])),
         h('label', { class: 'check inline-check' }, pVerify, 'Verify certificate (off for Proxmox’s self-signed certificate)'),
         h('div', { class: 'inline' }, pBtn, pStatus))), pxResults]],
@@ -4821,7 +4860,7 @@ function aiAssistDialog(preset = {}) {
   const rackSel = h('select', { id: 'ai-rack' });
   const fillRacks = () => {
     const lid = +locSel.value || null;
-    fillEl(rackSel, opt('', '— loose in the room —'), S.lk.racks.filter(r => !lid || locDescendants(lid).has(r.location_id)).map(r => opt(r.id, r.name)));
+    fillEl(rackSel, opt('', 'Loose in the room'), S.lk.racks.filter(r => !lid || locDescendants(lid).has(r.location_id)).map(r => opt(r.id, r.name)));
     rackSel.value = st.rack_id && [...rackSel.options].some(o => o.value === String(st.rack_id)) ? st.rack_id : '';
   };
   locSel.value = st.location_id || '';
@@ -4891,7 +4930,7 @@ function aiAssistDialog(preset = {}) {
     fillEl(direct, h('div', { class: 'inline' }, btn('📷 Add photos', () => fileIn.click()), askBtn, askStatus), fileIn, thumbs,
       h('p', { class: 'muted small' }, `Photos go to ${S.aiConf.label}. Up to 10 at a time; they’re shrunk first to keep it quick and cheap.`));
   } else {
-    fillEl(direct, h('p', { class: 'muted small' }, 'Want to skip the copy & paste? Pick an AI service in ', link('#/settings', 'Settings › AI Assist'), ' to send photos straight from here.'));
+    fillEl(direct, h('p', { class: 'muted small' }, 'Want to skip the copy & paste? Pick an AI service in ', link('#/settings', 'Settings > AI Assist'), ' to send photos straight from here.'));
   }
 
   const read = async () => {
@@ -4921,11 +4960,11 @@ function aiAssistDialog(preset = {}) {
       tbody.append(h('tr', { class: it.duplicate ? 'dup' : '' },
         h('td', null, cb),
         h('td', null, h('span', { class: 'badge muted' }, it.kind === 'device' ? 'Device' : 'Part'), ' ', conf(it.confidence)),
-        h('td', { class: 'ai-name' }, name, h('div', { class: 'muted small' }, specs || '—'),
+        h('td', { class: 'ai-name' }, name, h('div', { class: 'muted small' }, specs || 'None'),
           it.duplicate ? h('div', { class: 'warn-text small' }, 'Already in HaRM: ', link(it.duplicate.link, it.duplicate.name)) : null),
         h('td', null, h('div', { class: 'inline nowrap' }, serial, scan), it.part_number ? h('div', { class: 'muted small mono' }, `P/N ${it.part_number}`) : null),
         h('td', null, qty),
-        h('td', { class: 'small' }, value || h('span', { class: 'muted' }, '—'), it.sources.length ? h('div', { class: 'muted' }, `${it.sources.length} source${it.sources.length > 1 ? 's' : ''}`) : null),
+        h('td', { class: 'small' }, value || h('span', { class: 'muted' }, 'None'), it.sources.length ? h('div', { class: 'muted' }, `${it.sources.length} source${it.sources.length > 1 ? 's' : ''}`) : null),
         h('td', { class: 'small' }, it.todo.length ? h('span', { title: it.todo.join('\n') }, `☐ ${it.todo.length}`) : '')));
     }
     const tasksBox = h('input', { type: 'checkbox', checked: true });
@@ -4978,7 +5017,7 @@ function aiAssistDialog(preset = {}) {
   if (st.reply.trim()) read();
 }
 
-/* Settings › AI Assist: which AI service the built-in photo mode uses. */
+/* Settings > AI Assist: which AI service the built-in photo mode uses. */
 function aiSettingsCard() {
   const body = h('div', null, h('div', { class: 'muted' }, 'Loading…'));
   GET('/ai/config').then(cfg => {
@@ -5031,12 +5070,12 @@ function aiSettingsCard() {
 /* Where to find the client list on common routers. */
 function routerHelp() {
   const rows = [
-    ['pfSense', 'Status › DHCP Leases (select the table and copy). Or the file /var/dhcpd/var/db/dhcpd.leases.'],
-    ['OPNsense', 'Services › ISC DHCPv4 › Leases (or Services › Dnsmasq / Kea › Leases on newer versions).'],
-    ['OpenWrt', 'Status › Overview › Active DHCP Leases, or the file /tmp/dhcp.leases.'],
-    ['Pi-hole', 'Settings › DHCP › Currently active DHCP leases, or /etc/pihole/dhcp.leases.'],
-    ['MikroTik', 'IP › DHCP Server › Leases (select all, copy), or run /ip dhcp-server lease print.'],
-    ['TP-Link Omada', 'Clients page › Export (CSV), then paste the file’s contents.'],
+    ['pfSense', 'Status > DHCP Leases (select the table and copy). Or the file /var/dhcpd/var/db/dhcpd.leases.'],
+    ['OPNsense', 'Services > ISC DHCPv4 > Leases (or Services > Dnsmasq / Kea > Leases on newer versions).'],
+    ['OpenWrt', 'Status > Overview > Active DHCP Leases, or the file /tmp/dhcp.leases.'],
+    ['Pi-hole', 'Settings > DHCP > Currently active DHCP leases, or /etc/pihole/dhcp.leases.'],
+    ['MikroTik', 'IP > DHCP Server > Leases (select all, copy), or run /ip dhcp-server lease print.'],
+    ['TP-Link Omada', 'Clients page > Export (CSV), then paste the file’s contents.'],
     ['UniFi without API keys', 'Client Devices (select the table and copy), or Export.'],
     ['Home routers (Netgear, ASUS, TP-Link, Eero, ISP boxes…)', 'Look for “Attached devices”, “Client list”, “DHCP clients” or “Connected devices” and copy the table.'],
     ['No router access?', 'On a Windows PC run ', C('arp -a'), ' (or ', C('ip neigh'), ' on Linux) and paste the output. It only lists devices that PC has talked to recently.'],
@@ -5170,7 +5209,7 @@ async function viewVirtual() {
     card('VMs & containers', h('div', null, h('div', { class: 'toolbar' }, q), holder)),
     !guests.length && !clusters.length ? h('div', { class: 'card onboarding' }, h('h3', null, 'Track your virtual machines'),
       P('Add each VM or container as a device that ', B('runs on'), ' a host, with its ID, vCPUs, memory and disk. Hosts then show what’s running on them and how much of their CPU and memory is claimed. Group hosts into a ', B('cluster'), ' (Proxmox, Kubernetes, vSphere…) to see everything together.'),
-      P('Running Proxmox? ', link('#/discover', 'Discover › Proxmox'), ' imports the cluster, its nodes and every VM and container in one go.')) : null);
+      P('Running Proxmox? ', link('#/discover', 'Discover > Proxmox'), ' imports the cluster, its nodes and every VM and container in one go.')) : null);
   draw();
 }
 

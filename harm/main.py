@@ -1,4 +1,4 @@
-"""Zom's HaRM — Hardware and Rack Manager. FastAPI application."""
+"""Zom's HaRM: Hardware and Rack Manager. FastAPI application."""
 
 import asyncio
 import csv
@@ -436,7 +436,7 @@ def _component_rules(conn, data: dict, existing: dict | None) -> None:
             start = merged["bay"]
             if start < first or start + q - 1 > first + sl["total"] - 1:
                 raise HTTPException(400, f"Bay {start} is outside {sl['label'] or sl['interface']} "
-                                         f"(bays {first}–{first + sl['total'] - 1})")
+                                         f"(bays {first} to {first + sl["total"] - 1})")
             for o in conn.execute("SELECT id, bay, quantity FROM components WHERE slot_id = ? AND bay IS NOT NULL "
                                   "AND id != ?", (sl["id"], (existing or {}).get("id", -1))).fetchall():
                 if o["bay"] <= start + q - 1 and start <= o["bay"] + o["quantity"] - 1:
@@ -1341,7 +1341,7 @@ def _location_path(conn, lid) -> str | None:
             break
         parts.insert(0, r["name"])
         lid, guard = r["parent_id"], guard + 1
-    return " › ".join(parts) or None
+    return " > ".join(parts) or None
 
 
 @app.get("/api/components/{cid}/fits")
@@ -2066,7 +2066,7 @@ def _where_text(conn, location_id, rack_id, position) -> str:
             bits.append(r["name"])
     if position:
         bits.append(str(position))
-    return " › ".join(b for b in bits if b)
+    return " > ".join(b for b in bits if b)
 
 
 @app.post("/api/ai/prompt")

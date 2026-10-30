@@ -1,3 +1,3 @@
-"""Zom's HaRM — Hardware and Rack Manager."""
+"""Zom's HaRM: Hardware and Rack Manager."""
 
-__version__ = "1.1.0"
+__version__ = "0.3.1"

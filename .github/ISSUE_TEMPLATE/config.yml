@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Guide and troubleshooting
+    url: https://docs.zombeatzmedia.com/harm/troubleshooting
+    about: Answers to the most common problems and questions.
+  - name: Report a security problem privately
+    url: https://github.com/ZomBeatz/Zoms-HaRM/blob/main/SECURITY.md
+    about: Please don't open a public issue for security problems. This page says how to tell us privately.
+  - name: Email us instead
+    url: https://docs.zombeatzmedia.com/harm/contact
+    about: Rather not use GitHub? Email info@zombeatzmedia.com, or use Send feedback in HaRM (Settings > About).

@@ -1,0 +1,25 @@
+# Runs HaRM's tests on every push and pull request, so a problem shows up the day it's made
+# (not only when building installers).
+name: Tests
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", "branding/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Quick check
+        run: python tests/smoke.py
+      - name: Full tests
+        run: python tests/full_test.py

@@ -1,0 +1,23 @@
+# GitHub opens a pull request when something HaRM uses has a newer version. The tests run on each
+# one, so merge it when they pass. Python packages weekly (security fixes matter for a password
+# vault); the GitHub actions and the Docker base image monthly.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly

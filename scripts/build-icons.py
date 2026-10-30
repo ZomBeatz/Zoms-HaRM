@@ -16,7 +16,8 @@ share-2 scroll-text settings circle-help camera bot download trash-2 notebook-pe
 upload external-link plug pin globe snowflake menu qr-code wrench lock pencil flag star chevron-down chevron-right
 compass shield printer hard-drive video moon sun sun-moon arrow-left-right undo-2 boxes play square rotate-cw plus
 search x check triangle-alert circle-check info copy log-out sparkles scan-line file-down list cpu memory-stick
-router wifi cloud-download folder-input eye eye-off link refresh-cw circle sliders-horizontal message-square keyboard""".split()
+router wifi cloud-download folder-input eye eye-off link refresh-cw circle sliders-horizontal message-square keyboard
+activity zap power maximize""".split()
 
 
 def parse_all(names):

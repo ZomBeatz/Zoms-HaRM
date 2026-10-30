@@ -124,11 +124,24 @@ def seed(api: Api) -> None:
     P("/services", {"device_id": pi["id"], "name": "Pi-hole", "protocol": "HTTP", "port": 80, "url": "http://192.168.10.53/admin", "status": "Running"})
 
     # Logins (demo passwords)
-    P("/credentials", {"label": "iDRAC", "kind": "Web UI", "username": "root", "password": "demo-idrac-pass", "device_id": r730["id"], "last_rotated": "2026-02-10"})
-    P("/credentials", {"label": "Proxmox root", "kind": "SSH", "username": "root", "password": "demo-pve-pass", "device_id": r730["id"]})
-    P("/credentials", {"label": "iLO", "kind": "Web UI", "username": "Administrator", "password": "demo-ilo-pass", "device_id": dl380["id"], "last_rotated": "2024-01-05"})
-    P("/credentials", {"label": "DSM admin", "kind": "Web UI", "username": "alex", "password": "demo-dsm-pass", "device_id": nas["id"],
-                       "totp_secret": "JBSWY3DPEHPK3PXP"})
+    idrac = P("/credentials", {"label": "iDRAC", "kind": "Web UI", "username": "root", "password": "demo-idrac-pass", "device_id": r730["id"], "last_rotated": "2026-02-10"})
+    pve_root = P("/credentials", {"label": "Proxmox root", "kind": "SSH", "username": "root", "password": "demo-pve-pass", "device_id": r730["id"]})
+    ilo = P("/credentials", {"label": "iLO", "kind": "Web UI", "username": "Administrator", "password": "demo-ilo-pass", "device_id": dl380["id"], "last_rotated": "2024-01-05"})
+    dsm = P("/credentials", {"label": "DSM admin", "kind": "Web UI", "username": "alex", "password": "demo-dsm-pass", "device_id": nas["id"],
+                             "totp_secret": "JBSWY3DPEHPK3PXP"})
+
+    # One-click actions
+    P("/actions", {"name": "Quiet the fans", "device_id": dl380["id"], "hosts": "10.30.0.11", "credential_id": ilo["id"], "mode": "lines",
+                   "legacy_ssh": True, "pinned": True,
+                   "command": "# iLO 4 with the fan-control firmware. fan p <fan> max <speed, 0 to 255>.\n"
+                              + "\n".join(f"fan p {n} max 60" for n in range(6)),
+                   "notes": "Run after a reboot: the fans start at full speed."})
+    P("/actions", {"name": "Power on", "device_id": r730["id"], "hosts": "10.30.0.10", "credential_id": idrac["id"], "mode": "lines",
+                   "legacy_ssh": True, "pinned": True, "command": "racadm serveraction powerup"})
+    P("/actions", {"name": "Update packages", "device_id": r730["id"], "credential_id": pve_root["id"], "mode": "script", "confirm": True,
+                   "pinned": False, "command": "export DEBIAN_FRONTEND=noninteractive\napt-get update\napt-get -y dist-upgrade"})
+    P("/actions", {"name": "Uptime and disk space", "device_id": nas["id"], "credential_id": dsm["id"], "mode": "script", "sudo": False,
+                   "pinned": True, "command": "uptime\ndf -h /volume1"})
     P("/credentials", {"label": "Home Wi-Fi", "kind": "Wi-Fi PSK", "password": "demo-wifi-pass"})
 
     # Hardware inside pve1: CPUs from the library, memory, a drive bay group
@@ -206,6 +219,38 @@ def seed(api: Api) -> None:
         P("/build_items", {"build_id": b["id"], "category": cat, "name": name, "price": price, "acquire": acquire})
 
 
+def seed_status(db_path: Path) -> None:
+    """A believable last day for the Status page: pve2 dropped off for a while overnight, and
+    Alex's desktop is asleep. Written straight into the database, since the demo never checks
+    for real (its made-up addresses could belong to real devices on your network)."""
+    os.environ["HARM_DB"] = str(db_path)
+    sys.path.insert(0, str(ROOT))
+    from datetime import datetime, timedelta, timezone
+    from harm import monitor
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    ts = lambda **kw: (now - timedelta(**kw)).strftime("%Y-%m-%d %H:%M:%S")
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    latency = {"192.168.10.1": 0.4, "192.168.10.2": 0.7, "10.20.0.10": 0.3, "10.30.0.10": 1.2, "10.20.0.11": 0.4,
+               "10.30.0.11": 2.1, "10.20.0.20": 0.5, "192.168.10.53": 1.8, "10.30.0.5": 3.4}
+    history = {  # address: [(state, how long ago)], oldest first
+        "10.20.0.11": [("up", {"days": 3}), ("down", {"hours": 21, "minutes": 10}), ("up", {"hours": 20, "minutes": 25})],
+        "192.168.10.50": [("down", {"days": 1, "hours": 6}), ("up", {"hours": 11}), ("down", {"hours": 1, "minutes": 45})],
+    }
+    for did, t in monitor.targets(conn).items():
+        for addr in t["addresses"]:
+            events = history.get(addr, [("up", {"days": 3})])
+            for state, ago in events:
+                conn.execute("INSERT INTO status_events (device_id, address, state, at) VALUES (?,?,?,?)", (did, addr, state, ts(**ago)))
+            state, ago = events[-1]
+            conn.execute("INSERT OR REPLACE INTO device_status (device_id, address, state, latency_ms, method, checked_at, changed_at) "
+                         "VALUES (?,?,?,?,?,?,?)", (did, addr, state, latency.get(addr, 0.9) if state == "up" else None,
+                                                    ("port 8006" if addr.startswith("10.20.0.1") else "port 443") if state == "up" else None,
+                                                    ts(minutes=1), ts(**ago)))
+    conn.commit()
+    conn.close()
+
+
 def main():
     ap = argparse.ArgumentParser(description="Start Zom's HaRM with made-up demo data.")
     ap.add_argument("--port", type=int, default=8099)
@@ -221,7 +266,8 @@ def main():
             raise SystemExit(f"Port {args.port} is already in use. Pick another with --port.")
     tmp = tempfile.mkdtemp(prefix="harm-demo-")
     py = ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    env = {**os.environ, "HARM_DB": str(Path(tmp) / "harm.db"), "HARM_AUTO_BACKUP": "0", "HARM_IDLE_MINUTES": "720"}
+    # HARM_DEMO=1: the demo never checks, wakes or runs actions on its made-up addresses for real.
+    env = {**os.environ, "HARM_DB": str(Path(tmp) / "harm.db"), "HARM_AUTO_BACKUP": "0", "HARM_IDLE_MINUTES": "720", "HARM_DEMO": "1"}
     server = subprocess.Popen([str(py if py.exists() else sys.executable), "-m", "uvicorn", "harm.main:app", "--host", "127.0.0.1",
                                "--port", str(args.port)], cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     base = f"http://127.0.0.1:{args.port}"
@@ -233,6 +279,7 @@ def main():
             except Exception:
                 time.sleep(0.2)
         seed(Api(base))
+        seed_status(Path(tmp) / "harm.db")
         if args.save:
             return
         print(f"Demo running at {base}  ·  password: {PASSWORD}  ·  Ctrl+C to stop", flush=True)

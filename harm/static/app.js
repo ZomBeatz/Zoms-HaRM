@@ -13,7 +13,7 @@ const LOOKUPS = ['locations', 'racks', 'devices', 'services', 'networks', 'clust
 const LABELS = {
   locations: 'Location', racks: 'Holder', devices: 'Device', device_slots: 'Slot / bay',
   components: 'Component', interfaces: 'Interface', services: 'Service',
-  credentials: 'Credential', connections: 'Connection', networks: 'Network', clusters: 'Cluster', builds: 'Build', build_items: 'Build part',
+  credentials: 'Credential', connections: 'Connection', networks: 'Network', clusters: 'Cluster', builds: 'Build', build_items: 'Build part', actions: 'Action',
 };
 
 // ---------------------------------------------------------------- DOM helpers
@@ -74,7 +74,7 @@ const ICON_FOR = {
   '🔳': 'qr-code', '🔧': 'wrench', '🛠': 'wrench', '🔒': 'lock', '✎': 'pencil', '⚑': 'flag', '★': 'star', '☆': 'star',
   '▾': 'chevron-down', '▸': 'chevron-right', '🧭': 'compass', '🛡': 'shield', '🖨': 'printer', '📍': 'map-pin',
   '💾': 'hard-drive', '🎥': 'video', '🌙': 'moon', '☀': 'sun', '◐': 'sun-moon', '⟳': 'rotate-cw', '🧩': 'boxes',
-  '⚠': 'triangle-alert', '▶': 'play', '■': 'square', '⎘': 'copy', '💬': 'message-square', '⌨': 'keyboard', '🎉': '',
+  '⚠': 'triangle-alert', '▶': 'play', '■': 'square', '⎘': 'copy', '💬': 'message-square', '⌨': 'keyboard', '📶': 'activity', '⚡': 'zap', '⏻': 'power', '⛶': 'maximize', '🎉': '',
 };
 const NO_ICONS = new Set(['OPTION', 'TEXTAREA', 'TITLE', 'STYLE', 'SCRIPT', 'CODE', 'PRE']);
 const ICON_KEYS = Object.keys(ICON_FOR).filter(k => k.length <= 2).sort((a, b) => b.length - a.length);
@@ -284,6 +284,7 @@ function lkLabel(entity, r) {
   if (entity === 'services') return `${r.name} (${r.device_name})`;
   if (entity === 'devices') return r.name + (r.device_type ? ` (${r.device_type})` : '');
   if (entity === 'networks') return r.name + (r.vlan_id ? ` · VLAN ${r.vlan_id}` : '') + (r.cidr ? ` · ${r.cidr}` : '');
+  if (entity === 'credentials') return r.label + (r.username ? ` · ${r.username}` : '') + (r.device_name ? ` (${r.device_name})` : '');
   return r.name;
 }
 
@@ -695,6 +696,7 @@ const FORMS = {
     { k: 'device_type', label: 'Type', list: 'device_types', chips: ['Server', 'Hypervisor Host', 'Virtual Machine', 'Container', 'NAS', 'Switch', 'Router', 'Desktop', 'Laptop', 'Phone', 'Tablet'] },
     { k: 'status', label: 'Status', type: 'select', options: S.enums.device_statuses, required: true, default: 'Active' },
     { k: 'connected', label: 'Hooked up (cabled & powered)', type: 'checkbox' },
+    { k: 'watch', label: 'Check if it’s online', type: 'checkbox', default: true, help: 'While it’s hooked up, the Status page shows whether it answers.' },
     { k: 'manufacturer', label: 'Manufacturer', chips: ['Dell', 'HPE', 'Supermicro', 'Lenovo', 'Cisco', 'Ubiquiti', 'Synology', 'Custom'] },
     { k: 'model', label: 'Model', scan: true, ph: 'PowerEdge R515' },
     { k: 'serial', label: 'Serial number / service tag', scan: true, wide: true, help: 'Dell’s service tag, HPE’s serial, etc.: whatever identifies this exact unit.', showIf: v => !isVirtual(v) },
@@ -877,6 +879,29 @@ const FORMS = {
     { k: 'last_rotated', label: 'Last rotated', type: 'date' },
     { k: 'secret_notes', label: 'Secret notes (encrypted): recovery codes, keys…', type: 'textarea', raw: true, secret: true, wide: true, rows: 4 },
   ],
+  actions: () => [
+    { k: 'name', label: 'Name', required: true, ph: 'Quiet the fans, Update, Restart' },
+    { k: 'device_id', label: 'Device', type: 'fk', entity: 'devices', none: 'None (enter addresses below)' },
+    { k: 'hosts', label: 'Send to', type: 'textarea', rows: 2, wide: true, ph: '10.0.0.21',
+      help: 'Leave empty to use the device’s main address. For its management port (iLO, iDRAC) or several machines, enter the addresses, one per line.' },
+    { k: 'credential_id', label: 'Login', type: 'fk', entity: 'credentials', none: 'None (use this computer’s SSH key)',
+      help: 'A saved login from the Vault. HaRM uses its password to connect, and for sudo.' },
+    { k: 'username', label: 'Username', raw: true, ph: 'root, Administrator', help: 'Only needed without a login, or to use another user.' },
+    { k: 'port', label: 'SSH port', type: 'number', min: 1, ph: '22' },
+    { k: 'mode', label: 'How to send it', type: 'select', required: true, default: 'script', wide: true, options: [
+      { value: 'script', label: 'As one shell script (Linux, macOS, Proxmox, TrueNAS, Synology)' },
+      { value: 'lines', label: 'One command per line (iLO, iDRAC, switches, Windows)' }] },
+    { k: 'command', label: 'Commands', type: 'textarea', required: true, wide: true, rows: 8, raw: true,
+      ph: 'uptime\ndf -h', help: 'Lines starting with # are notes and aren’t sent when sending one command per line.' },
+    { k: 'sudo', label: 'Run with sudo', type: 'checkbox', showIf: v => v.mode !== 'lines', clearWhenHidden: true },
+    { k: 'legacy_ssh', label: 'Older SSH (iLO, iDRAC, old switches)', type: 'checkbox',
+      help: 'Turns on the older ways of connecting that old management ports need.' },
+    { k: 'confirm', label: 'Ask before running', type: 'checkbox', help: 'For things like restarting or shutting down.' },
+    { k: 'pinned', label: 'Show a button on the Status page', type: 'checkbox', default: true },
+    { k: 'ssh_options', label: 'Other SSH settings', wide: true, raw: true, adv: true, ph: '-o KexAlgorithms=+diffie-hellman-group14-sha1',
+      help: 'Paste the -o settings from an ssh command that works. Only connection settings are allowed.' },
+    { k: 'notes', label: 'Notes', type: 'textarea', wide: true, adv: true },
+  ],
   connections: () => [
     { k: 'a_device_id', label: 'From device', type: 'fk', entity: 'devices', required: true },
     { k: 'a_port', label: 'From port', ph: 'eth0, port 12, SFP+ 1' },
@@ -905,6 +930,7 @@ const STICKY = {
   connections: ['a_device_id', 'medium', 'speed', 'color'],
   device_slots: ['device_id'],
   credentials: ['device_id', 'kind'],
+  actions: ['device_id', 'credential_id', 'mode', 'legacy_ssh', 'port'],
 };
 /* Fields a label scan can fill. */
 const SCAN_TARGETS = {
@@ -928,7 +954,8 @@ function editEntity(entity, rec, after, { autoScan = false, notice = null } = {}
     draftKey: `${entity}:${rec.id || 'new'}${ctx ? ':' + ctx : ''}`,
     again: isNew && STICKY[entity] ? { label: 'Save & add another' } : null,
     scanTargets: SCAN_TARGETS[entity],
-    headButtons: entity === 'components' ? form => h('button', { type: 'button', class: 'sm', onclick: () => libraryLookup(form) }, '▦ Find in library') : null,
+    headButtons: entity === 'components' ? form => h('button', { type: 'button', class: 'sm', onclick: () => libraryLookup(form) }, '▦ Find in library')
+      : entity === 'actions' && isNew ? form => menuButton('Start from an example ▾', ACTION_TEMPLATES.map(t => [t.name, () => form.set({ sudo: false, legacy_ssh: false, confirm: false, notes: '', ...t })]), 'sm') : null,
     submit: async vals => {
       const r = isNew ? await api('POST', `/${entity}`, vals) : await api('PUT', `/${entity}/${rec.id}`, vals);
       if (LOOKUPS.includes(entity)) await loadLookups();
@@ -1575,9 +1602,9 @@ function showRecoveryCode(code, then, extra) {
 
 /* Sidebar: everyday pages first, the rest folded under “More”. */
 const NAV_GROUPS = [
-  [null, [['dashboard', 'Home', '◧'], ['tasks', 'Tasks & Notes', '☑']]],
+  [null, [['dashboard', 'Home', '◧'], ['status', 'Status', '📶'], ['tasks', 'Tasks & Notes', '☑']]],
   ['Inventory', [['devices', 'Devices', '▤'], ['virtual', 'Virtual & Clusters', '⧉'], ['racks', 'Racks & Storage', '▥'], ['components', 'Spare Parts', '◫'], ['builds', 'PC Builder', '⚒']]],
-  ['Network', [['networks', 'Networks & IPs', '⌗'], ['discover', 'Discover', '⌖'], ['vault', 'Logins (Vault)', '🔑']]],
+  ['Network', [['networks', 'Networks & IPs', '⌗'], ['discover', 'Discover', '⌖'], ['actions', 'Actions', '⚡'], ['vault', 'Logins (Vault)', '🔑']]],
   ['More', [['locations', 'Locations', '⌂'], ['connections', 'Cables', '⇄'], ['library', 'Parts Library', '▦'],
     ['export', 'Export & Share', '⇪'], ['audit', 'Audit log', '📜'], ['settings', 'Settings', '⚙'], ['help', 'Help & guide', '❓']]],
 ];
@@ -1596,7 +1623,7 @@ function navTree() {
 /* Phone: the few pages used every day sit in a bottom bar. */
 function tabBar() {
   const t = (k, label, ico) => h('a', { href: `#/${k}`, 'data-nav': k }, h('span', { class: 'tb-ico' }, ico), h('span', null, label));
-  return h('nav', { class: 'tabbar' }, t('dashboard', 'Home', '◧'), t('devices', 'Devices', '▤'), t('racks', 'Racks', '▥'), t('tasks', 'Tasks', '☑'),
+  return h('nav', { class: 'tabbar' }, t('dashboard', 'Home', '◧'), t('status', 'Status', '📶'), t('devices', 'Devices', '▤'), t('tasks', 'Tasks', '☑'),
     h('button', { type: 'button', onclick: () => document.body.classList.toggle('nav-open') }, h('span', { class: 'tb-ico' }, '☰'), h('span', null, 'More')));
 }
 
@@ -1657,6 +1684,8 @@ async function lockNow() {
 
 const ROUTES = [
   [/^\/?(dashboard)?$/, () => viewDashboard()],
+  [/^\/status$/, () => viewStatus()],
+  [/^\/actions$/, () => viewActions()],
   [/^\/devices$/, () => viewDevices()],
   [/^\/devices\/(\d+)$/, (m, q) => viewDevice(+m[1], q)],
   [/^\/racks$/, () => viewRacks()],
@@ -1743,7 +1772,10 @@ window.addEventListener('hashchange', route);
 // ---------------------------------------------------------------- views: dashboard
 
 async function viewDashboard() {
-  const [d, sum] = await Promise.all([GET('/dashboard'), GET('/devices/summary')]);
+  const [d, sum, upd] = await Promise.all([GET('/dashboard'), GET('/devices/summary'), GET('/update-check').catch(() => ({}))]);
+  const updBanner = upd.newer && prefGet('harm-update-hidden') !== upd.latest ? h('div', { class: 'banner' },
+    h('span', null, `Zom’s HaRM ${upd.latest} is out.`), h('a', { class: 'button sm primary', href: upd.url, target: '_blank', rel: 'noopener' }, 'What’s new ↗'),
+    h('button', { type: 'button', class: 'icon-btn banner-x', 'aria-label': 'Hide', onclick: e => { prefSet('harm-update-hidden', upd.latest); e.target.closest('.banner').remove(); } }, '✕')) : null;
   const c = d.counts;
   const back = () => viewDashboard();
   const stat = (n, label, href) => h('a', { class: 'stat', href }, h('div', { class: 'stat-n' }, n), h('div', { class: 'stat-l' }, label));
@@ -1767,6 +1799,8 @@ async function viewDashboard() {
   // One list of everything that needs a look, most urgent first.
   const att = [];
   const item = (ico, body, cls = '') => att.push(h('li', { class: cls }, h('span', { class: 'a-ico' }, ico), h('span', null, body)));
+  (d.offline || []).forEach(r => item('📶', [link(`#/devices/${r.id}`, r.label), ' ', h('span', { class: 'badge bad' }, 'Offline'),
+    h('span', { class: 'muted' }, r.since ? ` since ${clock(r.since)}, ${forHowLong(r.since)}` : '')]));
   d.ip_conflicts.forEach(r => item('⚠', [h('b', { class: 'mono bad-text' }, r.label), ` is used by more than one device: ${r.devices}`]));
   (d.needs_repair || []).forEach(r => item('🛠', [link(`#/devices/${r.id}`, r.label), ' ', badge(r.status)]));
   d.warranty_soon.forEach(r => item('🛡', [link(r.kind === 'device' ? `#/devices/${r.id}` : `#/components?id=${r.id}`, r.label), ' warranty ends ', warrantyCell(r.warranty_until)]));
@@ -1782,6 +1816,7 @@ async function viewDashboard() {
   render(
     pageHead('Home', isEmpty ? 'Let’s get your hardware in here.' : 'What needs you, and what you’ve got.',
       isEmpty ? h('a', { class: 'button primary', href: '#/setup' }, '🧭 Setup guide') : null),
+    updBanner,
     isEmpty ? h('div', { class: 'card onboarding' },
       h('h3', null, 'Getting started'),
       h('ol', null,
@@ -2083,7 +2118,12 @@ async function viewDevice(id, q) {
   const openNotes = d.notes.filter(n => (n.kind === 'task' || n.kind === 'issue') && !n.done);
   S.tabs = S.tabs || {};
   const fact = (ico, content, title) => h('span', { class: 'fact', title }, h('span', null, ico), content);
+  const on = d.online;
+  const onlineFact = ['up', 'down', 'unknown'].includes(on.state) ? h('button', { type: 'button', class: 'fact', title: `${onlineTitle(on)}. Tap to check now.`,
+    onclick: async () => { await checkDevice(id, dev.name); back(); } }, onlinePill(on),
+    h('span', { class: 'muted small' }, on.state === 'up' && on.latency_ms != null ? fmtMs(on.latency_ms) : on.state === 'down' && on.since ? forHowLong(on.since) : '')) : null;
   const facts = h('div', { class: 'facts' },
+    onlineFact,
     dev.location_id || dev.rack_id ? fact('📍', h('span', null,
       dev.rack_id ? link(`#/racks/${dev.rack_id}`, dev.rack_name) : link(`#/locations/${dev.location_id}`, locPath(dev.location_id)),
       dev.rack_u ? ` · U${dev.rack_u}` : (dev.position ? ` · ${dev.position}` : '')), 'Where it is') : null,
@@ -2109,6 +2149,9 @@ async function viewDevice(id, q) {
       btn('Edit', actions.edit, 'primary'),
       menuButton('⋯', [
         ['⇩ Import specs…', actions.importSpecs],
+        ['⟳ Check if it’s online', async () => { await checkDevice(id, dev.name); back(); }],
+        d.can_wake ? ['⏻ Wake up (Wake-on-LAN)', () => wakeDevice(id, dev.name)] : null,
+        ['⚡ New action…', () => editAction({ device_id: id }, back)],
         ['📝 Add note or task', () => { S.tabs.device = 'overview'; back().then(() => document.querySelector('.note-input')?.focus()); }],
         ['⇪ Export / PDF / sell sheet', () => { location.hash = `#/export?ids=${id}`; }],
         ['🏷 Print label…', () => printLabels([id])],
@@ -2183,6 +2226,24 @@ async function viewDevice(id, q) {
       ]],
       ['logins', 'Logins', d.credentials.length || null, () => [
         card('Logins', credTable(d.credentials, back), small('+ Add', actions.addLogin)),
+      ]],
+      ['actions', 'Actions', d.actions.length || null, () => [
+        card('Actions', d.actions.length ? actionsTable(d.actions, back, { showDevice: false }) : h('div', null,
+          h('p', { class: 'muted' }, 'Commands you send to this device with one click. Start from an example:'),
+          actionExamples({ device_id: id }, back)),
+          small('+ Add', () => editAction({ device_id: id }, back))),
+        card('Online', on.address ? h('div', null,
+          table([
+            { label: 'Address', get: r => h('span', null, h('span', { class: 'mono' }, r.address), r.label ? h('span', { class: 'muted small' }, ` ${r.label}`) : null) },
+            { label: 'State', get: r => h('span', { title: onlineTitle(r) }, h('span', { class: `badge ${(ONLINE[r.state] || ONLINE.unknown)[1]}` }, (ONLINE[r.state] || ONLINE.unknown)[0])) },
+            { label: 'Answer', get: r => r.state === 'up' ? nz(fmtMs(r.latency_ms), r.method ? `on ${r.method}` : '') : r.state === 'down' && r.since ? `none since ${clock(r.since)}` : '' },
+            { label: 'Checked', get: r => r.checked_at ? timeAgo(r.checked_at) : '' },
+          ], [{ ...on, label: 'main' }, ...on.others]),
+          historyStrip(on),
+          ['off', 'unwatched'].includes(on.state) ? h('p', { class: 'muted small' }, onlineTitle(on), '.') : null)
+          : h('div', { class: 'empty' }, 'Add an IP address on the Network tab, and HaRM checks whether it answers.'),
+          small('⟳ Check now', async () => { await checkDevice(id, dev.name); back(); }),
+          d.can_wake ? small('⏻ Wake', () => wakeDevice(id, dev.name)) : null),
       ]],
     ]));
   // Links from search open the item itself: #/devices/5?tab=network&edit=interfaces-12, ?open=<login id>
@@ -2616,7 +2677,7 @@ async function viewSearch(q) {
 // ---------------------------------------------------------------- views: settings
 
 async function viewSettings() {
-  [S.auth, S.caps] = await Promise.all([api('GET', '/auth/status'), GET('/meta/capabilities')]);
+  [S.auth, S.caps, S.appSettings] = await Promise.all([api('GET', '/auth/status'), GET('/meta/capabilities'), GET('/settings/app').catch(() => ({}))]);
   const totpBody = h('div');
   const drawTotp = () => {
     if (S.auth.totp_enabled) {
@@ -2689,6 +2750,9 @@ async function viewSettings() {
         ['Barcode reader (server)', S.caps.barcodes ? 'Available' : 'Not installed (the phone reads barcodes itself)'],
         ['Address', mono(location.origin)],
       ]), h('p', null, h('a', { class: 'button', href: '#/help?s=mobile' }, 'How scanning works'))))),
+    group('Status and actions', onlineChecksCard(), card('Actions', h('div', null,
+      h('p', null, 'Saved commands HaRM sends to your devices over SSH with one click. They use the logins in your Vault, so they only run while HaRM is unlocked.'),
+      h('a', { class: 'button', href: '#/actions' }, '⚡ Actions')))),
     group('AI Assist', aiSettingsCard()),
     group('Data & backups',
       card('Automatic backups', h('div', null,
@@ -2716,10 +2780,49 @@ function aboutCard() {
       h('p', { class: 'muted small' }, 'Free and open source under the MIT license. ',
         h('a', { href: 'https://github.com/ZomBeatz/Zoms-HaRM', target: '_blank', rel: 'noopener' }, 'See the code'), ' · ',
         h('a', { href: 'https://github.com/ZomBeatz/Zoms-HaRM/blob/main/CHANGELOG.md', target: '_blank', rel: 'noopener' }, 'What’s new')),
+      updateCheckRow(),
       h('div', { class: 'inline' },
         btn('💬 Send feedback', sendFeedback),
         h('a', { class: 'button', href: 'https://docs.zombeatzmedia.com/harm/', target: '_blank', rel: 'noopener' }, 'Read the guide'),
         h('a', { class: 'button', href: '#/setup' }, '🧭 Setup guide')))));
+}
+
+async function saveAppSetting(changes, done) {
+  try { S.appSettings = await api('POST', '/settings/app', changes); toast('Saved'); if (done) done(); }
+  catch (e) { toast(e.message, 'bad'); }
+}
+
+/* Settings > Status and actions: how often HaRM checks which devices answer. */
+function onlineChecksCard() {
+  const cur = S.appSettings?.status_interval ?? 5;
+  const pick = h('select', { 'aria-label': 'Check every', onchange: e => saveAppSetting({ status_interval: +e.target.value }) },
+    [[1, 'Every minute'], [2, 'Every 2 minutes'], [5, 'Every 5 minutes'], [10, 'Every 10 minutes'], [15, 'Every 15 minutes'],
+      [30, 'Every 30 minutes'], [60, 'Every hour'], [0, 'Never (only when I press Check now)']]
+      .map(([v, l]) => h('option', { value: v, selected: v === cur }, l)));
+  return card('Online checks', h('div', null,
+    h('p', null, 'HaRM checks whether each hooked-up device answers on its addresses, and shows it on the ', link('#/status', 'Status'), ' page.'),
+    h('label', { class: 'disc-field' }, h('span', null, 'Check'), pick),
+    h('p', { class: 'muted small' }, 'Only the addresses you’ve recorded are contacted. Turn it off for one device with “Check if it’s online” when you edit it.')));
+}
+
+/* Settings > About: an opt-in check for a newer release on GitHub. */
+function updateCheckRow() {
+  const out = h('span', { class: 'muted small' });
+  const box = h('input', { type: 'checkbox', checked: !!S.appSettings?.update_check,
+    onchange: e => saveAppSetting({ update_check: e.target.checked }, () => showUpdate(out)) });
+  if (S.appSettings?.update_check) showUpdate(out);
+  return h('div', null, h('label', { class: 'check' }, box, h('span', null, 'Check for new versions')),
+    h('p', { class: 'muted small' }, 'Asks GitHub about twice a day. Nothing else is sent. ', out));
+}
+async function showUpdate(out) {
+  out.textContent = '';
+  if (!S.appSettings?.update_check) return;
+  try {
+    const u = await GET('/update-check');
+    if (u.error) out.textContent = u.error + '.';
+    else if (u.newer) out.replaceChildren(h('b', null, `Version ${u.latest} is out. `), h('a', { href: u.url, target: '_blank', rel: 'noopener' }, 'What’s new and download ↗'));
+    else if (u.latest) out.textContent = 'You have the newest version.';
+  } catch { /* offline: say nothing */ }
 }
 
 /* An email to ZomBeatz Media with the version and device filled in. */
@@ -3393,6 +3496,29 @@ const HELP = [
       ['Running Proxmox? ', link('#/discover', 'Discover > Proxmox'), ' imports all of it, and re-importing updates what changed.']),
     h('h4', null, 'Main address'),
     P('When a device has several IPs (say, the OS plus an iDRAC), HaRM uses its ', B('main address'), ' for the summary, quick links, logins and lists. Management ports are never picked automatically. To choose, tap the 🌐 address on the device page and pick ', B('☆ Main'), ', or tick ', B('Main address'), ' on the interface.'),
+  ]],
+  ['status', 'Status: which devices are online', () => [
+    P('The ', link('#/status', 'Status'), ' page shows every device that has an IP address, grouped by where it is, with a word for each: ',
+      B('Online'), ', ', B('Offline'), ', ', B('Not checked'), ' or ', B('Not hooked up'), '.'),
+    OL(
+      ['HaRM knocks on a few ports of each address (the device’s own services, then SSH, the web and the like). Any answer counts. If none answers, it tries one ping.'],
+      ['It checks devices that are hooked up and not retired or sold. To leave one out, edit it and untick ', B('Check if it’s online'), '.'],
+      ['A management port (iLO, iDRAC, IPMI) is checked too and shown under the device, so you can tell “the server is off” from “the whole box lost power”.'],
+      ['The bars show the last 24 hours, one per hour, with how much of the time it answered.']),
+    P('HaRM checks every 5 minutes (change it in ', link('#/settings', 'Settings > Status and actions'), '), and every minute while the Status page is open. Devices that go offline also show on ', B('Home'), '.'),
+    P(B('Wake-on-LAN: '), 'a device with a MAC address gets a ', B('Wake'), ' button while it’s offline. Wake-on-LAN has to be turned on in its BIOS or network card. HaRM in Docker can only wake devices with ', h('code', null, 'network_mode: host'), '.'),
+    P(B('On a wall screen: '), '⋯ > ', B('Full screen'), ' hides the sidebar and keeps the page up to date by itself.'),
+  ]],
+  ['actions', 'Actions: one-click commands', () => [
+    P('An action is a command you save once and send to a device over SSH with one click: quieting a server’s fans, updating, restarting, powering on through the iLO.'),
+    OL(
+      ['Open ', link('#/actions', 'Actions'), ' (or a device’s ', B('Actions'), ' tab) and press ', B('+ New action'), '. ', B('Start from an example'), ' fills in the form.'],
+      ['Pick the device. ', B('Send to'), ' can stay empty to use its main address, or hold the iLO or iDRAC address, or several addresses, one per line.'],
+      ['Pick a saved ', B('Login'), ' from the Vault. HaRM uses its password, or this computer’s SSH key when there’s none.'],
+      [B('How to send it: '), 'as one shell script for Linux, Proxmox and NAS boxes, or one command per line for iLO, iDRAC, switches and Windows, which have no Unix shell.'],
+      ['Old management ports often refuse modern SSH. Tick ', B('Older SSH'), ', or paste the ', h('code', null, '-o'), ' settings from an ssh command that works into ', B('Other SSH settings'), '.']),
+    P('Press ', B('▶ Run'), '. A message says whether it worked, with ', B('Show output'), '. The last 50 runs are kept, encrypted like your logins.'),
+    P('Actions use your saved logins, so they only run while HaRM is unlocked, and each run is in the ', link('#/audit', 'Audit log'), '. Tick ', B('Ask before running'), ' for anything that restarts or shuts down.'),
   ]],
   ['trouble', 'Troubleshooting: can’t connect', () => troubleshootingContent()],
   ['mobile', 'Phones, tablets and scanning', () => [
@@ -5450,4 +5576,274 @@ function phoneQrBlock() {
     h('p', null, h('b', null, 'Scan this with your phone’s camera. '), 'Both need to be on the same Wi‑Fi. Scan ① first (install and trust the certificate), then ②.'),
     urls.length > 1 ? h('label', { class: 'disc-field' }, h('span', null, 'Address your phone uses'), pick) : null,
     h('div', { class: 'qr-pair' }, certBox, appBox));
+}
+
+// ---------------------------------------------------------------- views: status (who's answering) and actions
+
+/* The words for each online state. A word every time, never a dot alone (design system). */
+const ONLINE = {
+  up: ['Online', 'ok'], down: ['Offline', 'bad'], unknown: ['Not checked yet', 'muted'],
+  unwatched: ['Not checked', 'muted'], off: ['Not hooked up', 'muted'], 'no-address': ['No address', 'muted'],
+};
+const fmtMs = ms => ms == null ? '' : ms < 1 ? 'under 1 ms' : `${Math.round(ms)} ms`;
+const utcDate = ts => new Date(String(ts).replace(' ', 'T') + 'Z');
+const clock = ts => utcDate(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+/* "for 5 min", "for 2 h", "for 3 days" since a UTC timestamp. */
+function forHowLong(ts) {
+  if (!ts) return '';
+  const m = Math.max(0, (Date.now() - utcDate(ts).getTime()) / 60000);
+  if (m < 1) return 'for under a minute';
+  if (m < 60) return `for ${Math.floor(m)} min`;
+  if (m < 48 * 60) return `for ${Math.floor(m / 60)} h${m % 60 >= 1 && m < 600 ? ` ${Math.floor(m % 60)} min` : ''}`;
+  return `for ${Math.floor(m / 1440)} days`;
+}
+function onlineTitle(st) {
+  if (st.state === 'up') return `Answered${st.method ? ` on ${st.method}` : ''}${st.latency_ms != null ? ` in ${fmtMs(st.latency_ms)}` : ''}${st.checked_at ? `, checked ${timeAgo(st.checked_at)}` : ''}`;
+  if (st.state === 'down') return `No answer${st.since ? ` since ${clock(st.since)}` : ''}${st.checked_at ? `, checked ${timeAgo(st.checked_at)}` : ''}`;
+  if (st.state === 'unwatched') return '“Check if it’s online” is off for this device';
+  if (st.state === 'off') return 'Only devices that are hooked up are checked';
+  return 'HaRM hasn’t checked it yet';
+}
+function onlinePill(st) {
+  const [word, cls] = ONLINE[st.state] || ONLINE.unknown;
+  return h('span', { class: `badge ${cls}`, title: onlineTitle(st) }, word);
+}
+/* The last 24 hours as 24 small bars, with the share of time it answered. */
+function historyStrip(st) {
+  if (!st.strip) return null;
+  const pct = st.uptime == null ? null : st.uptime * 100;
+  const up = pct == null ? '' : `${pct >= 99.95 || pct === 0 ? Math.round(pct) : pct.toFixed(1)}%`;
+  const label = up ? `Last 24 hours: online ${up} of the time` : 'Last 24 hours';
+  return h('div', { class: 'hstrip', title: label },
+    h('div', { class: 'hstrip-bars', role: 'img', 'aria-label': label }, st.strip.map(b => h('i', { class: `hs-${b || 'none'}` }))),
+    h('span', { class: 'hstrip-n' }, up ? `${up} up` : ''));
+}
+
+async function checkDevice(id, name) {
+  try {
+    await api('POST', '/status/check', { device_id: id });
+    const st = (await GET(`/devices/${id}/full`)).online;
+    toast(`${name}: ${(ONLINE[st.state] || ONLINE.unknown)[0]}${st.state === 'up' && st.latency_ms != null ? `, ${fmtMs(st.latency_ms)}` : ''}`, st.state === 'down' ? 'bad' : 'ok');
+  } catch (e) { toast(e.message, 'bad'); }
+}
+
+async function wakeDevice(id, name) {
+  try {
+    const r = await api('POST', `/devices/${id}/wake`);
+    toast(`Wake-up sent to ${name} (${r.mac}). It can take a minute to start.`);
+  } catch (e) { toast(e.message, 'bad'); }
+}
+
+/* Group the devices by where they are (a VM by its host's place), in rack order, top first. */
+function statusGroups(devices) {
+  const byId = new Map(devices.map(d => [d.id, d]));
+  const groups = new Map();
+  for (const d of devices) {
+    const host = d.host_id ? byId.get(d.host_id) : null;
+    const loc = d.location_id || host?.location_id || null;
+    const key = loc ? locPath(loc) : 'No location';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(d);
+  }
+  for (const list of groups.values()) {
+    // Racked gear first (top of the rack first), then loose gear, then VMs by their host.
+    const rank = x => x.host_id ? 2 : x.rack_name ? 0 : 1;
+    list.sort((a, b) => rank(a) - rank(b) || (a.rack_name || '').localeCompare(b.rack_name || '') || (b.rack_u || 0) - (a.rack_u || 0)
+      || (a.host_name || '').localeCompare(b.host_name || '') || a.name.localeCompare(b.name));
+  }
+  return [...groups.entries()].sort(([a], [b]) => (a === 'No location') - (b === 'No location') || a.localeCompare(b));
+}
+
+function statusTile(d, after) {
+  const [cat] = deviceCategory(d.device_type);
+  const where = d.rack_name ? `${d.rack_name}${d.rack_u ? ` U${d.rack_u}` : ''}` : d.host_name ? `on ${d.host_name}` : '';
+  const acts = [
+    ...d.actions.slice(0, 3).map(a => small(`▶ ${a.name}`, () => runAction(a, { after }))),
+    d.can_wake && d.state === 'down' ? small('⏻ Wake', () => wakeDevice(d.id, d.name)) : null,
+    d.mgmt_url ? h('a', { class: 'button sm', href: d.mgmt_url, target: '_blank', rel: 'noopener noreferrer' }, 'Manage ↗') : null,
+  ].filter(Boolean);
+  return h('div', { class: `st-tile cat-${cat} st-${d.state}` },
+    h('div', { class: 'st-head' }, h('a', { class: 'st-name', href: `#/devices/${d.id}` }, d.name), onlinePill(d)),
+    h('div', { class: 'st-line small' },
+      d.address ? h('span', { class: 'mono' }, d.address) : null,
+      d.state === 'up' && d.latency_ms != null ? h('span', { class: 'muted' }, ` · ${fmtMs(d.latency_ms)}`) : null,
+      d.state === 'down' && d.since ? h('span', { class: 'bad-text', title: `No answer since ${clock(d.since)}` }, ` · ${forHowLong(d.since)}`) : null),
+    h('div', { class: 'muted small' }, nz(d.device_type, where ? `· ${where}` : '')),
+    d.others.length ? h('div', { class: 'st-others' }, d.others.map(o => h('span', { class: 'st-other small', title: onlineTitle(o) },
+      o.label || o.address, ' ', h('span', { class: `badge ${(ONLINE[o.state] || ONLINE.unknown)[1]}` }, (ONLINE[o.state] || ONLINE.unknown)[0])))) : null,
+    historyStrip(d),
+    acts.length ? h('div', { class: 'st-actions' }, acts) : null);
+}
+
+async function viewStatus() {
+  clearInterval(S.statusTimer);
+  const d = await GET('/status');
+  const filter = prefGet('harm-status-filter') || 'all';
+  const counts = { up: 0, down: 0, other: 0 };
+  for (const x of d.devices) counts[x.state === 'up' ? 'up' : x.state === 'down' ? 'down' : 'other']++;
+  // Tell about changes since the last look (while the page stays open).
+  if (S.statusPrev) {
+    for (const x of d.devices) {
+      const was = S.statusPrev.get(x.id);
+      if (was === 'up' && x.state === 'down') toast(`${x.name} is offline`, 'bad', { label: 'Open', onClick: () => { location.hash = `#/devices/${x.id}`; } });
+      if (was === 'down' && x.state === 'up') toast(`${x.name} is back online`);
+    }
+  }
+  S.statusPrev = new Map(d.devices.map(x => [x.id, x.state]));
+  const shown = d.devices.filter(x => filter === 'all' || (filter === 'down' ? x.state === 'down' : ['up', 'down', 'unknown'].includes(x.state)));
+  const checkNow = async () => {
+    toast('Checking every device…');
+    try { await api('POST', '/status/check', { max_age: 0 }); } catch (e) { toast(e.message, 'bad'); }
+    viewStatus();
+  };
+  const pick = h('select', { 'aria-label': 'Show', onchange: e => { prefSet('harm-status-filter', e.target.value); viewStatus(); } },
+    [['all', 'All devices'], ['checked', 'Only the ones checked'], ['down', 'Only offline']].map(([v, l]) => h('option', { value: v, selected: v === filter }, l)));
+  const wall = () => {
+    const on = !document.body.classList.contains('wall');
+    document.body.classList.toggle('wall', on);
+    if (on && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
+    else if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  };
+  const every = d.status_interval ? `HaRM checks every ${d.status_interval === 1 ? 'minute' : `${d.status_interval} minutes`}, and every minute while this page is open.`
+    : 'Automatic checks are off. Press Check now, or turn them on in Settings.';
+  const stat = (n, label, cls) => h('div', { class: `stat ${cls}` }, h('div', { class: 'stat-n' }, n), h('div', { class: 'stat-l' }, label));
+  render(
+    pageHead('Status', d.last_check ? `Which devices are answering. Last checked ${timeAgo(d.last_check)}.` : 'Which devices are answering right now.',
+      pick, btn('⟳ Check now', checkNow, 'primary'),
+      menuButton('⋯', [
+        ['⛶ Full screen (for a wall screen)', wall],
+        ['⚙ How often to check…', () => { location.hash = '#/settings'; }],
+        ['⚡ Actions', () => { location.hash = '#/actions'; }],
+        ['❓ How this works', () => { location.hash = '#/help?s=status'; }],
+      ])),
+    d.devices.length ? h('div', { class: 'stats st-stats' },
+      stat(counts.up, 'Online', 'st-up'), stat(counts.down, 'Offline', counts.down ? 'st-down' : ''),
+      stat(counts.other, 'Not checked', '')) : null,
+    !d.status_interval ? h('div', { class: 'banner' }, 'Automatic checks are off, so this page only changes when you press Check now. ',
+      h('a', { class: 'button sm', href: '#/settings' }, 'Settings')) : null,
+    !d.devices.length ? h('div', { class: 'empty-state' }, h('div', { class: 'empty-ico' }, '📶'),
+      h('p', null, 'Devices show up here once they have an IP address. HaRM then checks whether each one answers.'),
+      h('a', { class: 'button primary', href: '#/devices' }, 'Go to Devices'))
+      : !shown.length ? h('div', { class: 'all-good' }, filter === 'down' ? '✓ Everything that’s checked is online.' : 'Nothing to show with this filter.')
+        : statusGroups(shown).map(([name, list]) => {
+          const down = list.filter(x => x.state === 'down').length;
+          return h('section', { class: 'st-group' },
+            h('h2', { class: 'st-group-head' }, name, h('span', { class: 'muted small' }, ` ${list.length} device${list.length === 1 ? '' : 's'}`),
+              down ? h('span', { class: 'badge bad' }, `${down} offline`) : null),
+            h('div', { class: 'st-grid' }, list.map(x => statusTile(x, viewStatus))));
+        }),
+    h('p', { class: 'muted small st-foot' }, every,
+      d.without_address ? ` ${d.without_address} device${d.without_address === 1 ? ' has' : 's have'} no IP address and ${d.without_address === 1 ? 'isn’t' : 'aren’t'} shown.` : ''));
+  // Fresh results now if they're over a minute old, then every 30 seconds while this page is open.
+  const tick = async () => {
+    if (!location.hash.startsWith('#/status') || !S.authed) { clearInterval(S.statusTimer); document.body.classList.remove('wall'); return; }
+    if (document.hidden || document.querySelector('.modal-back')) return;
+    try { const r = await api('POST', '/status/check', { max_age: 55 }); if (r.checked) viewStatus(); } catch { /* try again next time */ }
+  };
+  S.statusTimer = setInterval(tick, 30000);
+  if (!d.last_check || (Date.now() - utcDate(d.last_check).getTime()) > 60000) setTimeout(tick, 300);
+}
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) document.body.classList.remove('wall'); });
+
+/* Ready-made actions to start from. The commands are examples: check them for your own gear. */
+const ACTION_TEMPLATES = [
+  { name: 'Uptime and disk space', mode: 'script', command: 'uptime\ndf -h -x tmpfs -x devtmpfs -x overlay',
+    notes: 'A safe first try: it only reads.' },
+  { name: 'Update packages (Debian, Ubuntu, Proxmox)', mode: 'script', sudo: true, confirm: true,
+    command: 'export DEBIAN_FRONTEND=noninteractive\napt-get update\napt-get -y upgrade' },
+  { name: 'Restart', mode: 'script', sudo: true, confirm: true, command: 'systemctl reboot' },
+  { name: 'Shut down', mode: 'script', sudo: true, confirm: true, command: 'systemctl poweroff' },
+  { name: 'Proxmox: list VMs and containers', mode: 'script', sudo: true, command: 'qm list\npct list' },
+  { name: 'Quiet the fans (HPE iLO 4)', mode: 'lines', legacy_ssh: true,
+    command: '# Needs iLO 4 with the fan-control (“unlocked”) firmware.\n# One line per fan: fan p <fan> max <speed, 0 to 255>.\nfan p 0 max 60\nfan p 1 max 60\nfan p 2 max 60\nfan p 3 max 60\nfan p 4 max 60\nfan p 5 max 60',
+    notes: 'Send it to the iLO address with the iLO login. Change the fans and speeds for your server, then watch its temperatures.' },
+  { name: 'Power on (HPE iLO)', mode: 'lines', legacy_ssh: true, command: 'power on', notes: 'Send it to the iLO address with the iLO login.' },
+  { name: 'Power on (Dell iDRAC)', mode: 'lines', legacy_ssh: true, command: 'racadm serveraction powerup', notes: 'Send it to the iDRAC address with the iDRAC login.' },
+  { name: 'Shut down (Windows)', mode: 'lines', confirm: true, command: 'shutdown /s /t 0', notes: 'Needs OpenSSH Server turned on in Windows (Settings > System > Optional features).' },
+];
+
+async function editAction(rec, after) {
+  try { S.lk.credentials = await GET('/credentials'); } catch { S.lk.credentials = []; }
+  editEntity('actions', { mode: 'script', pinned: true, ...rec }, after);
+}
+
+/* Run a saved action. One click; the result comes back as a toast with the output a tap away. */
+async function runAction(a, { host = null, trust = false, after = null } = {}) {
+  if (a.confirm && !trust) {
+    const ok = await choose(`Run “${a.name}”?`, 'This was set to ask first.', [['no', 'Cancel'], ['yes', '▶ Run', 'primary']]);
+    if (ok !== 'yes') return;
+  }
+  toast(`Sending “${a.name}”…`);
+  let r;
+  try { r = await api('POST', `/actions/${a.id}/run`, { host, trust_new_key: trust }); }
+  catch (e) { toast(e.message, 'bad'); return; }
+  const bad = r.results.filter(x => !x.ok);
+  const keyChanged = bad.find(x => x.code === 'hostkey');
+  if (keyChanged) {
+    const pickIt = await choose('The machine’s key changed', [`${keyChanged.host}: ${keyChanged.error}`, ' Trust the new key only if you reinstalled it or replaced its management card.'],
+      [['no', 'Cancel'], ['yes', 'Trust the new key and run', 'primary']]);
+    if (pickIt === 'yes') return runAction(a, { host: keyChanged.host, trust: true, after });
+    return;
+  }
+  const show = { label: 'Show output', onClick: () => showRunResult(r) };
+  if (!bad.length) toast(`✓ ${a.name}: done${r.results.length > 1 ? ` on all ${r.results.length}` : ''}`, 'ok', show);
+  else if (bad.length === r.results.length && r.results.length === 1) toast(`${a.name} didn’t work: ${bad[0].error || `it ended with code ${bad[0].exit_code}`}`, 'bad', show);
+  else toast(`${a.name}: worked on ${r.results.length - bad.length} of ${r.results.length}`, 'bad', show);
+  if (after) after();
+}
+
+function runBlock(x) {
+  const head = x.ok ? `✓ ${x.host}` : `✗ ${x.host}`;
+  const facts = [x.ms != null ? `${(x.ms / 1000).toFixed(1)} s` : null, x.exit_code != null ? `code ${x.exit_code}` : null, x.at ? timeAgo(x.at) : null].filter(Boolean).join(' · ');
+  return h('div', { class: 'run-block' },
+    h('div', { class: 'run-head' }, h('b', { class: x.ok ? 'ok-text' : 'bad-text' }, head), h('span', { class: 'muted small' }, facts)),
+    x.error ? h('p', { class: 'bad-text' }, x.error) : null,
+    x.output ? h('pre', { class: 'run-out' }, x.output) : (x.error ? null : h('p', { class: 'muted small' }, 'It printed nothing.')));
+}
+function showRunResult(r) {
+  modal(r.action, h('div', null, r.results.map(runBlock)), { wide: true });
+}
+async function showRuns(a) {
+  let runs;
+  try { runs = await GET(`/actions/${a.id}/runs`); } catch (e) { toast(e.message, 'bad'); return; }
+  modal(`${a.name}: recent runs`, h('div', null,
+    runs.length ? runs.map(runBlock) : h('div', { class: 'empty' }, 'It hasn’t been run yet.'),
+    h('p', { class: 'muted small' }, 'HaRM keeps the last 50 runs. The output is stored encrypted, like your logins.')), { wide: true });
+}
+
+function actionsTable(rows, after, { showDevice = true } = {}) {
+  return table([
+    { label: 'Action', get: a => h('div', null, h('b', null, a.name), a.notes ? h('div', { class: 'muted small' }, a.notes) : null), sort: a => a.name },
+    ...(showDevice ? [{ label: 'Device', get: a => a.device_id ? link(`#/devices/${a.device_id}`, a.device_name) : '', sort: a => a.device_name || '' }] : []),
+    { label: 'Sends to', get: a => a.hosts ? h('span', { class: 'mono small' }, a.hosts.split('\n').join(', ')) : h('span', { class: 'muted small' }, 'Main address') },
+    { label: 'How', get: a => h('span', { class: 'small' }, a.mode === 'lines' ? 'One command per line' : 'Shell script',
+      a.sudo ? ', sudo' : '', a.legacy_ssh ? ', older SSH' : '') },
+    { label: 'Last run', get: a => a.last_run_at ? h('button', { type: 'button', class: 'linkish', onclick: () => showRuns(a) },
+      h('span', { class: a.last_ok ? 'ok-text' : 'bad-text' }, a.last_ok ? '✓ ' : '✗ '), timeAgo(a.last_run_at)) : h('span', { class: 'muted small' }, 'Never'),
+    sort: a => a.last_run_at || '' },
+    { label: '', nosort: true, get: a => h('div', { class: 'row-actions' },
+      small('▶ Run', () => runAction(a, { after }), 'primary'),
+      small('Edit', () => editAction(a, after)),
+      small('Delete', () => deleteEntity('actions', a, after), 'ghost-danger')) },
+  ], rows, { empty: 'No actions yet.' });
+}
+
+function actionExamples(preset, after) {
+  return h('div', { class: 'chips' }, ACTION_TEMPLATES.map(t => h('button', { type: 'button', class: 'chip',
+    onclick: () => editAction({ ...t, ...preset }, after) }, t.name)));
+}
+
+async function viewActions() {
+  const rows = await GET('/actions');
+  const back = () => viewActions();
+  render(
+    pageHead('Actions', 'Commands you send to your devices with one click: quiet the fans, update, restart.',
+      btn('+ New action', () => editAction({}, back), 'primary'), helpLink('actions')),
+    rows.length ? card(`Your actions · ${rows.length}`, actionsTable(rows, back))
+      : h('div', { class: 'empty-state' }, h('div', { class: 'empty-ico' }, '⚡'),
+        h('p', null, 'Save a command once, then send it to a device over SSH with one click, from here, its page or the Status page.'),
+        btn('+ New action', () => editAction({}, back), 'primary')),
+    card('Start from an example', h('div', null,
+      h('p', { class: 'muted small' }, 'These fill in the form for you. Check the commands before you run them on your own gear.'),
+      actionExamples({}, back))));
 }

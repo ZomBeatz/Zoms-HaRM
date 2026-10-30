@@ -74,7 +74,7 @@ const ICON_FOR = {
   '🔳': 'qr-code', '🔧': 'wrench', '🛠': 'wrench', '🔒': 'lock', '✎': 'pencil', '⚑': 'flag', '★': 'star', '☆': 'star',
   '▾': 'chevron-down', '▸': 'chevron-right', '🧭': 'compass', '🛡': 'shield', '🖨': 'printer', '📍': 'map-pin',
   '💾': 'hard-drive', '🎥': 'video', '🌙': 'moon', '☀': 'sun', '◐': 'sun-moon', '⟳': 'rotate-cw', '🧩': 'boxes',
-  '⚠': 'triangle-alert', '▶': 'play', '■': 'square', '⎘': 'copy', '🎉': '',
+  '⚠': 'triangle-alert', '▶': 'play', '■': 'square', '⎘': 'copy', '💬': 'message-square', '⌨': 'keyboard', '🎉': '',
 };
 const NO_ICONS = new Set(['OPTION', 'TEXTAREA', 'TITLE', 'STYLE', 'SCRIPT', 'CODE', 'PRE']);
 const ICON_KEYS = Object.keys(ICON_FOR).filter(k => k.length <= 2).sort((a, b) => b.length - a.length);
@@ -424,7 +424,7 @@ function buildForm(fields, rec = {}) {
     } else if (f.type === 'password') {
       input = h('input', { id, type: 'password', value: v ?? '', autocomplete: 'new-password', spellcheck: 'false' });
       control = h('div', { class: 'pw-row' }, input,
-        small('Show', e => { const show = input.type === 'password'; input.type = show ? 'text' : 'password'; e.target.textContent = show ? 'Hide' : 'Show'; }),
+        eyeButton(on => { input.type = on ? 'text' : 'password'; }),
         small('Generate', () => { input.value = genPassword(); input.type = 'text'; input.dispatchEvent(new Event('input', { bubbles: true })); }));
     } else {
       input = h('input', {
@@ -1295,6 +1295,24 @@ function b32decode(s) {
   }
   return new Uint8Array(out);
 }
+/* Secrets show as dots; the eye shows them and they hide again after 30 seconds (ZomBeatz rule). */
+function eyeButton(setShown) {
+  let shown = false, timer = null;
+  const b = h('button', { type: 'button', class: 'icon-btn eye-btn', 'aria-label': 'Show', title: 'Show' }, ic('eye'));
+  const set = on => {
+    shown = on;
+    clearTimeout(timer);
+    if (on) timer = setTimeout(() => { if (b.isConnected) set(false); }, 30000);
+    b.replaceChildren(ic(on ? 'eye-off' : 'eye'));
+    b.setAttribute('aria-label', on ? 'Hide' : 'Show');
+    b.title = on ? 'Hide (hides by itself after 30 seconds)' : 'Show';
+    setShown(on);
+  };
+  b.addEventListener('click', () => set(!shown));
+  return b;
+}
+const splitCode = c => (c && c.length === 6 ? `${c.slice(0, 3)} ${c.slice(3)}` : c || '');
+
 async function totpNow(secret, period = 30, digits = 6) {
   const key = await crypto.subtle.importKey('raw', b32decode(secret), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
   const ctr = Math.floor(Date.now() / 1000 / period);
@@ -1348,9 +1366,9 @@ async function revealCredential(c) {
   catch (e) { return toast(e.message, 'bad'); }
   const masked = '•'.repeat(12);
   const pwVal = h('code', { class: 'secret' }, masked);
-  let shown = false;
-  const totpCode = h('code', { class: 'secret big' }, sec.totp_code || '');
-  const totpLeft = h('span', { class: 'muted' });
+  let code = sec.totp_code || '';
+  const totpCode = h('code', { class: 'secret big totp' }, splitCode(code));
+  const totpLeft = h('span', { class: 'totp-ring', role: 'img', 'aria-label': '' });
   const body = h('div', { class: 'reveal' },
     launchPanel(c, sec),
     kv([
@@ -1360,9 +1378,9 @@ async function revealCredential(c) {
       ['URL', extLink(c.url)],
       ['Username', c.username ? h('span', { class: 'inline' }, h('code', null, c.username), small('Copy', () => copy(c.username, 'Username'))) : ''],
       ['Password', sec.password != null ? h('span', { class: 'inline' }, pwVal,
-        small('Show', e => { shown = !shown; pwVal.textContent = shown ? sec.password : masked; e.target.textContent = shown ? 'Hide' : 'Show'; }),
+        eyeButton(on => { pwVal.textContent = on ? sec.password : masked; }),
         small('Copy', () => copy(sec.password, 'Password'))) : ''],
-      ['2FA code', sec.totp_secret ? h('span', { class: 'inline' }, totpCode, totpLeft, small('Copy', () => copy(totpCode.textContent, '2FA code'))) : ''],
+      ['2FA code', sec.totp_secret ? h('span', { class: 'inline' }, totpCode, totpLeft, small('Copy', () => copy(code, '2FA code'))) : ''],
       ['Last rotated', c.last_rotated],
     ]),
     sec.secret_notes ? [h('h4', null, 'Secret notes'), h('pre', { class: 'secret-notes' }, sec.secret_notes)] : null,
@@ -1373,8 +1391,11 @@ async function revealCredential(c) {
     if (!document.body.contains(m.box)) return clearInterval(timer);
     if (++ticks > 60) { m.close(); return clearInterval(timer); }
     if (sec.totp_secret && window.crypto?.subtle) {
-      try { totpCode.textContent = await totpNow(sec.totp_secret); } catch { /* keep server code */ }
-      totpLeft.textContent = `${30 - Math.floor(Date.now() / 1000) % 30}s`;
+      try { code = await totpNow(sec.totp_secret); totpCode.textContent = splitCode(code); } catch { /* keep server code */ }
+      const left = 30 - Math.floor(Date.now() / 1000) % 30;
+      totpLeft.style.setProperty('--p', String(left / 30));
+      totpLeft.setAttribute('aria-label', `${left} seconds left`);
+      totpLeft.title = `${left} seconds left`;
     }
   };
   const timer = setInterval(tick, 1000);
@@ -2769,8 +2790,11 @@ function tabs(key, defs) {
   S.tabs = S.tabs || {};
   const body = h('div', { class: 'tab-body' });
   const bar = h('div', { class: 'tabs', role: 'tablist' });
+  // The last tab is remembered per kind of page (every device page opens on the same tab).
+  if (!S.tabs[key]) S.tabs[key] = prefGet('harm-tab-' + key);
   const show = id => {
     S.tabs[key] = id;
+    prefSet('harm-tab-' + key, id);
     bar.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === id));
     fillEl(body, defs.find(d => d[0] === id)[3]());
   };
@@ -4565,25 +4589,51 @@ async function qrSvg(text, size = 160) {
   return svg;
 }
 
-async function printLabels(ids) {
+/* QR labels in the sizes of common label rolls, or a full sheet (ZomBeatz printing rules:
+   QR on the left at least 15 mm wide, the name in bold, 1 or 2 lines of key facts). */
+const LABEL_SIZES = [
+  ['62x29', '62 × 29 mm roll (Brother DK-11209 and similar)', { w: 62, h: 29 }],
+  ['2x1', '2 × 1 in roll (Dymo, Zebra and similar)', { w: 50.8, h: 25.4 }],
+  ['1x1', '1 × 1 in roll (QR code and name only)', { w: 25.4, h: 25.4 }],
+  ['sheet', 'Full sheet (A4 or Letter, 2 across)', null],
+];
+function printLabels(ids) {
+  const pick = prefGet('harm-label-size') || '62x29';
+  const radios = LABEL_SIZES.map(([k, label]) => h('label', { class: 'radio-row' },
+    h('input', { type: 'radio', name: 'label-size', value: k, checked: k === pick }), ' ', label));
+  const m = modal(ids.length > 1 ? `Print ${ids.length} labels` : 'Print a label', h('div', null,
+    h('p', null, 'Pick the size of your labels. Each label is printed in light colors, with a QR code that opens the device in HaRM.'),
+    h('div', { class: 'radio-list' }, radios),
+    h('div', { class: 'actions' }, btn('Cancel', () => m.close(true)), btn('Print…', () => {
+      const size = radios.map(r => r.querySelector('input')).find(i => i.checked)?.value || '62x29';
+      prefSet('harm-label-size', size);
+      m.close(true);
+      doPrintLabels(ids, size).catch(e => toast(e.message, 'bad'));
+    }, 'primary'))));
+}
+async function doPrintLabels(ids, size) {
   const bundle = await GET('/export/bundle?ids=' + ids.join(','));
   const root = document.getElementById('print-root') || document.body.appendChild(h('div', { id: 'print-root' }));
+  const dims = LABEL_SIZES.find(x => x[0] === size)[2];
   const labels = [];
   for (const d of bundle) {
     const v = d.device;
-    const ip = d.interfaces.map(i => i.ip).filter(Boolean)[0];
+    const ip = deviceMainIp(d);
     const qr = await qrSvg(`${location.origin}/#/devices/${v.id}`, 150);
+    const facts = [nz(v.manufacturer, v.model), ip || (v.serial ? `S/N ${v.serial}` : '')].filter(Boolean).slice(0, 2);
     labels.push(h('div', { class: 'label' }, h('div', { class: 'label-qr' }, qr),
-      h('div', { class: 'label-text' }, h('b', null, v.name), h('div', null, nz(v.manufacturer, v.model)),
-        v.serial ? h('div', { class: 'mono' }, `S/N ${v.serial}`) : null, ip ? h('div', { class: 'mono' }, ip) : null,
-        h('div', { class: 'label-loc' }, [v.rack_name ? `${v.rack_name}${v.rack_u ? ' U' + v.rack_u : ''}` : null, v.location_path].filter(Boolean)[0] || ''))));
+      h('div', { class: 'label-text' }, h('b', null, v.name), size === '1x1' ? null : facts.map(f => h('div', { class: /^[\d.:]+$|^S\/N/.test(f) ? 'mono' : '' }, f)))));
   }
-  root.replaceChildren(h('div', { class: 'labels' }, labels));
+  root.replaceChildren(h('div', { class: `labels labels-${size}` }, labels));
+  // Roll labels print one per page at the roll's size; a sheet uses the normal page.
+  const page = document.getElementById('label-page') || document.head.appendChild(h('style', { id: 'label-page' }));
+  page.textContent = dims ? `@page { size: ${dims.w}mm ${dims.h}mm; margin: 0; }` : '';
   document.body.classList.add('printing');
-  const done = () => { document.body.classList.remove('printing'); window.removeEventListener('afterprint', done); };
+  const done = () => { document.body.classList.remove('printing'); page.textContent = ''; window.removeEventListener('afterprint', done); };
   window.addEventListener('afterprint', done);
   setTimeout(() => { window.print(); setTimeout(done, 1500); }, 100);
 }
+const deviceMainIp = d => (d.interfaces.find(i => i.is_primary && i.ip) || d.interfaces.find(i => i.ip) || {}).ip || '';
 
 // ---------------------------------------------------------------- phone app (install) help
 
@@ -5397,7 +5447,7 @@ function phoneQrBlock() {
   pick.addEventListener('change', draw);
   draw();
   return h('div', { class: 'qr-pair-wrap' },
-    h('p', null, h('b', null, 'Scan with your phone’s camera: '), 'no typing needed. ① first (install and trust it), then ②.'),
+    h('p', null, h('b', null, 'Scan this with your phone’s camera. '), 'Both need to be on the same Wi‑Fi. Scan ① first (install and trust the certificate), then ②.'),
     urls.length > 1 ? h('label', { class: 'disc-field' }, h('span', null, 'Address your phone uses'), pick) : null,
     h('div', { class: 'qr-pair' }, certBox, appBox));
 }

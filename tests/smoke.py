@@ -2,14 +2,14 @@
 
     .venv/bin/python tests/smoke.py
 """
-import json, os, subprocess, tempfile, time, urllib.request, http.cookiejar
+import json, os, subprocess, sys, tempfile, time, urllib.request, http.cookiejar
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PORT = 8091
 tmp = tempfile.mkdtemp(prefix="harm-smoke-")
 env = {**os.environ, "HARM_DB": os.path.join(tmp, "harm.db"), "HARM_AUTO_BACKUP": "0"}
-server = subprocess.Popen([str(ROOT / ".venv/bin/uvicorn"), "harm.main:app", "--port", str(PORT)],
+server = subprocess.Popen([sys.executable, "-m", "uvicorn", "harm.main:app", "--port", str(PORT)],
                           cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 B = f"http://127.0.0.1:{PORT}/api"
 op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))

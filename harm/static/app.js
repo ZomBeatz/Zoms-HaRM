@@ -2646,7 +2646,7 @@ async function viewSettings() {
   const ents = ['devices', 'components', 'racks', 'locations', 'networks', 'interfaces', 'services', 'connections', 'device_slots', 'credentials'];
   const group = (title, ...cards) => [h('h2', { class: 'settings-group' }, title), h('div', { class: 'grid two' }, cards)];
   render(
-    pageHead('Settings', 'Grouped like the guide’s Settings page. Each one says what it does.'),
+    pageHead('Settings', 'How HaRM looks, locks, connects and keeps your data.'),
     group('Appearance', appearanceCard()),
     group('Locking and security',
       card('Locking', h('div', null,
@@ -3395,7 +3395,7 @@ const HELP = [
     P('When a device has several IPs (say, the OS plus an iDRAC), HaRM uses its ', B('main address'), ' for the summary, quick links, logins and lists. Management ports are never picked automatically. To choose, tap the 🌐 address on the device page and pick ', B('☆ Main'), ', or tick ', B('Main address'), ' on the interface.'),
   ]],
   ['trouble', 'Troubleshooting: can’t connect', () => troubleshootingContent()],
-  ['mobile', 'Phone & scanning', () => [
+  ['mobile', 'Phones, tablets and scanning', () => [
     P('HaRM works on phones and can be installed as an app (its own icon, no browser bars, long-press shortcuts for Scan, Devices and Tasks). Chrome only allows installing sites it fully trusts, so your phone has to trust HaRM’s certificate once. ', btn('📱 Show me how', phoneAppHelp, 'sm primary')),
     h('h4', null, 'Scanning labels'),
     UL(

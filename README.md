@@ -94,11 +94,13 @@ Open http://127.0.0.1:8099 and unlock with `demo-password`. Press Ctrl+C to stop
 
 ## Running on a server
 
-**With Docker** (home servers, NAS, Unraid, TrueNAS, Synology): set `HARM_CERT_NAMES` in `docker-compose.yml` to the address your phones will use, then:
+**With Docker** (home servers, NAS, Unraid, TrueNAS, Synology, Raspberry Pi): download [`docker-compose.yml`](docker-compose.yml), set `HARM_CERT_NAMES` in it to the address your phones will use, then:
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
+
+The image (`ghcr.io/zombeatz/zoms-harm`) is built by GitHub for amd64 and arm64. To update: `docker compose pull && docker compose up -d`.
 
 **As a Linux service** (starts at boot):
 

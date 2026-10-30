@@ -62,7 +62,7 @@ ENTITIES: dict[str, dict] = {
             "warranty_until": f(D), "tags": f(T), "notes": f(T),
             "msrp": f(R), "market_value": f(R), "value_checked": f(D),
             "host_id": f(fk("devices")), "cluster_id": f(fk("clusters")), "vm_id": f(T),
-            "vcpus": f(I), "vm_ram_gb": f(R), "vm_disk_gb": f(R), "watch": f(B),
+            "vcpus": f(I), "vm_ram_gb": f(R), "vm_disk_gb": f(R), "watch": f(B), "alerts": f(B),
         },
         "search": ["name", "device_type", "manufacturer", "model", "serial", "asset_tag",
                    "hostname", "os", "tags", "notes"],

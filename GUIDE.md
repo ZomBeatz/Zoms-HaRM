@@ -104,6 +104,9 @@ When it's done, HaRM sits on your phone's home screen like an app. Long-press th
 - HaRM knocks on a few ports of each address (the device's own services, then SSH, the web and so on). Any answer counts. If none answers, it tries one ping.
 - Hooked-up devices are checked every 5 minutes, and every minute while the page is open. Change it in **Settings > Status and actions**. To leave one device out, edit it and untick **Check if it's online**.
 - A server's iLO, iDRAC or IPMI port is checked too and shown under it.
+- Its **services** (Network tab) are checked once it answers: a web address must reply (anything below a 500 error), and a port must accept the connection. Each says **Answering** or **Not answering**.
+- In the rack drawing, a device that isn't answering is outlined in red and says **Offline**.
+- **Alerts** (**Settings > Status and actions > Alerts**): a message by ntfy (a free phone app), email or a webhook when a device or service stops answering, and when it's back. Choose how long to wait first, so a restart doesn't wake you. Press **Send a test** after setting it up. Their passwords are kept encrypted in `alerts.key` in the data folder (not in backups), because alerts are sent while HaRM is locked too.
 - **Wake** sends a Wake-on-LAN packet to an offline device that has a MAC address (Wake-on-LAN must be on in its BIOS). In Docker this needs `network_mode: host`.
 - **⋯ > Full screen** makes it a wall display that keeps itself up to date.
 
@@ -114,7 +117,7 @@ When it's done, HaRM sits on your phone's home screen like an app. Long-press th
 4. **How to send it:** as one shell script (Linux, Proxmox, NAS boxes), or one command per line (iLO, iDRAC, switches, Windows).
 5. Old management ports often refuse modern SSH: tick **Older SSH**, or paste the `-o` settings from an ssh command that works into **Other SSH settings**.
 
-Press **▶ Run** on the Actions page, the device's tab, or its tile on **Status**. A message says whether it worked, with **Show output**. Tick **Ask before running** for anything that restarts or shuts down.
+Actions only run when you press the button; nothing runs on a schedule. Press **▶ Run** on the Actions page, the device's tab, or its tile on **Status**. A message says whether it worked, with **Show output**. Tick **Ask before running** for anything that restarts or shuts down.
 
 **Search** (top bar, or press `/`): type a name, IP, MAC, serial, part number or login. Results appear as you type, and picking one opens that exact item: an IP opens its network entry, a login opens its reveal window.
 
@@ -194,6 +197,7 @@ HaRM has these steps built in too: **Help & Guide > Troubleshooting**, the **Sho
 | HaRM won't start | Open **Server log** at the bottom of the control panel. It shows the reason. |
 | Forgot the master password | On the unlock screen choose **Use the recovery code**. |
 | Status says Offline, but the device is on | Its firewall blocks every port HaRM tries, and ping. Add a service with an open port on its **Network** tab (HaRM tries those first), or allow ping. |
+| Alerts don't arrive | Press **Send a test** in **Settings > Status and actions > Alerts**; the list under it shows why each one failed. For Gmail or Outlook, use an app password. ntfy: check the phone is subscribed to exactly the same topic. |
 | An action says the machine "only speaks an older kind of SSH" | Edit the action and tick **Older SSH**. If it still fails, paste the `-o …` settings from an ssh command that works into **Other SSH settings**. |
 | An action says the machine's key changed | Normal after reinstalling it or replacing its iLO or iDRAC card: choose **Trust the new key and run**. If nothing changed, find out why first. |
 | Lost the password *and* the recovery code | Stored logins can't be recovered; that's what keeps them safe. Everything else is still readable from a backup. |

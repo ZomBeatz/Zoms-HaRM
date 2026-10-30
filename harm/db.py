@@ -27,7 +27,7 @@ def data_dir() -> Path:
 
 DB_PATH = Path(os.environ.get("HARM_DB") or data_dir() / "harm.db")
 
-SCHEMA_VERSION = 8  # highest key in MIGRATIONS
+SCHEMA_VERSION = 9  # highest key in MIGRATIONS
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -437,6 +437,31 @@ MIGRATIONS: dict[int, list[str]] = {
             at         TEXT NOT NULL DEFAULT (datetime('now'))
         )""",
         "CREATE INDEX IF NOT EXISTS idx_action_runs ON action_runs(action_id, id)",
+    ],
+    9: [
+        # Each service checked on its own (a web page answering, not just the machine).
+        """CREATE TABLE IF NOT EXISTS service_status (
+            service_id INTEGER PRIMARY KEY REFERENCES services(id) ON DELETE CASCADE,
+            device_id  INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+            state      TEXT NOT NULL,
+            code       INTEGER,
+            latency_ms REAL,
+            detail     TEXT,
+            checked_at TEXT NOT NULL,
+            changed_at TEXT NOT NULL,
+            alerted    INTEGER NOT NULL DEFAULT 0
+        )""",
+        # Alerts: which devices to send them about, which went out already, and what was sent.
+        "ALTER TABLE devices ADD COLUMN alerts INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE device_status ADD COLUMN alerted INTEGER NOT NULL DEFAULT 0",
+        """CREATE TABLE IF NOT EXISTS alert_log (
+            id      INTEGER PRIMARY KEY,
+            at      TEXT NOT NULL DEFAULT (datetime('now')),
+            channel TEXT NOT NULL,
+            title   TEXT NOT NULL,
+            ok      INTEGER NOT NULL,
+            error   TEXT
+        )""",
     ],
 }
 

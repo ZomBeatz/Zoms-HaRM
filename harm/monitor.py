@@ -7,6 +7,10 @@ port answers, it falls back to one ping. Only the addresses recorded in HaRM are
 Devices are checked when they're hooked up, not retired or sold, and "Check if it's online" is
 on. The server checks every few minutes (Settings > Status), and more often while the Status
 page is open. Each state change is kept for 30 days, for the history strip.
+
+Services (a device's Network tab) are checked too, once their device answers: a web address must
+send any HTTP reply below 500, and a port must accept the connection. After each check, alerts.py
+sends the alerts that are due.
 """
 
 import asyncio
@@ -16,12 +20,15 @@ import os
 import re
 import shutil
 import socket
+import ssl
 import subprocess
+import urllib.error
+import urllib.request
 import sys
 import time
 from datetime import datetime, timedelta, timezone
 
-from . import db
+from . import alerts, db
 from .models import iface_order
 
 COMMON_PORTS = (22, 443, 80, 3389, 8006, 445, 8080)
@@ -36,6 +43,8 @@ _NO_WINDOW = 0x08000000 if os.name == "nt" else 0  # don't flash a console windo
 _full_lock = asyncio.Lock()
 _last_full = 0.0  # time.monotonic() of the last full check
 _last_prune = 0.0
+_sending: set = set()  # alert deliveries in flight (kept so they aren't garbage collected)
+HTTP_TIMEOUT = 6
 
 
 def _now() -> str:
@@ -168,6 +177,108 @@ def targets(conn, device_id: int | None = None) -> dict[int, dict]:
     return {k: v for k, v in out.items() if v["addresses"]}
 
 
+_SVC_SKIP = ("UDP", "SNMP")
+
+
+def service_targets(conn, device_ids) -> list[dict]:
+    """The services to check: running (or no status), with a web address or a TCP port."""
+    if not device_ids:
+        return []
+    ids = list(device_ids)
+    rows = conn.execute(
+        f"SELECT id, device_id, name, protocol, port, url FROM services WHERE device_id IN ({','.join('?' * len(ids))}) "
+        "AND COALESCE(status, '') IN ('', 'Running') ORDER BY device_id, id", ids).fetchall()
+    out = []
+    for r in rows:
+        url = (r["url"] or "").strip()
+        if re.match(r"^https?://", url, re.I):
+            out.append({**dict(r), "how": "http", "url": url})
+        elif r["port"] and 0 < r["port"] < 65536 and (r["protocol"] or "TCP").upper() not in _SVC_SKIP:
+            out.append({**dict(r), "how": "tcp"})
+    return out
+
+
+def _why(reason) -> str:
+    """A web check's failure in plain words."""
+    if isinstance(reason, ConnectionRefusedError):
+        return "connection refused"
+    if isinstance(reason, (socket.timeout, TimeoutError)) or "timed out" in str(reason):
+        return "no answer"
+    if isinstance(reason, socket.gaierror):
+        return "name not found"
+    if isinstance(reason, ssl.SSLError):
+        return "the secure connection failed"
+    if isinstance(reason, OSError) and reason.strerror:
+        return reason.strerror.lower()
+    return str(reason)[:200]
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **kw):
+        return None  # a redirect is an answer; don't follow it
+
+
+def _http_sync(url: str) -> dict:
+    """Any HTTP reply below 500 counts: a login page, 401 or 404 still means the service is there.
+    Certificates aren't checked here (home-lab services usually have their own)."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=ctx), _NoRedirect)
+    t0 = time.monotonic()
+    try:
+        r = opener.open(urllib.request.Request(url, headers={"User-Agent": "Zoms-HaRM status check"}), timeout=HTTP_TIMEOUT)
+        code = r.status
+        r.close()
+    except urllib.error.HTTPError as e:
+        code = e.code
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        return {"state": "down", "code": None, "latency_ms": None, "detail": _why(getattr(e, "reason", e))}
+    ms = round((time.monotonic() - t0) * 1000, 1)
+    if code >= 500:
+        return {"state": "down", "code": code, "latency_ms": ms, "detail": f"HTTP {code}"}
+    return {"state": "up", "code": code, "latency_ms": ms, "detail": f"HTTP {code}"}
+
+
+async def _port_open(host: str, port: int) -> dict:
+    t0 = time.monotonic()
+    try:
+        _r, w = await asyncio.wait_for(asyncio.open_connection(host, port), TCP_TIMEOUT * 2)
+        w.close()
+        try:
+            await w.wait_closed()
+        except Exception:
+            pass
+    except ConnectionRefusedError:
+        return {"state": "down", "code": None, "latency_ms": None, "detail": f"port {port} refused the connection"}
+    except (asyncio.TimeoutError, OSError):
+        return {"state": "down", "code": None, "latency_ms": None, "detail": f"no answer on port {port}"}
+    return {"state": "up", "code": None, "latency_ms": round((time.monotonic() - t0) * 1000, 1), "detail": f"port {port}"}
+
+
+async def check_service(svc: dict, host: str | None) -> dict:
+    if svc["how"] == "http":
+        return await asyncio.to_thread(_http_sync, svc["url"])
+    if not host:
+        return {"state": "unknown", "code": None, "latency_ms": None, "detail": "the device has no address"}
+    return await _port_open(host, svc["port"])
+
+
+def _record_service(conn, svc: dict, res: dict) -> None:
+    now = _now()
+    prev = conn.execute("SELECT state FROM service_status WHERE service_id = ?", (svc["id"],)).fetchone()
+    if prev and prev["state"] == res["state"]:
+        conn.execute("UPDATE service_status SET code = ?, latency_ms = ?, detail = ?, checked_at = ? WHERE service_id = ?",
+                     (res["code"], res["latency_ms"], res["detail"], now, svc["id"]))
+    elif prev:
+        conn.execute("UPDATE service_status SET state = ?, code = ?, latency_ms = ?, detail = ?, checked_at = ?, changed_at = ? "
+                     "WHERE service_id = ?", (res["state"], res["code"], res["latency_ms"], res["detail"], now, now, svc["id"]))
+    else:
+        conn.execute("INSERT INTO service_status (service_id, device_id, state, code, latency_ms, detail, checked_at, changed_at) "
+                     "VALUES (?,?,?,?,?,?,?,?)", (svc["id"], svc["device_id"], res["state"], res["code"], res["latency_ms"],
+                                                  res["detail"], now, now))
+
+
 def _record(conn, device_id: int, results: dict[str, dict]) -> list[dict]:
     """Save a device's results; return the addresses whose state changed."""
     now = _now()
@@ -215,18 +326,47 @@ async def check(device_id: int | None = None) -> list[dict]:
         results: dict[int, dict] = {}
         for (did, a), fut in jobs.items():
             results.setdefault(did, {})[a] = fut.result()
+        # Services, for devices whose main address answered (a machine that's off has no services).
+        conn = db.connect()
+        try:
+            svcs = service_targets(conn, todo)
+        finally:
+            conn.close()
+
+        async def svc_one(svc):
+            t = todo[svc["device_id"]]
+            main = t["addresses"][0]
+            if results[svc["device_id"]][main]["state"] != "up":
+                return svc, {"state": "unknown", "code": None, "latency_ms": None, "detail": "the device isn't answering"}
+            async with sem:
+                return svc, await check_service(svc, main)
+
+        svc_results = await asyncio.gather(*(svc_one(x) for x in svcs))
         conn = db.connect()
         try:
             changes = []
             for did, res in results.items():
                 changes += _record(conn, did, res)
+            for svc, res in svc_results:
+                _record_service(conn, svc, res)
             if device_id is None:  # devices no longer watched keep no stale "Online"
                 ids = list(todo) or [0]
                 conn.execute(f"DELETE FROM device_status WHERE device_id NOT IN ({','.join('?' * len(ids))})", ids)
+                sids = [x["id"] for x in svcs] or [0]
+                conn.execute(f"DELETE FROM service_status WHERE service_id NOT IN ({','.join('?' * len(sids))})", sids)
+            else:
+                sids = [x["id"] for x in svcs] or [0]
+                conn.execute(f"DELETE FROM service_status WHERE device_id = ? AND service_id NOT IN ({','.join('?' * len(sids))})",
+                             [device_id, *sids])
+            events = alerts.due(conn)
             conn.commit()
-            return changes
         finally:
             conn.close()
+        if events:  # sent in the background, so a slow mail server never holds up the checks
+            task = asyncio.ensure_future(asyncio.to_thread(alerts.deliver, events))
+            _sending.add(task)
+            task.add_done_callback(_sending.discard)
+        return changes
 
     if device_id is not None:
         return await run()
@@ -343,7 +483,10 @@ def device_state(conn, dev: dict, with_history: bool = True) -> dict:
         state = "off" if not dev.get("connected") or dev.get("status") in ("Retired", "Sold") else "unwatched"
     else:
         state = main["state"]
-    out = {"state": state, "address": main["address"] if main else None,
+    services = [dict(r) for r in conn.execute(
+        "SELECT s.id, s.name, s.url, s.port, st.state, st.code, st.latency_ms, st.detail, st.checked_at, st.changed_at AS since "
+        "FROM service_status st JOIN services s ON s.id = st.service_id WHERE st.device_id = ? ORDER BY s.name", (dev["id"],))]
+    out = {"state": state, "address": main["address"] if main else None, "services": services if state in ("up", "down") else [],
            "latency_ms": main["latency_ms"] if main else None, "since": main["since"] if main else None,
            "checked_at": main["checked_at"] if main else None, "method": main["method"] if main else None,
            "others": rows[1:] if state not in ("off", "unwatched") else [], "strip": None, "uptime": None}
@@ -362,6 +505,14 @@ def offline(conn) -> list[dict]:
         if st["state"] == "down":
             out.append({"id": d["id"], "label": d["name"], "address": st["address"], "since": st["since"]})
     return out
+
+
+def services_down(conn) -> list[dict]:
+    """Services that stopped answering on a device that does answer, for Home's "Needs attention"."""
+    return [dict(r) for r in conn.execute(
+        f"SELECT s.id, s.name, d.id AS device_id, d.name AS device_name, st.detail, st.changed_at AS since "
+        f"FROM service_status st JOIN services s ON s.id = st.service_id JOIN devices d ON d.id = st.device_id "
+        f"WHERE st.state = 'down' AND {_WATCHED} ORDER BY d.name, s.name")]
 
 
 # --------------------------------------------------------------------------- Wake-on-LAN

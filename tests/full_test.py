@@ -780,6 +780,108 @@ Let me know if you need anything else!"""
         assert c.call("GET", "/status")["status_interval"] == 0
         assert c.call("GET", "/update-check")["enabled"] is False
 
+    hooks = []
+
+    def hook_server():
+        """A web service that's broken (500) and a webhook that keeps what it's sent."""
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                self.send_response(500); self.end_headers()
+
+            def do_POST(self):
+                hooks.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+                self.send_response(204); self.end_headers()
+        srv = HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        return srv
+
+    def listener(port=0):
+        import socket
+        so = socket.socket()
+        so.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        so.bind(("127.0.0.1", port))
+        so.listen(8)
+        return so
+
+    def wait_hook(text):
+        for _ in range(50):
+            if any(text in h["title"] for h in hooks):
+                return True
+            time.sleep(0.1)
+        raise AssertionError(f"no alert with {text!r}: {[h['title'] for h in hooks]}")
+
+    @test("services: a web page, a closed port, a broken page, and a stopped one")
+    def _():
+        S["hook"] = hook_server()
+        hp = S["hook"].server_address[1]
+        did = S["up"]["id"]
+        for body in ({"name": "HaRM web", "url": f"http://127.0.0.1:{PORT}/"}, {"name": "Closed", "protocol": "TCP", "port": 1},
+                     {"name": "Broken web", "url": f"http://127.0.0.1:{hp}/"}, {"name": "Old thing", "port": 1, "status": "Stopped"}):
+            c.call("POST", "/services", {"device_id": did, **body})
+        c.call("POST", "/status/check", {"device_id": did})
+        sv = {x["name"]: x for x in c.call("GET", f"/devices/{did}/full")["online"]["services"]}
+        assert sv["HaRM web"]["state"] == "up" and sv["HaRM web"]["code"] == 200, sv
+        assert sv["Closed"]["state"] == "down" and "refused" in sv["Closed"]["detail"], sv
+        assert sv["Broken web"]["state"] == "down" and sv["Broken web"]["code"] == 500, sv
+        assert "Old thing" not in sv
+        down = {x["name"] for x in c.call("GET", "/dashboard")["services_down"]}
+        assert down == {"Closed", "Broken web"}, down
+        assert next(x for x in c.call("GET", "/status")["devices"] if x["id"] == did)["services"]
+        assert "online" in c.call("GET", f"/racks/{S['rack']['id']}/layout")
+
+    @test("alerts: settings are checked, and secrets never come back")
+    def _():
+        a = c.call("GET", "/alerts")
+        assert a["enabled"] is False and a["has_webhook_url"] is False and a["recent"] == [], a
+        c.call("POST", "/alerts", {"enabled": True}, expect=400)
+        c.call("POST", "/alerts", {"enabled": True, "webhook_on": True}, expect=400)
+        c.call("POST", "/alerts", {"enabled": True, "ntfy_on": True, "ntfy_url": "https://ntfy.sh/"}, expect=400)
+        c.call("POST", "/alerts", {"enabled": True, "email_on": True, "email_host": "smtp.example.com", "email_to": "not an address"}, expect=400)
+        c.call("POST", "/alerts/test", {}, expect=400)
+        time.sleep(1.1)  # the services above went down before alerts were turned on: no alerts about them
+        url = f"http://127.0.0.1:{S['hook'].server_address[1]}/hook"
+        r = c.call("POST", "/alerts", {"enabled": True, "delay": 0, "webhook_on": True, "webhook_url": url})
+        assert r["has_webhook_url"] and "webhook_url" not in r, r
+        assert url not in json.dumps(c.call("GET", "/alerts"))
+        t = c.call("POST", "/alerts/test", {})
+        assert t["results"] == [{"channel": "webhook", "ok": True}], t
+        wait_hook("Test from Zom's HaRM")
+        assert c.call("GET", "/alerts")["recent"][0]["ok"] == 1
+
+    @test("alerts: a device goes offline; a service goes down and comes back")
+    def _():
+        d = c.call("POST", "/devices", {"name": "Fresh outage", "status": "Active", "connected": True})
+        c.call("POST", "/interfaces", {"device_id": d["id"], "ip": "192.0.2.20"})
+        quiet = c.call("POST", "/devices", {"name": "No alerts please", "status": "Active", "connected": True, "alerts": False})
+        c.call("POST", "/interfaces", {"device_id": quiet["id"], "ip": "192.0.2.21"})
+        c.call("POST", "/status/check", {"device_id": d["id"]})
+        c.call("POST", "/status/check", {"device_id": quiet["id"]})
+        wait_hook("Fresh outage is offline")
+        so = listener()
+        port = so.getsockname()[1]
+        did = S["up"]["id"]
+        c.call("POST", "/services", {"device_id": did, "name": "Flaky", "protocol": "TCP", "port": port})
+        c.call("POST", "/status/check", {"device_id": did})
+        so.close()
+        c.call("POST", "/status/check", {"device_id": did})
+        wait_hook("Flaky on Answers isn't answering")
+        so = listener(port)
+        c.call("POST", "/status/check", {"device_id": did})
+        wait_hook("Flaky on Answers is answering again")
+        so.close()
+        c.call("POST", "/status/check", {"device_id": d["id"]})
+        time.sleep(0.5)
+        titles = [h["title"] for h in hooks]
+        assert titles.count("Fresh outage is offline") == 1, titles
+        assert not [t for t in titles if "No alerts please" in t or "Closed" in t or "Broken web" in t], titles
+        c.call("POST", "/alerts", {"enabled": False})
+
     @test("deleting a device removes its actions and online history")
     def _():
         c.call("DELETE", f"/devices/{S['up']['id']}")

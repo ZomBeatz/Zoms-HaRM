@@ -17,7 +17,7 @@ upload external-link plug pin globe snowflake menu qr-code wrench lock pencil fl
 compass shield printer hard-drive video moon sun sun-moon arrow-left-right undo-2 boxes play square rotate-cw plus
 search x check triangle-alert circle-check info copy log-out sparkles scan-line file-down list cpu memory-stick
 router wifi cloud-download folder-input eye eye-off link refresh-cw circle sliders-horizontal message-square keyboard
-activity zap power maximize""".split()
+activity zap power maximize bell""".split()
 
 
 def parse_all(names):

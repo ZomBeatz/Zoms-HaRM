@@ -2,7 +2,7 @@
 
 HaRM (Hardware and Rack Manager) keeps track of your hardware: where every device lives, what's inside it, how it's networked, how to log into it, and what still needs doing. It runs on your own computer. Your phone connects to it over your home Wi-Fi, and nothing is sent to the internet.
 
-The full guide, with pictures and a page for every feature, is online at https://zombeatz.github.io/zombeatz-docs/harm/. This copy covers the essentials for offline use.
+The full guide, with pictures and a page for every feature, is online at https://docs.zombeatzmedia.com/harm/. This copy covers the essentials for offline use.
 
 **Contents:** [Install on Windows](#install-on-windows) · [Install on Linux](#install-on-linux) · [Run on a server (Docker / service)](#run-on-a-server-docker-or-linux-service) · [First start](#first-start) · [Connect your phone](#connect-your-phone) · [Everyday use](#everyday-use) · [Backups and moving to a new PC](#backups-and-moving-to-a-new-pc) · [Updating](#updating) · [Uninstalling](#uninstalling) · [Troubleshooting](#troubleshooting) · [Security](#security)
 

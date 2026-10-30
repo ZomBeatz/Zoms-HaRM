@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 VERSION = re.search(r'__version__ = "([^"]+)"', (ROOT / "harm" / "__init__.py").read_text()).group(1)
 NAME = f"zoms-harm-{VERSION}"
-INCLUDE = ["harm", "launcher", "scripts", "tests", "branding", "README.md", "GUIDE.md", "requirements.txt",
+INCLUDE = ["harm", "launcher", "scripts", "tests", "branding", "README.md", "GUIDE.md", "LICENSE", "requirements.txt",
            "requirements-desktop.txt", "run.sh", "install.sh", "Install HaRM.cmd", "Uninstall HaRM.cmd",
            "Dockerfile", "docker-compose.yml", ".dockerignore", "docker"]
 SKIP_DIRS = {"__pycache__", "old-icons", ".pytest_cache"}

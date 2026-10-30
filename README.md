@@ -1,163 +1,158 @@
-# Zom's HaRM: Hardware and Rack Manager
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="branding/harm-logo-dark.png">
+    <img src="branding/harm-logo.png" alt="Zom's HaRM by ZomBeatz Media" width="460">
+  </picture>
+</p>
 
-A self-hosted, single-owner web app for tracking your computer and network
-hardware: where it lives, how it's racked, what's inside it, what it runs, how
-it's cabled, and how to log into it. It also tracks spare parts and tells you
-which ones fit in which devices.
+<p align="center">
+  <b>Know where every piece of hardware is.</b><br>
+  A free hardware and rack manager for your home lab: racks, devices, spare parts, networks, VMs and logins in one place.<br>
+  Runs on Windows, Linux or your own server with Docker, and on your phone over your Wi‑Fi.
+</p>
 
-## What it tracks
+<p align="center">
+  <a href="https://github.com/ZomBeatz/Zoms-HaRM/releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/Windows-Download-2580c3?style=for-the-badge&logo=windows&logoColor=white"></a>
+  <a href="https://github.com/ZomBeatz/Zoms-HaRM/releases/latest"><img alt="Download for Linux" src="https://img.shields.io/badge/Linux-Download-2580c3?style=for-the-badge&logo=linux&logoColor=white"></a>
+  <a href="https://docs.zombeatzmedia.com/harm/"><img alt="Read the guide" src="https://img.shields.io/badge/Read_the-Guide-5b6375?style=for-the-badge&logo=readthedocs&logoColor=white"></a>
+  <a href="#try-it-with-demo-data"><img alt="Try the demo" src="https://img.shields.io/badge/Try_it-Demo_data-22c55e?style=for-the-badge&logo=python&logoColor=white"></a>
+  <a href="#running-on-a-server"><img alt="Server with Docker" src="https://img.shields.io/badge/Server-Docker-ec6a3f?style=for-the-badge&logo=docker&logoColor=white"></a>
+</p>
 
-| Area | Details |
+<p align="center">
+  <img src="docs/screenshots/home.png" alt="HaRM's Home page: what needs attention and open tasks" width="900">
+</p>
+
+## Quick start
+
+1. **Download** the file for your computer from the [latest release](https://github.com/ZomBeatz/Zoms-HaRM/releases/latest) (under **Assets** at the bottom):
+
+   | Your computer | File to download | Then |
+   |---|---|---|
+   | **Windows 10/11** | `zoms-harm-(version).zip` | Extract it to your user folder (not Program Files) and double-click **Install HaRM.cmd**. If Windows says *"Windows protected your PC"*, click **More info > Run anyway**. |
+   | **Linux** | `zoms-harm-(version).tar.gz` | Extract it and run `./install.sh`. |
+   | **Home server or NAS** | either | See [Running on a server](#running-on-a-server). |
+
+2. **Open Zom's HaRM** from the Start Menu or app menu, press **Start**, then **Open HaRM**.
+3. **Create your master password** (it encrypts your stored logins) and follow the short setup guide.
+4. **Connect your phone:** **Phone setup** in the desktop app shows QR codes and a checklist that follows your phone's progress.
+
+The full guide, with pictures, is at **[docs.zombeatzmedia.com/harm](https://docs.zombeatzmedia.com/harm/)**.
+
+## What it does
+
+| | |
 |---|---|
-| **Locations** | Nested tree: site > building > room > closet… Each room has a page listing its holders plus **loose** devices and parts (piles, desks, the floor), each with a “spot” note. |
-| **Racks & Storage** | Anything that holds hardware: racks and cabinets (with U heights), shelves, bins, totes, drawers, desks, piles. In forms, the holder list is filtered to the chosen location. Racks get a front/rear elevation view where you click an empty U to add or place a device. |
-| **Devices** | Type, make/model, serial, asset tag, status (Active/Standby/Spare/In Repair/Broken/Retired…), **hooked up** toggle, hostname, OS, CPU/RAM/storage, PSU and power draw, management URL, purchase/vendor/warranty, tags, notes. Rack placement checks bounds and overlaps, including front vs. rear and full-depth gear. |
-| **Slots & bays** | What a device can take: e.g. 12× SAS3 3.5" bays, 8× DDR4 RDIMM, 1× PCIe x16. Shows used/total. |
-| **Parts inventory** | Drives, RAM, CPUs, NICs, HBAs, PSUs, transceivers, cables… with capacity, interface (SATA, SAS, NVMe, DDR4, SFP+…), form factor, quantity, condition, health, where it's stored. Install into a device (it splits quantities) or remove back to a shelf or bin. |
-| **Compatibility** | Each device slot lists in-stock spares that fit. Each spare part shows which devices have a free slot for it. Matching understands that SAS backplanes take SATA drives, a PCIe x16 slot takes x8/x4/x1 cards, and generic vs. specific names ("SATA" vs "SATA III"). |
-| **Networks & IPs** | Subnets/VLANs/Wi-Fi with gateway, DHCP pool, DNS, domain, IPv6 prefix. Each has an IP map showing who uses which address, duplicates, static IPs inside the DHCP pool, and the next free addresses. |
-| **Interfaces** | Per device: IPv4 (accepts `/prefix`), IPv6, assignment (static/reservation/DHCP), gateway, DNS servers and name, MAC (normalized), speed, MTU, PoE, link state, parent bond/bridge, Wi-Fi SSID, access VLAN or trunk native/tagged VLANs. Linked to networks automatically from the IP. |
-| **Services** | Name, protocol/port, URL, version, status. |
-| **Connections** | Cables between device ports (or to an untracked endpoint like "ISP modem"): medium (Cat6, DAC, OM4, SFF-8643, C13…), label, length, color, speed. |
-| **AI Assist** | Photos → inventory with any AI chat app: HaRM writes a prompt (with where things are stored and its own categories), the AI identifies each item from your photos, reads labels and looks up the original price and current used value with sources. Paste the reply back for a preview (confidence, duplicate serials flagged, 📷 to scan missing serials), then add everything in one go, with research saved as notes and the AI's to-dos as tasks. Devices and parts gain **Original price**, **Current value** and **Value checked** fields. |
-| **Discover** | Bring devices in from **any router** (paste its client/DHCP lease list: pfSense, OPNsense, OpenWrt, Pi-hole, MikroTik, Omada, home routers, `arp -a`), a **UniFi** console (API key), **Proxmox** (cluster, nodes, VMs, containers via a read-only token), or a **network scan**. Matches existing devices by MAC/IP/name; phones, tablets, TVs, consoles and smart-home gear are recognised by name. You review before anything is saved. |
-| **Virtual & Clusters** | VMs and containers as devices that run on a host (VM ID, vCPU, memory, disk; no rack space). Host pages show their guests and CPU/memory overcommit; clusters group hosts with combined resources. **Main address** per device keeps iDRAC/iLO ports out of quick links. |
-| **Vault** | Logins and secrets per device/service: username, password, TOTP 2FA secret (shows live codes), encrypted notes, last-rotated date. Includes a password generator. **Open ↗** launches what a login is for (management page, service URL, SSH command or `ssh://` link, `.rdp` file) and copies the password on the same click. |
-| **Home** | One **Needs attention** list (IP conflicts, broken or in-repair devices, warranties ending within 90 days, active gear not hooked up, logins not changed in a year) next to your open tasks, plus rack space, spares and storage. Breakdowns and recent activity are folded under **More**. |
-| **Search** | One box for devices, IPs, MACs, serials, services, parts, holders, locations, and credentials. |
-| **Notes & tasks** | A journal on every device, rack and room: notes, tasks (tick them off), actions taken ("replaced PSU 2") and issues. Type and press Enter. Open tasks appear on the dashboard and the Tasks page; marking a drive failed adds an issue automatically. |
-| **Processors & memory** | CPUs come from the library (it also has common server CPUs: Opteron 4100 to 4300 and 6100, Xeon 5500/5600/X3400/E5 v1 to v4/Scalable, EPYC) or from specs you enter. Totals are shown, e.g. "2 × Opteron 4234 = 12 cores / 12 threads". Memory is grouped by size and type with totals and a slot map. |
-| **Drive bays** | Named bay groups (Front, Rear…) that can accept several connections (SAS/SATA), each with its own RAID/controller label, a tap-to-fill bay map, per-array totals and a RAID calculator. You can mark a single drive in a bay as failed. |
-| **QR labels** | Print stickers with name, model, serial, IP and a QR code that opens the device in HaRM. |
-| **Calm layout** | The sidebar groups everyday pages (Inventory, Network) and folds the rest under **More**. Phones get a bottom bar (Home, Devices, Racks, Tasks). Device pages open with a summary (where it is, IP, management link, one-tap logins) and tabs: Overview, Hardware, Network, Logins. Rarely used actions sit in a **⋯** menu. |
-| **Themes** | **ZomBeatz** (brand blue with orange highlights) in dark (default), light, or matching the system, chosen in Settings > Appearance and saved per device. There's also a hidden theme to find. Logos are in `branding/` (`make-logos.py` rebuilds them). |
-| **Installable app** | Works as a phone app (PWA) once the phone trusts HaRM's certificate (Settings > Phone app walks you through it, and `/harm-ca.crt` downloads the CA). Long-press shortcuts open Scan, Devices and Tasks. |
-| **Automatic backups** | A daily snapshot goes to `data/backups/` (newest 14 kept; set `HARM_BACKUP_KEEP`, or `HARM_AUTO_BACKUP=0` to turn it off). |
-| **Import specs** | From the device page: **Over SSH** (HaRM connects with a saved vault login or SSH keys, runs the read-only collector with optional sudo, Linux/macOS/Windows OpenSSH; host keys pinned in `data/ssh/known_hosts`), **This computer** (the HaRM server itself), or run a small read-only script yourself and paste its output. It fills in hostname, OS, model, serial, CPU and RAM, and adds each drive, memory stick, GPU and network card (IP and MAC). Already-recorded serials and MACs are skipped. Scripts are in `harm/static/collect/` and are served by HaRM. |
-| **Storage math** | Drive sizes are standardized ("4tb" becomes "4 TB"; tap-to-pick sizes). Every device has a Storage card with drives grouped by size, the raw total, and a usable-capacity calculator for JBOD, RAID 0/1/5/6/10 and RAIDZ1-3. Spare Parts and the dashboard show totals too. |
-| **Export & Share** | Choose devices (by location, rack, type, status) and what to include, then copy Markdown for a person or AI assistant, or download Markdown, CSV or JSON. You can also print a spec sheet or a sell sheet (with asking prices) to PDF. Secrets are never exported. |
-| **PC Builder** | PCPartPicker-style parts lists built from the parts library, your spare-parts inventory, or custom parts. Compatibility checks: CPU socket against board and cooler; memory type, slots, capacity, SO-DIMM, ECC/RDIMM; board size, GPU length and cooler height against the case; PSU form factor, length, wattage (against an estimated power draw) and GPU power connectors; M.2 slots and sizes; SATA ports; drive bays; SAS without an HBA; video output. The picker can hide incompatible parts. Track Have / Need / Ordered, prices and budget. **Create device** turns a finished build into a device with its motherboard slots and parts installed. |
-| **Parts library** | About 30,000 parts with specs from [BuildCores OpenDB](https://github.com/buildcores/buildcores-open-db), downloaded on demand. Add your own custom parts, or copy and correct library parts. Inventory parts can be linked to library parts (**Find in library**). |
-| **Scanning** | Camera buttons on serial, part number, model, asset tag and MAC fields, plus a whole-label scan that sorts values into fields. Barcodes and QR codes are decoded on the phone (ZXing) and on the server (zbar); printed text is read by tesseract. Photos are never stored. |
-| **Guides** | A setup wizard (locations → holders → networks → devices → security) and an in-app help guide. |
-| **Forms** | Closing a changed form asks Keep editing / Discard / Save. Typing is also kept as a local draft and restored if the form closes anyway (auto-lock, phone tab reload). Secrets are never drafted. **Save & add another** carries shared fields forward for bulk entry. |
-| **Audit log** | Every create, update and delete, plus logins, failed logins, secret reveals, exports and backups. |
+| **Places and racks** | Locations, racks with front and rear views, shelves, bins, totes and piles. Click an empty U to put a device there. |
+| **Devices** | Serial, status, specs, purchase, warranty and value, with a summary row (where it is, its address, one-tap logins) and tabs for hardware, network and logins. |
+| **Parts and storage** | Spare drives, memory, cards and cables; drive bays with a tap-to-fill map, RAID math, and which spares fit which device. |
+| **Networks** | Subnets and VLANs with an IP map (who uses what, conflicts, next free addresses), interfaces, services and cables. |
+| **Virtual machines** | VMs and containers on their hosts, CPU and memory overcommit, clusters, and a one-click Proxmox import. |
+| **Logins** | Encrypted passwords and 2FA codes. **Open** goes straight to the iDRAC, iLO or web page and copies the password. |
+| **Fill it in fast** | Import specs over SSH, Discover from any router, UniFi or a network scan, label scanning with the phone camera, and AI Assist from photos. |
+| **Notes and tasks** | A journal on every device, rack and room. Home shows what needs attention. |
+| **Share and plan** | Copy as text for a person or an AI, CSV and JSON, spec sheets and sell sheets, QR labels, and a PC builder with compatibility checks. |
+| **Privacy** | Runs on your own computer. No account, no cloud, no tracking. Daily backups. |
 
-## Install (for users)
+<table>
+  <tr>
+    <td width="66%"><img src="docs/screenshots/device.png" alt="A device page with its summary, tabs and notes"></td>
+    <td rowspan="2" width="34%"><img src="docs/screenshots/phone-home.png" alt="HaRM on a phone"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/rack.png" alt="A rack, front and rear"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/virtual.png" alt="Virtual machines and clusters"></td>
+    <td><img src="docs/screenshots/device-hardware.png" alt="Drive bays, memory and CPUs"></td>
+  </tr>
+</table>
 
-The full guide, with pictures, is at **[zombeatz.github.io/zombeatz-docs/harm](https://zombeatz.github.io/zombeatz-docs/harm/)**. A copy for offline use is in **[GUIDE.md](GUIDE.md)**. Download the release, then follow it, which covers setup, first start, phone setup, everyday use, backups, updates and troubleshooting.
+## What people use it for
 
-- **Windows:** extract the zip to your user folder and double-click `Install HaRM.cmd`.
-- **Linux:** `./install.sh`
+- **A home lab:** what's in the rack, which VM runs where, and the iDRAC login in one tap.
+- **A pile of spares:** photograph the boxes, let AI Assist identify and price them, and see which ones fit your servers.
+- **The whole house:** every device on the network, from the NAS to the TV, imported from your router's client list.
+- **Selling gear:** a clean sell sheet with specs and asking prices.
 
-Run it on a server with **Docker** (`docker compose up -d --build`) or as a **Linux service** (`./scripts/install-server.sh`): see GUIDE.md > Run on a server.
+## Try it with demo data
 
-Try it with made-up data first: `python3 scripts/demo.py` (opens on http://127.0.0.1:8099, password `demo-password`).
-
-Build a release yourself with `python3 scripts/package.py` (writes `dist/zoms-harm-<version>.zip` and `.tar.gz`; your `data/` folder is never included). Tests: `.venv/bin/python tests/smoke.py` (quick) and `tests/full_test.py` (every feature).
-
-## Run it
+Look around before entering your own gear. The demo starts a separate copy of HaRM with a made-up home lab, and never touches your data:
 
 ```bash
-./run.sh
+python3 scripts/demo.py
 ```
 
-Then open <http://127.0.0.1:8077>. The first visit asks you to create a master
-password and shows a **one-time recovery code**. Save it offline.
+Open http://127.0.0.1:8099 and unlock with `demo-password`. Press Ctrl+C to stop; the demo data is deleted.
 
-On first run, `run.sh` creates `.venv` and installs `requirements.txt`. Data
-lives in `data/harm.db` (the directory is `0700` and the file is `0600`).
+## Running on a server
 
-Settings come from environment variables:
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `HARM_HOST` | `127.0.0.1` | Bind address |
-| `HARM_PORT` | `8077` | Port |
-| `HARM_DB` | `data/harm.db` | Database path |
-| `HARM_IDLE_MINUTES` | `30` | Auto-lock after inactivity |
-| `HARM_MAX_SESSION_HOURS` | `12` | Hard session limit |
-| `HARM_SECURE_COOKIE` | `auto` | `auto` marks the cookie `Secure` when the request came over HTTPS |
-| `HARM_TRUSTED_PROXIES` | `127.0.0.1` | Proxies whose `X-Forwarded-*` headers are trusted |
-| `HARM_TLS` | `0` | `1` serves HTTPS using `data/tls/harm.crt` + `harm.key` (override with `HARM_TLS_CERT` / `HARM_TLS_KEY`) |
-
-### Parts library
-
-The PC Builder's library is downloaded into your own database on demand from
-**Parts Library > Download library** (about 16 MB; this is the only feature that
-needs internet access). You can also run it from the command line, or import a
-snapshot you downloaded yourself:
-
-```bash
-.venv/bin/python -m harm.pcbuild update
-.venv/bin/python -m harm.pcbuild update --file buildcores-open-db-main.tar.gz
-```
-
-PCPartPicker has no public API and its terms don't allow scraping, so HaRM
-uses BuildCores OpenDB instead. The data is licensed **CC BY-NC-SA 4.0**:
-personal, non-commercial use is fine, and if you share the data publicly you
-must credit BuildCores. It isn't bundled with HaRM. Prices aren't included, so
-enter your own. Library specs can have gaps (radiator support, for example), so
-treat the checks as a strong hint rather than a guarantee.
-
-### Using it from your phone
-
-Live camera scanning needs HTTPS. Photo scanning works over plain HTTP too. To
-serve HTTPS on your network:
-
-```bash
-./scripts/make-cert.sh harm.lan 192.168.1.50   # the names/IPs you'll type on the phone
-HARM_HOST=0.0.0.0 HARM_TLS=1 ./run.sh
-```
-
-Then open `https://192.168.1.50:8077` on the phone. To stop the certificate
-warning, install `data/tls/harm-ca.crt` on the phone as a trusted CA:
-
-- **iOS:** Settings > Profile Downloaded > Install, then Settings > General >
-  About > Certificate Trust Settings.
-- **Android:** Settings > Security > Install a certificate > CA certificate.
-
-Use "Add to Home Screen" for an app icon. Label text recognition needs
-`tesseract` on the server, and the server-side barcode reader needs `zbarimg`.
-The Docker image includes both.
-
-### Docker
+**With Docker** (home servers, NAS, Unraid, TrueNAS, Synology): set `HARM_CERT_NAMES` in `docker-compose.yml` to the address your phones will use, then:
 
 ```bash
 docker compose up -d --build
 ```
 
-This publishes on `127.0.0.1:8077` only, and data persists in `./data`.
-
-### Exposing it on your LAN
-
-Keep HaRM bound to localhost and put a TLS reverse proxy in front. A Caddy
-example:
-
-```
-harm.lan {
-    tls internal
-    reverse_proxy 127.0.0.1:8077
-}
-```
-
-The proxy must pass the original `Host` header through, which Caddy and nginx
-do by default. HaRM rejects cross-origin writes. Don't expose it to the
-internet; if you need remote access, reach it over a VPN into your home network (for
-example your router's VPN).
-
-### Desktop app (Linux)
-
-A control panel with its own icon, so you don't need a terminal: Start / Stop / Restart, **Open HaRM**, the addresses to use on your phone (with Copy buttons), a one-click fix when the HTTPS certificate doesn't cover the PC's current IP, a **Phone setup** guide (QR codes for the certificate and for HaRM, steps for Android, Samsung and iPhone, and a checklist that ticks itself off by watching the server: running, shared, HTTPS, certificate, firewall, then phone connected, certificate downloaded, certificate trusted, signed in, installed as an app), the server log, and a tray icon so HaRM keeps running after you close the window. Optional **Start HaRM when I log in**.
+**As a Linux service** (starts at boot):
 
 ```bash
-./scripts/install-desktop-app.sh              # adds "Zom's HaRM" to the app menu
-./scripts/install-desktop-app.sh --uninstall  # removes it
+./scripts/install-server.sh --names "192.168.1.50 harm.lan"
 ```
 
-Needs PySide6 (`sudo pacman -S pyside6` on Arch/CachyOS). The panel finds a server started from a terminal too, and settings are kept in `data/launcher.json`.
+Both set up HTTPS by themselves and keep everything in a `data` folder. Details: [Running on a server](https://docs.zombeatzmedia.com/harm/server).
 
-## Security model
+## Questions
+
+**Does it send my data anywhere?** No. It runs on your own computer. Only optional things reach the internet: AI Assist with an online service (just the photos you add), and the parts library download.
+
+**Phones and iPads?** Yes, as a home-screen app over your Wi‑Fi, once the device trusts HaRM's own certificate. [Phones and tablets](https://docs.zombeatzmedia.com/harm/phones-and-tablets).
+
+**Forgot the master password?** The recovery code you wrote down at the start gets you back in. Without either, stored logins can't be recovered; that's what keeps them safe.
+
+**Something not working?** [Troubleshooting](https://docs.zombeatzmedia.com/harm/troubleshooting).
+
+## For developers
+
+<details>
+<summary><b>Running from source, tests and project layout</b></summary>
+
+Python 3.10+ (FastAPI, SQLite) with a plain JavaScript front end: no build step.
+
+```bash
+./install.sh --no-menu                 # .venv with the requirements
+./run.sh                               # http://127.0.0.1:8077
+.venv/bin/python tests/smoke.py        # quick end-to-end check
+.venv/bin/python tests/full_test.py    # every feature
+python3 scripts/demo.py                # demo data on :8099
+python3 scripts/package.py             # release archives in dist/
+python3 scripts/build-icons.py         # Lucide icons for the app
+python3 branding/make-logos.py         # icons and wordmarks
+```
+
+```
+harm/
+  main.py         FastAPI app: auth, sessions, security middleware, CRUD, racks, slots, imports
+  models.py       Entity definitions (fields, joins, search) and suggestion lists
+  db.py           SQLite schema and migrations
+  crypto.py       scrypt key derivation, AES-GCM, key wrapping, recovery codes
+  certs.py        Local certificate authority and HTTPS certificates
+  discover.py     Router lists, UniFi import, network scan
+  proxmox.py      Proxmox import
+  remote.py       Import specs over SSH or locally
+  ai.py, aiproviders.py   AI Assist prompt, parser and services
+  pcbuild.py      Parts library (OpenDB) and build compatibility checks
+  collect.py      Parser for the spec collector's output
+  static/         Front end: index.html, app.js, style.css, zb-tokens.css (ZomBeatz design tokens), icons.js (Lucide)
+launcher/         Desktop control panel (Qt / PySide6)
+docker/, Dockerfile, docker-compose.yml   Server image
+scripts/          Installers, demo, packaging, certificates, screenshots
+tests/            smoke.py and full_test.py
+```
+
+</details>
+
+<details>
+<summary><b>Security model</b></summary>
 
 - **Encryption at rest.** A random 256-bit data key encrypts every password,
   TOTP secret and secret note with AES-256-GCM. Each field is bound to its
@@ -194,24 +189,12 @@ Needs PySide6 (`sudo pacman -S pyside6` on Arch/CachyOS). The panel finds a serv
 **If you lose both the master password and the recovery code, the stored
 logins are unrecoverable.** Your hardware inventory is unaffected because only
 secrets are encrypted.
+</details>
 
-## Layout
+## License
 
-```
-harm/
-  main.py      FastAPI app: auth, sessions, security middleware, CRUD, rack/slot logic
-  models.py    Entity definitions (fields, joins, search) and suggestion lists
-  crypto.py    scrypt key derivation, AES-GCM, key wrapping, recovery codes
-  pcbuild.py   Parts library import (OpenDB), spec normalisation, build compatibility checks
-  collect.py   Parser for the spec-collector output
-  units.py     Size parsing/formatting and snapping to marketed drive sizes
-  static/sw.js Service worker (app shell only; API data is never cached)
-tests/smoke.py End-to-end smoke test on a throwaway database
-  static/collect/  harm-collect.sh (Linux/macOS) and harm-collect.ps1 (Windows)
-  db.py        SQLite schema and helpers
-  static/      Frontend: index.html, app.js (vanilla JS, no build step), style.css
-  static/vendor/  ZXing barcode decoder 0.23.0 (Apache-2.0), loaded only when scanning
-scripts/make-cert.sh  Local CA + HTTPS certificate for phone access
-run.sh         Local launcher
-Dockerfile, docker-compose.yml
-```
+[MIT](LICENSE). The optional parts library HaRM downloads comes from [BuildCores OpenDB](https://github.com/buildcores/buildcores-open-db) and is for non-commercial use. Icons are [Lucide](https://lucide.dev) (ISC); the barcode reader is [ZXing](https://github.com/zxing-js/library) (Apache-2.0).
+
+## Contact
+
+Made by **ZomBeatz Media** · [info@zombeatzmedia.com](mailto:info@zombeatzmedia.com)

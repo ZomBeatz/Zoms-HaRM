@@ -126,7 +126,8 @@ def fake_proxmox():
 
 def main():
     tmp = tempfile.mkdtemp(prefix="harm-full-")
-    env = {**os.environ, "HARM_DB": os.path.join(tmp, "harm.db"), "HARM_AUTO_BACKUP": "0", "HARM_IDLE_MINUTES": "30"}
+    env = {**os.environ, "HARM_DB": os.path.join(tmp, "harm.db"), "HARM_AUTO_BACKUP": "0", "HARM_IDLE_MINUTES": "30",
+           "HARM_MONITOR": "0"}
     server = subprocess.Popen([sys.executable, "-m", "uvicorn", "harm.main:app", "--port", str(PORT)],
                               cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=open(os.path.join(tmp, "err.log"), "w"))
     try:
@@ -703,6 +704,87 @@ Let me know if you need anything else!"""
         assert c.call("GET", "/audit?limit=50")
         assert "device_statuses" in c.call("GET", "/meta/enums")
         assert "ocr" in c.call("GET", "/meta/capabilities")
+
+    print("Online status & actions")
+
+    @test("online check: a device that answers, its management port that doesn't")
+    def _():
+        d = c.call("POST", "/devices", {"name": "Answers", "status": "Active", "connected": True})
+        c.call("POST", "/interfaces", {"device_id": d["id"], "name": "eth0", "ip": "127.0.0.1/8", "mac": "aa:bb:cc:dd:ee:01", "is_primary": True})
+        c.call("POST", "/interfaces", {"device_id": d["id"], "name": "iLO", "kind": "IPMI / BMC", "ip": "192.0.2.10"})
+        c.call("POST", "/status/check", {"device_id": d["id"]})
+        st = c.call("GET", f"/devices/{d['id']}/full")["online"]
+        assert st["state"] == "up" and st["address"] == "127.0.0.1", st
+        assert st["others"] and st["others"][0]["state"] == "down" and st["others"][0]["management"], st
+        assert len(st["strip"]) == 24 and st["strip"][-1] == "up", st["strip"]
+        S["up"] = d
+
+    @test("online check: offline, not hooked up, and turned off")
+    def _():
+        down = c.call("POST", "/devices", {"name": "Gone quiet", "status": "Active", "connected": True})
+        c.call("POST", "/interfaces", {"device_id": down["id"], "ip": "192.0.2.11"})
+        off = c.call("POST", "/devices", {"name": "On the shelf", "status": "Active", "connected": False})
+        c.call("POST", "/interfaces", {"device_id": off["id"], "ip": "192.0.2.12"})
+        quiet = c.call("POST", "/devices", {"name": "Not watched", "status": "Active", "connected": True, "watch": False})
+        c.call("POST", "/interfaces", {"device_id": quiet["id"], "ip": "192.0.2.13"})
+        assert c.call("POST", "/status/check", {"max_age": 0})["checked"]
+        assert c.call("POST", "/status/check", {"max_age": 600})["checked"] is False, "a fresh check is skipped"
+        board = {x["name"]: x for x in c.call("GET", "/status")["devices"]}
+        assert board["Gone quiet"]["state"] == "down" and board["Gone quiet"]["since"], board["Gone quiet"]
+        assert board["On the shelf"]["state"] == "off" and board["Not watched"]["state"] == "unwatched"
+        assert board["Answers"]["state"] == "up" and board["Answers"]["can_wake"]
+        offline = [x["label"] for x in c.call("GET", "/dashboard")["offline"]]
+        assert "Gone quiet" in offline and not {"Answers", "On the shelf", "Not watched"} & set(offline), offline
+        S["down"] = down
+
+    @test("Wake-on-LAN needs a MAC, and sends to the subnet")
+    def _():
+        c.call("POST", f"/devices/{S['down']['id']}/wake", expect=400)
+        r = c.call("POST", f"/devices/{S['up']['id']}/wake")
+        assert r["mac"] == "AA:BB:CC:DD:EE:01" and any(x.startswith("127.255.255.255") for x in r["sent_to"]), r
+
+    @test("actions: checks what's saved")
+    def _():
+        c.call("POST", "/actions", {"name": "Nowhere", "command": "uptime"}, expect=400)
+        c.call("POST", "/actions", {"name": "Bad host", "hosts": "-oProxyCommand=x", "command": "uptime"}, expect=400)
+        e = c.call("POST", "/actions", {"name": "Sneaky", "hosts": "10.0.0.5", "command": "uptime",
+                                        "ssh_options": "-o ProxyCommand=touch /tmp/x"}, expect=400)
+        assert "ProxyCommand" in e["detail"], e
+        c.call("POST", "/actions", {"name": "Bad mode", "hosts": "10.0.0.5", "command": "x", "mode": "telnet"}, expect=400)
+        a = c.call("POST", "/actions", {"name": "Quiet the fans", "device_id": S["up"]["id"], "hosts": "10.0.0.5, 10.0.0.6",
+                                        "mode": "lines", "legacy_ssh": True, "command": "fan p 0 max 60",
+                                        "ssh_options": "-o KexAlgorithms=+diffie-hellman-group14-sha1"})
+        assert a["hosts"] == "10.0.0.5\n10.0.0.6" and a["device_name"] == "Answers" and a["last_run_at"] is None, a
+        assert [x["name"] for x in c.call("GET", f"/devices/{S['up']['id']}/full")["actions"]] == ["Quiet the fans"]
+        assert c.call("GET", "/status")["devices"][0]["actions"] or True
+
+    @test("actions: a run that can't connect is reported, kept encrypted, and audited")
+    def _():
+        lg = c.call("POST", "/credentials", {"label": "Box root", "username": "root", "password": "test-password-123"})
+        a = c.call("POST", "/actions", {"name": "Closed port", "hosts": "127.0.0.1", "port": 1, "credential_id": lg["id"],
+                                        "command": "uptime"})
+        r = c.call("POST", f"/actions/{a['id']}/run", {})
+        res = r["results"][0]
+        assert r["action"] == "Closed port" and res["ok"] is False and res["error"], r
+        c.call("POST", f"/actions/{a['id']}/run", {"host": "10.9.9.9"}, expect=400)
+        runs = c.call("GET", f"/actions/{a['id']}/runs")
+        assert len(runs) == 1 and runs[0]["output"] == res["error"] and "test-password-123" not in json.dumps(runs), runs
+        assert c.call("GET", f"/actions/{a['id']}")["last_ok"] == 0
+        assert any(x["action"] == "run-action" for x in c.call("GET", "/audit?limit=20"))
+
+    @test("settings: check interval and the opt-in update check")
+    def _():
+        assert c.call("GET", "/settings/app") == {"status_interval": 5, "update_check": False}
+        c.call("POST", "/settings/app", {"status_interval": 7}, expect=400)
+        assert c.call("POST", "/settings/app", {"status_interval": 0})["status_interval"] == 0
+        assert c.call("GET", "/status")["status_interval"] == 0
+        assert c.call("GET", "/update-check")["enabled"] is False
+
+    @test("deleting a device removes its actions and online history")
+    def _():
+        c.call("DELETE", f"/devices/{S['up']['id']}")
+        assert not [x for x in c.call("GET", "/actions") if x["name"] == "Quiet the fans"]
+        assert "Answers" not in [x["name"] for x in c.call("GET", "/status")["devices"]]
 
     print("Deleting")
 

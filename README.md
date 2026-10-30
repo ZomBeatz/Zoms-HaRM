@@ -52,6 +52,7 @@ The full guide, with pictures, is at **[docs.zombeatzmedia.com/harm](https://doc
 | **Virtual machines** | VMs and containers on their hosts, CPU and memory overcommit, clusters, and a one-click Proxmox import. |
 | **Logins** | Encrypted passwords and 2FA codes. **Open** goes straight to the iDRAC, iLO or web page and copies the password. |
 | **Fill it in fast** | Import specs over SSH, Discover from any router, UniFi or a network scan, label scanning with the phone camera, and AI Assist from photos. |
+| **Status and actions** | A live page of what's online, grouped by place, with 24-hour history, management ports and Wake-on-LAN. Saved SSH commands run with one click, even on old iLO and iDRAC ports. |
 | **Notes and tasks** | A journal on every device, rack and room. Home shows what needs attention. |
 | **Share and plan** | Copy as text for a person or an AI, CSV and JSON, spec sheets and sell sheets, QR labels, and a PC builder with compatibility checks. |
 | **Privacy** | Runs on your own computer. No account, no cloud, no tracking. Daily backups. |
@@ -229,6 +230,12 @@ tests/            smoke.py and full_test.py
   frontend never uses `innerHTML`. Every write needs a custom header (CSRF).
   `X-Frame-Options: DENY`, `no-referrer`, and `no-store` on API responses. API
   docs are disabled.
+- **Actions.** Saved commands run through the system `ssh` with the password
+  passed to a one-process helper, never on a command line. Only connection
+  settings (algorithms, ciphers, timeouts) are accepted as extra SSH options, so
+  nothing like `ProxyCommand` can run a program on the HaRM computer. Results
+  are encrypted with the data key. Online checks only contact the addresses you
+  recorded.
 - **Backups.** Settings > Backup downloads a consistent SQLite snapshot.
   Secrets stay encrypted inside it and only your master password or recovery
   code opens them. CSV exports never include secrets, and cells are escaped

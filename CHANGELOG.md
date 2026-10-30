@@ -2,6 +2,19 @@
 
 ## 0.3.2
 
+**See what's online: the Status page**
+- **Status** (in the sidebar, and the phone's bottom bar) shows every device with an address, grouped by where it is, each with **Online**, **Offline**, **Not checked** or **Not hooked up**, how fast it answered, and a bar for each of the last 24 hours.
+- A server's management port (iLO, iDRAC, IPMI) is checked too and shown under it, so "the server is off" and "the whole box lost power" look different.
+- HaRM checks every 5 minutes, and every minute while the page is open. Change it, or turn it off, in **Settings > Status and actions**. Devices that go offline also show on **Home**.
+- **Wake** sends a Wake-on-LAN packet to an offline device with a MAC address.
+- **⋯ > Full screen** turns the page into a wall display.
+
+**One-click actions**
+- Save a command once and send it to a device over SSH with one click: quiet a server's fans, update, restart, power on through the iLO or iDRAC.
+- Send it as one shell script (Linux, Proxmox, NAS boxes), or one command per line (iLO, iDRAC, switches, Windows). **Older SSH** connects to old management ports that refuse modern SSH, and **Other SSH settings** takes the `-o` settings from a command that already works.
+- Actions use your saved logins, run only while HaRM is unlocked, keep their last 50 results (encrypted), and are recorded in the audit log. Start from examples for Proxmox, Debian and Ubuntu, iLO, iDRAC and Windows.
+- Run them from **Actions**, a device's **Actions** tab, or the buttons on the Status page.
+
 **Installing**
 - **One-click installers.** Windows gets a normal setup file (`Zoms-HaRM_0.3.2_x64-setup.exe`) and Linux gets `.deb`, `.rpm` and AppImage files, with everything inside. Nothing else to install first, and no administrator rights needed on Windows.
 - The installed app keeps your data in its own folder, so updating or reinstalling never touches it: `%APPDATA%\com.zombeatz.zoms-harm` on Windows, `~/.local/share/com.zombeatz.zoms-harm` on Linux.
@@ -21,8 +34,13 @@
 - **Ctrl K** (⌘K on a Mac) searches everything, **/** filters the list on the page, **N** opens **+ New**, **?** shows the shortcuts, **[** folds the sidebar to icons, and **Esc** closes menus and search. See **Help > Keyboard shortcuts** or **Settings > Shortcuts**.
 
 **Settings**
-- Settings are grouped: Appearance, Locking and security, Phones & tablets, AI Assist, Data & backups, Shortcuts and About.
+- Settings are grouped: Appearance, Locking and security, Phones & tablets, Status and actions, AI Assist, Data & backups, Shortcuts and About.
 - **Settings > About** shows the version and license, links to the code and this list, and has **Send feedback**, which starts an email with your version and device filled in.
+- **Check for new versions** (off unless you turn it on) asks GitHub about twice a day and puts a note on **Home** when a newer HaRM is out.
+
+**On GitHub**
+- Each release has a `SHA256SUMS.txt` to check your download against.
+- Bug report and feature idea forms, and `SECURITY.md` for reporting security problems privately.
 
 ## 0.3.1
 

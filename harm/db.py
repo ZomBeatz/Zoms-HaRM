@@ -27,7 +27,7 @@ def data_dir() -> Path:
 
 DB_PATH = Path(os.environ.get("HARM_DB") or data_dir() / "harm.db")
 
-SCHEMA_VERSION = 7  # highest key in MIGRATIONS
+SCHEMA_VERSION = 8  # highest key in MIGRATIONS
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -382,6 +382,61 @@ MIGRATIONS: dict[int, list[str]] = {
         "CREATE INDEX IF NOT EXISTS idx_devices_cluster ON devices(cluster_id)",
         # One interface per device can be its main address (used for quick links and logins).
         "ALTER TABLE interfaces ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0",
+    ],
+    8: [
+        # Online checks: whether each device answers, per address, and when that last changed.
+        "ALTER TABLE devices ADD COLUMN watch INTEGER NOT NULL DEFAULT 1",
+        """CREATE TABLE IF NOT EXISTS device_status (
+            device_id  INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+            address    TEXT NOT NULL,
+            state      TEXT NOT NULL,
+            latency_ms REAL,
+            method     TEXT,
+            checked_at TEXT NOT NULL,
+            changed_at TEXT NOT NULL,
+            PRIMARY KEY (device_id, address)
+        )""",
+        """CREATE TABLE IF NOT EXISTS status_events (
+            id        INTEGER PRIMARY KEY,
+            device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+            address   TEXT NOT NULL,
+            state     TEXT NOT NULL,
+            at        TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_status_events ON status_events(device_id, at)",
+        # Saved actions: commands sent over SSH to a device's addresses with one click.
+        """CREATE TABLE IF NOT EXISTS actions (
+            id            INTEGER PRIMARY KEY,
+            name          TEXT NOT NULL,
+            device_id     INTEGER REFERENCES devices(id) ON DELETE CASCADE,
+            hosts         TEXT,
+            port          INTEGER,
+            credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
+            username      TEXT,
+            mode          TEXT NOT NULL DEFAULT 'script',
+            command       TEXT NOT NULL,
+            sudo          INTEGER NOT NULL DEFAULT 0,
+            legacy_ssh    INTEGER NOT NULL DEFAULT 0,
+            ssh_options   TEXT,
+            confirm       INTEGER NOT NULL DEFAULT 0,
+            pinned        INTEGER NOT NULL DEFAULT 1,
+            notes         TEXT,
+            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_actions_device ON actions(device_id)",
+        # What each run did. The output is encrypted with the vault key, like logins.
+        """CREATE TABLE IF NOT EXISTS action_runs (
+            id         INTEGER PRIMARY KEY,
+            action_id  INTEGER NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
+            host       TEXT NOT NULL,
+            ok         INTEGER NOT NULL,
+            exit_code  INTEGER,
+            ms         INTEGER,
+            output_enc BLOB,
+            at         TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_action_runs ON action_runs(action_id, id)",
     ],
 }
 

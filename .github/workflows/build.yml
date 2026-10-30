@@ -1,7 +1,7 @@
 # Builds the Zom's HaRM installers on GitHub's machines: a Windows setup .exe, and Linux .deb, .rpm
 # and AppImage files. Push a tag like v0.3.2 (matching harm/__init__.py), or run it from the Actions tab.
-# Every run keeps the files under the run's "Artifacts"; a tag also makes a DRAFT release with them and
-# that version's CHANGELOG.md section as the notes. Check the draft, then press Publish.
+# Every run keeps the files under the run's "Artifacts"; a tag also makes a DRAFT release with them,
+# a SHA256SUMS.txt, and that version's CHANGELOG.md section as the notes. Check the draft, then press Publish.
 name: Build installers
 
 on:
@@ -110,6 +110,8 @@ jobs:
         with:
           path: files
           merge-multiple: true
+      - name: Checksums (SHA256SUMS.txt, to check a download)
+        run: cd files && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt
       - name: Release notes from CHANGELOG.md
         run: |
           python3 - <<'PY'

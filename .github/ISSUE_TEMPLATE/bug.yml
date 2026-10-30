@@ -1,0 +1,56 @@
+name: Bug report
+description: Something doesn't work the way it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting this. Please use made-up data in screenshots, and never paste passwords, keys or your real addresses if you'd rather keep them private.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, step by step, and what happened.
+      placeholder: |
+        1. Opened a device
+        2. Pressed Import specs
+        3. It said "Login refused" with the right password
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+  - type: dropdown
+    id: device
+    attributes:
+      label: Where does HaRM run?
+      multiple: true
+      options:
+        - Windows (installer)
+        - Linux (.deb, .rpm or AppImage)
+        - From a folder (run.sh or Install HaRM.cmd)
+        - A server (Docker)
+        - A server (Linux service)
+        - The online demo in a browser
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: What were you using it on?
+      multiple: true
+      options:
+        - The computer HaRM runs on
+        - Another computer's browser
+        - Android phone or tablet
+        - iPhone or iPad
+  - type: input
+    id: version
+    attributes:
+      label: HaRM version
+      description: Settings > About.
+      placeholder: "0.3.2"
+  - type: textarea
+    id: more
+    attributes:
+      label: Screenshots or anything else

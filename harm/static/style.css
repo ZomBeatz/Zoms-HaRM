@@ -844,3 +844,51 @@ code.totp { font-family: var(--mono); letter-spacing: 0; font-variant-numeric: t
 .totp-ring { --p: 1; width: 18px; height: 18px; border-radius: 50%; flex: none;
   background: conic-gradient(var(--accent) calc(var(--p) * 1turn), var(--panel-2) 0);
   -webkit-mask: radial-gradient(circle, transparent 5px, #000 5.5px); mask: radial-gradient(circle, transparent 5px, #000 5.5px); }
+
+/* ---- Status page, saved actions ---------------------------------------------------------- */
+.banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--accent-soft); border-radius: var(--radius);
+  padding: 10px 14px; margin-bottom: 18px; }
+.empty-state { text-align: center; padding: 32px 16px; color: var(--text-2); }
+.empty-state .empty-ico { font-size: 28px; color: var(--muted); margin-bottom: 6px; }
+.empty-state p { max-width: 460px; margin: 0 auto 14px; }
+button.linkish { background: none; border: 0; padding: 0; color: var(--text); font: inherit; cursor: pointer; text-decoration: underline dotted; }
+.stat.st-up .stat-n { color: var(--ok); }
+.stat.st-down .stat-n { color: var(--bad); }
+.stat:not(a):hover { border-color: var(--line); }
+.st-group { margin-bottom: 24px; }
+.st-group-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.st-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.st-tile { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--cat, var(--line)); border-radius: var(--radius);
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.st-tile.st-down { border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); border-left-color: var(--cat, var(--bad)); }
+.st-tile.st-off, .st-tile.st-unwatched, .st-tile.st-no-address { opacity: .75; }
+.st-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.st-name { font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
+.st-head .badge { flex: none; }
+.st-others { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.st-other { color: var(--text-2); }
+.st-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.st-foot { margin-top: 8px; }
+/* The last 24 hours, one bar per hour. Always shown with the share of time up, never colors alone. */
+.hstrip { display: flex; align-items: center; gap: 8px; }
+.hstrip-bars { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; flex: 1; height: 14px; }
+.hstrip-bars i { border-radius: 2px; background: var(--panel-2); }
+.hstrip-bars i.hs-up { background: color-mix(in srgb, var(--ok) 70%, transparent); }
+.hstrip-bars i.hs-down { background: var(--bad); }
+.hstrip-bars i.hs-mixed { background: var(--warn); }
+.hstrip-n { font-size: 11px; color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.run-block { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 10px; }
+.run-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+pre.run-out { background: var(--bg); border-radius: var(--radius-sm); padding: 10px; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-family: var(--mono); font-size: 12.5px; max-height: 360px; overflow: auto; }
+.field[data-k=command] textarea, .field[data-k=hosts] textarea, .field[data-k=ssh_options] input { font-family: var(--mono); font-size: 12.5px; }
+/* Full screen for a wall screen: no sidebar or bars, bigger names. */
+body.wall .sidebar, body.wall .topbar, body.wall .tabbar, body.wall .page-actions select, body.wall .back-link { display: none; }
+body.wall .st-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+body.wall .st-name { font-size: 16px; }
+@media (max-width: 700px) {
+  .st-grid { grid-template-columns: 1fr; }
+  .stats .stat { padding: 10px 12px; }
+}
+.banner-x { margin-left: auto; }
+.stats.st-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 560px; }

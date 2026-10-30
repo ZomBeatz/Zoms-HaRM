@@ -98,19 +98,36 @@ When it's done, HaRM sits on your phone's home screen like an app. Long-press th
 
 ## Everyday use
 
-**Home** lists what needs attention (IP conflicts, broken gear, warranties ending, things not hooked up, old passwords) next to your open tasks.
+**Home** lists what needs attention (devices that went offline, IP conflicts, broken gear, warranties ending, things not hooked up, old passwords) next to your open tasks.
+
+**Status** shows which devices are answering right now: every device with an IP address, grouped by where it is, with **Online**, **Offline**, **Not checked** or **Not hooked up**, how fast it answered, and a bar for each of the last 24 hours.
+- HaRM knocks on a few ports of each address (the device's own services, then SSH, the web and so on). Any answer counts. If none answers, it tries one ping.
+- Hooked-up devices are checked every 5 minutes, and every minute while the page is open. Change it in **Settings > Status and actions**. To leave one device out, edit it and untick **Check if it's online**.
+- A server's iLO, iDRAC or IPMI port is checked too and shown under it.
+- **Wake** sends a Wake-on-LAN packet to an offline device that has a MAC address (Wake-on-LAN must be on in its BIOS). In Docker this needs `network_mode: host`.
+- **⋯ > Full screen** makes it a wall display that keeps itself up to date.
+
+**Actions** are commands you save once and send to a device over SSH with one click, like quieting a server's fans after a reboot:
+1. Open **Actions** (or a device's **Actions** tab) and press **+ New action**. **Start from an example** fills in the form.
+2. Pick the device. Leave **Send to** empty for its main address, or enter its iLO or iDRAC address, or several addresses, one per line.
+3. Pick a saved **Login** (or none, to use the computer's SSH key).
+4. **How to send it:** as one shell script (Linux, Proxmox, NAS boxes), or one command per line (iLO, iDRAC, switches, Windows).
+5. Old management ports often refuse modern SSH: tick **Older SSH**, or paste the `-o` settings from an ssh command that works into **Other SSH settings**.
+
+Press **▶ Run** on the Actions page, the device's tab, or its tile on **Status**. A message says whether it worked, with **Show output**. Tick **Ask before running** for anything that restarts or shuts down.
 
 **Search** (top bar, or press `/`): type a name, IP, MAC, serial, part number or login. Results appear as you type, and picking one opens that exact item: an IP opens its network entry, a login opens its reveal window.
 
 **+ New** (top right) adds anything, or **scans a label** with the camera: barcodes, QR codes and printed text go straight into the right fields.
 
-**Devices:** each device page starts with a summary (where it is, its IP to copy, the management page, one-tap logins) and has four tabs:
+**Devices:** each device page starts with a summary (whether it's online, where it is, its IP to copy, the management page, one-tap logins) and has these tabs:
 - **Overview:** notes and tasks (type one and press Enter), details, location and purchase info.
 - **Hardware:** CPU, memory, drives and drive bays (tap an empty bay to fill it), all installed parts, and expansion slots. Spare parts that fit are suggested.
 - **Network:** interfaces (IP, MAC, VLAN), services, and cables.
 - **Logins:** **Open ↗** opens the iDRAC/iLO/web page and copies the password in one click. SSH logins give a ready-to-paste command.
+- **Actions:** its one-click commands, and whether each of its addresses answers.
 
-The **⋯** button holds the less common actions: Import specs, export/PDF, print a QR label, clone, and delete.
+The **⋯** button holds the less common actions: Import specs, check if it's online, wake it up, new action, export/PDF, print a QR label, clone, and delete.
 
 **Import specs** fills in a device's hardware for you. Pick one of three ways:
 - **Over SSH** with a saved login.
@@ -136,7 +153,7 @@ The **⋯** button holds the less common actions: Import specs, export/PDF, prin
 
 **Export & Share:** copy devices as text for a person or an AI assistant, download CSV/JSON, or print a spec sheet or sell sheet to PDF.
 
-**Settings:** appearance (match your computer, light or dark), locking, master password, two-factor login, recovery code, phones and tablets, AI Assist, backups, keyboard shortcuts, and About with **Send feedback**.
+**Settings:** appearance (match your computer, light or dark), locking, master password, two-factor login, recovery code, phones and tablets, how often to check what's online, AI Assist, backups, keyboard shortcuts, and About with **Send feedback** and **Check for new versions**.
 
 ## Backups and moving to a new PC
 
@@ -176,12 +193,16 @@ HaRM has these steps built in too: **Help & Guide > Troubleshooting**, the **Sho
 | "Port in use" | Another program uses port 8077. Change **Port** in the control panel's settings. |
 | HaRM won't start | Open **Server log** at the bottom of the control panel. It shows the reason. |
 | Forgot the master password | On the unlock screen choose **Use the recovery code**. |
+| Status says Offline, but the device is on | Its firewall blocks every port HaRM tries, and ping. Add a service with an open port on its **Network** tab (HaRM tries those first), or allow ping. |
+| An action says the machine "only speaks an older kind of SSH" | Edit the action and tick **Older SSH**. If it still fails, paste the `-o …` settings from an ssh command that works into **Other SSH settings**. |
+| An action says the machine's key changed | Normal after reinstalling it or replacing its iLO or iDRAC card: choose **Trust the new key and run**. If nothing changed, find out why first. |
 | Lost the password *and* the recovery code | Stored logins can't be recovered; that's what keeps them safe. Everything else is still readable from a backup. |
 
 ## Security
 
 - Logins are encrypted (AES-256-GCM) with a key that only your master password or recovery code unlocks. Nobody can read them from a copied database.
 - HaRM locks itself after 30 minutes idle. Optional two-factor login is in **Settings**.
-- Every change, sign-in and password reveal is recorded in the **Audit Log**.
+- Every change, sign-in, password reveal and action run is recorded in the **Audit Log**.
+- **Actions** run commands on your machines with your saved logins, so they only work while HaRM is unlocked. Their results are encrypted like your logins. HaRM never allows SSH settings that could run a program on its own computer.
 - Only install HaRM's certificate on **your own** devices. Keep `data/tls/harm-ca.key` private: anyone with that file could impersonate websites to phones that trust it.
 - HaRM is meant for your home network. Don't expose it directly to the internet. For access away from home, use a VPN into your home network (for example your router's VPN).

@@ -62,7 +62,7 @@ ENTITIES: dict[str, dict] = {
             "warranty_until": f(D), "tags": f(T), "notes": f(T),
             "msrp": f(R), "market_value": f(R), "value_checked": f(D),
             "host_id": f(fk("devices")), "cluster_id": f(fk("clusters")), "vm_id": f(T),
-            "vcpus": f(I), "vm_ram_gb": f(R), "vm_disk_gb": f(R),
+            "vcpus": f(I), "vm_ram_gb": f(R), "vm_disk_gb": f(R), "watch": f(B),
         },
         "search": ["name", "device_type", "manufacturer", "model", "serial", "asset_tag",
                    "hostname", "os", "tags", "notes"],
@@ -221,6 +221,22 @@ ENTITIES: dict[str, dict] = {
                      LEFT JOIN components c ON t.entity = 'components' AND c.id = t.entity_id
                      LEFT JOIN clusters k ON t.entity = 'clusters' AND k.id = t.entity_id""",
         "order": "t.pinned DESC, t.created_at DESC, t.id DESC",
+    },
+    "actions": {
+        "fields": {
+            "name": f(T, True), "device_id": f(fk("devices")), "hosts": f(T), "port": f(I),
+            "credential_id": f(fk("credentials")), "username": f(T), "mode": f(T),
+            "command": f(T, True), "sudo": f(B), "legacy_ssh": f(B), "ssh_options": f(T),
+            "confirm": f(B), "pinned": f(B), "notes": f(T),
+        },
+        "search": ["name", "hosts", "command", "notes"],
+        "select": """SELECT t.*, d.name AS device_name, c.label AS credential_label, c.username AS credential_username,
+                       (SELECT r.at FROM action_runs r WHERE r.action_id = t.id ORDER BY r.id DESC LIMIT 1) AS last_run_at,
+                       (SELECT r.ok FROM action_runs r WHERE r.action_id = t.id ORDER BY r.id DESC LIMIT 1) AS last_ok
+                     FROM actions t
+                     LEFT JOIN devices d ON d.id = t.device_id
+                     LEFT JOIN credentials c ON c.id = t.credential_id""",
+        "order": "d.name COLLATE NOCASE, t.name COLLATE NOCASE",
     },
     "connections": {
         "fields": {

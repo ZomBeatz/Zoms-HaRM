@@ -1,0 +1,405 @@
+"""Online checks: does each device answer on its addresses? Plus Wake-on-LAN.
+
+A check knocks on a few TCP ports at once (the device's own services first, then common ones).
+Any answer counts, even "connection refused", because only a running machine can refuse. If no
+port answers, it falls back to one ping. Only the addresses recorded in HaRM are contacted.
+
+Devices are checked when they're hooked up, not retired or sold, and "Check if it's online" is
+on. The server checks every few minutes (Settings > Status), and more often while the Status
+page is open. Each state change is kept for 30 days, for the history strip.
+"""
+
+import asyncio
+import ipaddress
+import json
+import os
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import time
+from datetime import datetime, timedelta, timezone
+
+from . import db
+from .models import iface_order
+
+COMMON_PORTS = (22, 443, 80, 3389, 8006, 445, 8080)
+MAX_PORTS = 7
+MAX_ADDRESSES = 4  # per device: the main address and up to 3 more (iLO, iDRAC, a second NIC…)
+TCP_TIMEOUT = 1.5
+PARALLEL = 24
+DEFAULT_INTERVAL = 5  # minutes
+HISTORY_DAYS = 30
+_NO_WINDOW = 0x08000000 if os.name == "nt" else 0  # don't flash a console window on Windows
+
+_full_lock = asyncio.Lock()
+_last_full = 0.0  # time.monotonic() of the last full check
+_last_prune = 0.0
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")  # UTC, like created_at
+
+
+def _parse(ts: str) -> datetime:
+    return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+
+
+def settings(conn) -> dict:
+    try:
+        conf = json.loads(db.get_meta(conn, "app_settings") or "{}")
+    except ValueError:
+        conf = {}
+    return {"status_interval": int(conf.get("status_interval", DEFAULT_INTERVAL)),
+            "update_check": bool(conf.get("update_check", False))}
+
+
+def save_settings(conn, changes: dict) -> dict:
+    cur = settings(conn)
+    if "status_interval" in changes:
+        v = int(changes["status_interval"])
+        if v not in (0, 1, 2, 5, 10, 15, 30, 60):
+            raise ValueError("Check every 1, 2, 5, 10, 15, 30 or 60 minutes, or 0 for never")
+        cur["status_interval"] = v
+    if "update_check" in changes:
+        cur["update_check"] = bool(changes["update_check"])
+    db.set_meta(conn, "app_settings", json.dumps(cur))
+    return cur
+
+
+# --------------------------------------------------------------------------- probing
+
+def _host(ip: str) -> str | None:
+    """'10.0.0.5/24' → '10.0.0.5'; None for anything that isn't an address."""
+    try:
+        return str(ipaddress.ip_interface(ip.strip()).ip)
+    except ValueError:
+        return None
+
+
+async def _tcp(host: str, port: int):
+    t0 = time.monotonic()
+    try:
+        _r, w = await asyncio.wait_for(asyncio.open_connection(host, port), TCP_TIMEOUT)
+        w.close()
+        try:
+            await w.wait_closed()
+        except Exception:
+            pass
+    except ConnectionRefusedError:
+        pass  # refused still means a machine answered
+    except (asyncio.TimeoutError, OSError):
+        return None
+    return round((time.monotonic() - t0) * 1000, 1), f"port {port}"
+
+
+async def _any_port(host: str, ports) -> tuple | None:
+    tasks = [asyncio.ensure_future(_tcp(host, p)) for p in ports]
+    try:
+        for fut in asyncio.as_completed(tasks):
+            r = await fut
+            if r:
+                return r
+        return None
+    finally:
+        for t in tasks:
+            t.cancel()
+
+
+def _ping_sync(host: str) -> tuple | None:
+    exe = shutil.which("ping")
+    if not exe:
+        return None
+    if os.name == "nt":
+        args = [exe, "-n", "1", "-w", "1000", host]
+    elif sys.platform == "darwin":
+        args = [exe, "-c", "1", "-t", "1", host]
+    else:
+        args = [exe, "-c", "1", "-W", "1", host]
+    try:
+        p = subprocess.run(args, capture_output=True, text=True, timeout=4, stdin=subprocess.DEVNULL,
+                           creationflags=_NO_WINDOW)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    out = p.stdout or ""
+    # Windows ping exits 0 for "Destination host unreachable" from the router; a real reply has a TTL.
+    if p.returncode != 0 or (os.name == "nt" and "TTL=" not in out.upper()):
+        return None
+    m = re.search(r"time[=<]\s*([\d.]+)\s*ms", out)
+    return (float(m.group(1)) if m else None), "ping"
+
+
+async def probe(host: str, ports=COMMON_PORTS) -> dict:
+    r = await _any_port(host, ports)
+    if not r:
+        r = await asyncio.to_thread(_ping_sync, host)
+    if r:
+        return {"state": "up", "latency_ms": r[0], "method": r[1]}
+    return {"state": "down", "latency_ms": None, "method": None}
+
+
+# --------------------------------------------------------------------------- which devices
+
+_WATCHED = "d.watch = 1 AND d.connected = 1 AND COALESCE(d.status, '') NOT IN ('Retired', 'Sold')"
+
+
+def targets(conn, device_id: int | None = None) -> dict[int, dict]:
+    """{device id: {addresses: [...main first], ports: [...]}} for the devices that get checked."""
+    where = _WATCHED + (" AND d.id = ?" if device_id else "")
+    rows = conn.execute(
+        f"SELECT d.id, i.ip FROM devices d JOIN interfaces i ON i.device_id = d.id "
+        f"WHERE {where} AND i.ip IS NOT NULL AND i.ip != '' ORDER BY d.id, {iface_order('i')}",
+        (device_id,) if device_id else ()).fetchall()
+    out: dict[int, dict] = {}
+    for r in rows:
+        ip = _host(r["ip"])
+        t = out.setdefault(r["id"], {"addresses": [], "ports": []})
+        if ip and ip not in t["addresses"] and len(t["addresses"]) < MAX_ADDRESSES:
+            t["addresses"].append(ip)
+    svc = conn.execute("SELECT device_id, port FROM services WHERE port BETWEEN 1 AND 65535 "
+                       "AND UPPER(COALESCE(protocol, 'TCP')) NOT IN ('UDP', 'SNMP') ORDER BY id").fetchall()
+    for r in svc:
+        t = out.get(r["device_id"])
+        if t and r["port"] not in t["ports"] and len(t["ports"]) < 4:
+            t["ports"].append(r["port"])
+    for t in out.values():
+        t["ports"] = (t["ports"] + [p for p in COMMON_PORTS if p not in t["ports"]])[:MAX_PORTS]
+    return {k: v for k, v in out.items() if v["addresses"]}
+
+
+def _record(conn, device_id: int, results: dict[str, dict]) -> list[dict]:
+    """Save a device's results; return the addresses whose state changed."""
+    now = _now()
+    changed = []
+    old = {r["address"]: dict(r) for r in conn.execute(
+        "SELECT * FROM device_status WHERE device_id = ?", (device_id,))}
+    for addr, res in results.items():
+        prev = old.get(addr)
+        if prev and prev["state"] == res["state"]:
+            conn.execute("UPDATE device_status SET latency_ms = ?, method = ?, checked_at = ? "
+                         "WHERE device_id = ? AND address = ?",
+                         (res["latency_ms"], res["method"], now, device_id, addr))
+            continue
+        conn.execute("INSERT OR REPLACE INTO device_status (device_id, address, state, latency_ms, method, "
+                     "checked_at, changed_at) VALUES (?,?,?,?,?,?,?)",
+                     (device_id, addr, res["state"], res["latency_ms"], res["method"], now, now))
+        conn.execute("INSERT INTO status_events (device_id, address, state, at) VALUES (?,?,?,?)",
+                     (device_id, addr, res["state"], now))
+        if prev:
+            changed.append({"device_id": device_id, "address": addr, "state": res["state"]})
+    gone = [a for a in old if a not in results]
+    for a in gone:  # an address was removed or changed
+        conn.execute("DELETE FROM device_status WHERE device_id = ? AND address = ?", (device_id, a))
+    return changed
+
+
+async def check(device_id: int | None = None) -> list[dict]:
+    """Check one device, or every watched device. Returns the state changes."""
+    global _last_full
+    conn = db.connect()
+    try:
+        todo = targets(conn, device_id)
+    finally:
+        conn.close()
+    sem = asyncio.Semaphore(PARALLEL)
+
+    async def one(addr, ports):
+        async with sem:
+            return await probe(addr, ports)
+
+    async def run():
+        jobs = {(did, a): asyncio.ensure_future(one(a, t["ports"])) for did, t in todo.items() for a in t["addresses"]}
+        if jobs:
+            await asyncio.wait(jobs.values())
+        results: dict[int, dict] = {}
+        for (did, a), fut in jobs.items():
+            results.setdefault(did, {})[a] = fut.result()
+        conn = db.connect()
+        try:
+            changes = []
+            for did, res in results.items():
+                changes += _record(conn, did, res)
+            if device_id is None:  # devices no longer watched keep no stale "Online"
+                ids = list(todo) or [0]
+                conn.execute(f"DELETE FROM device_status WHERE device_id NOT IN ({','.join('?' * len(ids))})", ids)
+            conn.commit()
+            return changes
+        finally:
+            conn.close()
+
+    if device_id is not None:
+        return await run()
+    async with _full_lock:
+        changes = await run()
+        _last_full = time.monotonic()
+        return changes
+
+
+def seconds_since_full() -> float:
+    return time.monotonic() - _last_full if _last_full else float("inf")
+
+
+async def check_if_older(max_age: float) -> bool:
+    """A full check, unless one finished less than max_age seconds ago (or one is running)."""
+    if _full_lock.locked() or seconds_since_full() < max_age:
+        return False
+    await check()
+    return True
+
+
+def prune(conn) -> None:
+    conn.execute("DELETE FROM status_events WHERE at < ?",
+                 ((datetime.now(timezone.utc) - timedelta(days=HISTORY_DAYS)).strftime("%Y-%m-%d %H:%M:%S"),))
+
+
+async def run_forever() -> None:
+    """The background checker. Reads the interval each time, so a change in Settings applies at once."""
+    global _last_prune
+    await asyncio.sleep(5)
+    while True:
+        try:
+            conn = db.connect()
+            try:
+                mins = settings(conn)["status_interval"]
+                if time.monotonic() - _last_prune > 3600:
+                    prune(conn)
+                    conn.commit()
+                    _last_prune = time.monotonic()
+            finally:
+                conn.close()
+            if mins and seconds_since_full() >= mins * 60 - 5:
+                await check()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # never take the app down over a check
+            print(f"online check failed: {e}")
+        await asyncio.sleep(15)
+
+
+# --------------------------------------------------------------------------- reading it back
+
+def _strip(events: list[dict], before: str | None, now: datetime, hours: int = 24) -> tuple[list, float | None]:
+    """24 hourly buckets ('up', 'down', 'mixed' or None) and the share of known time that was up."""
+    start = now - timedelta(hours=hours)
+    state = before
+    timeline = [(start, state)] + [(_parse(e["at"]), e["state"]) for e in events]
+    buckets, up_s, known_s = [], 0.0, 0.0
+    for b in range(hours):
+        b0, b1 = start + timedelta(hours=b), start + timedelta(hours=b + 1)
+        seen = set()
+        for i, (t, st) in enumerate(timeline):
+            t_end = timeline[i + 1][0] if i + 1 < len(timeline) else now
+            lo, hi = max(t, b0), min(t_end, b1)
+            if hi <= lo:
+                continue
+            seen.add(st)
+            if st:
+                known_s += (hi - lo).total_seconds()
+                if st == "up":
+                    up_s += (hi - lo).total_seconds()
+        seen.discard(None)
+        buckets.append(None if not seen else seen.pop() if len(seen) == 1 else "mixed")
+    return buckets, (round(up_s / known_s, 4) if known_s else None)
+
+
+def history(conn, device_id: int, address: str) -> tuple[list, float | None]:
+    now = datetime.now(timezone.utc)
+    since = (now - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+    before = conn.execute("SELECT state FROM status_events WHERE device_id = ? AND address = ? AND at < ? "
+                          "ORDER BY at DESC, id DESC LIMIT 1", (device_id, address, since)).fetchone()
+    events = [dict(r) for r in conn.execute(
+        "SELECT state, at FROM status_events WHERE device_id = ? AND address = ? AND at >= ? ORDER BY at, id",
+        (device_id, address, since))]
+    return _strip(events, before["state"] if before else None, now)
+
+
+def watched(dev: dict) -> bool:
+    return bool(dev.get("watch")) and bool(dev.get("connected")) and dev.get("status") not in ("Retired", "Sold")
+
+
+def device_state(conn, dev: dict, with_history: bool = True) -> dict:
+    """The device's online state: its main address first, then the others (management ports…)."""
+    addrs = [dict(r) for r in conn.execute(
+        f"SELECT ip, name, kind FROM interfaces WHERE device_id = ? AND ip IS NOT NULL AND ip != '' "
+        f"ORDER BY {iface_order()}", (dev["id"],))]
+    status = {r["address"]: dict(r) for r in conn.execute("SELECT * FROM device_status WHERE device_id = ?", (dev["id"],))}
+    seen, rows = set(), []
+    for a in addrs:
+        ip = _host(a["ip"])
+        if not ip or ip in seen or len(rows) >= MAX_ADDRESSES:
+            continue
+        seen.add(ip)
+        st = status.get(ip)
+        mgmt = a["kind"] == "IPMI / BMC" or bool(re.search(r"idrac|ilo|ipmi|bmc|mgmt|management", a["name"] or "", re.I))
+        rows.append({"address": ip, "label": a["name"] or "", "management": mgmt,
+                     "state": st["state"] if st else "unknown", "latency_ms": st["latency_ms"] if st else None,
+                     "method": st["method"] if st else None, "checked_at": st["checked_at"] if st else None,
+                     "since": st["changed_at"] if st else None})
+    main = rows[0] if rows else None
+    if not rows:
+        state = "no-address"
+    elif not watched(dev):
+        state = "off" if not dev.get("connected") or dev.get("status") in ("Retired", "Sold") else "unwatched"
+    else:
+        state = main["state"]
+    out = {"state": state, "address": main["address"] if main else None,
+           "latency_ms": main["latency_ms"] if main else None, "since": main["since"] if main else None,
+           "checked_at": main["checked_at"] if main else None, "method": main["method"] if main else None,
+           "others": rows[1:] if state not in ("off", "unwatched") else [], "strip": None, "uptime": None}
+    if with_history and main and state in ("up", "down"):
+        out["strip"], out["uptime"] = history(conn, dev["id"], main["address"])
+    return out
+
+
+def offline(conn) -> list[dict]:
+    """Watched devices whose main address isn't answering, for Home's "Needs attention"."""
+    out = []
+    for d in conn.execute(f"SELECT d.id, d.name, d.watch, d.connected, d.status FROM devices d WHERE {_WATCHED} "
+                          "AND EXISTS (SELECT 1 FROM device_status s WHERE s.device_id = d.id AND s.state = 'down') "
+                          "ORDER BY d.name").fetchall():
+        st = device_state(conn, dict(d), with_history=False)
+        if st["state"] == "down":
+            out.append({"id": d["id"], "label": d["name"], "address": st["address"], "since": st["since"]})
+    return out
+
+
+# --------------------------------------------------------------------------- Wake-on-LAN
+
+_MAC = re.compile(r"^[0-9a-f]{12}$")
+
+
+def wake(mac: str, broadcasts: list[str]) -> list[str]:
+    """Send the Wake-on-LAN magic packet to each broadcast address. Returns where it went."""
+    hexmac = re.sub(r"[^0-9a-fA-F]", "", mac or "").lower()
+    if not _MAC.match(hexmac):
+        raise ValueError("That MAC address doesn't look right")
+    packet = bytes.fromhex("ff" * 6 + hexmac * 16)
+    sent = []
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        for addr in dict.fromkeys(broadcasts + ["255.255.255.255"]):
+            for port in (9, 7):
+                try:
+                    s.sendto(packet, (addr, port))
+                    sent.append(f"{addr}:{port}")
+                except OSError:
+                    pass
+    if not sent:
+        raise OSError("This computer couldn't send the wake-up packet")
+    return sent
+
+
+def broadcast_of(ip: str | None, subnet: str | None, cidr: str | None) -> str | None:
+    """The broadcast address for an interface, from its subnet mask or its network's CIDR."""
+    host = _host(ip or "")
+    for net in (f"{host}/{subnet.strip().lstrip('/')}" if host and subnet else None, cidr):
+        if not net:
+            continue
+        try:
+            n = ipaddress.ip_interface(net).network if "/" in net else None
+        except ValueError:
+            continue
+        if n and n.version == 4 and n.prefixlen < 31 and (not host or ipaddress.ip_address(host) in n):
+            return str(n.broadcast_address)
+    return None

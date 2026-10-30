@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from . import __version__, ai, aiproviders, certs, collect, crypto, db, discover, pcbuild, proxmox, remote, units
+from . import __version__, ai, aiproviders, certs, collect, crypto, db, discover, monitor, pcbuild, proxmox, remote, units
 from .models import ENTITIES, ENUMS, iface_order
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -37,6 +37,10 @@ IDLE_SECONDS = int(os.environ.get("HARM_IDLE_MINUTES", "30")) * 60
 MAX_SESSION_SECONDS = int(os.environ.get("HARM_MAX_SESSION_HOURS", "12")) * 3600
 MIN_PASSWORD = 10
 APP_NAME = "Zom's HaRM"
+# The demos (scripts/demo.py and the online one) use made-up addresses that could belong to real
+# devices on the network they run on, so they never check, wake or run actions for real.
+DEMO = os.environ.get("HARM_DEMO") == "1"
+DEMO_NO_NETWORK = "The demo doesn't reach other devices. This works in HaRM on your own network."
 
 
 BACKUP_DIR = db.DB_PATH.parent / "backups"
@@ -78,8 +82,11 @@ async def lifespan(_app):
     stop = threading.Event()
     threading.Thread(target=_housekeeping, args=(stop, os.environ.get("HARM_AUTO_BACKUP", "1") != "0"),
                      daemon=True).start()
+    checker = asyncio.create_task(monitor.run_forever()) if os.environ.get("HARM_MONITOR", "1") != "0" and not DEMO else None
     yield
     stop.set()
+    if checker:
+        checker.cancel()
 
 
 app = FastAPI(title=APP_NAME, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
@@ -855,6 +862,7 @@ def dashboard(_s=Depends(require_session), conn=Depends(get_db)):
                                           if c["status"] == "In Stock"]),
         "open_tasks": [n for n in fetch_list(conn, "notes", {"done": "0"}, limit=500) if n["kind"] in ("task", "issue")][:40],
         "recent": group("SELECT * FROM audit ORDER BY id DESC LIMIT 12"),
+        "offline": monitor.offline(conn),
     }
 
 
@@ -1155,6 +1163,9 @@ def device_full(did: int, _s=Depends(require_session), conn=Depends(get_db)):
                          "ram_gb": sum(g["vm_ram_gb"] or 0 for g in guests), "disk_gb": sum(g["vm_disk_gb"] or 0 for g in guests),
                          "running": sum(1 for g in guests if g["status"] == "Active")},
         "cluster": fetch_one(conn, "clusters", dev["cluster_id"]) if dev["cluster_id"] else None,
+        "online": monitor.device_state(conn, dev),
+        "actions": fetch_list(conn, "actions", {"device_id": did}),
+        "can_wake": _wake_targets(conn, did) is not None,
     }
 
 
@@ -1252,6 +1263,8 @@ def collect_targets(did: int, _s=Depends(require_session), conn=Depends(get_db))
 async def collect_remote(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
     """Run the spec collector over SSH (or on this server) and return its output for the preview."""
     dev = fetch_one(conn, "devices", did)
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
     body = await body_json(request)
     try:
         if body.get("mode") == "local":
@@ -2666,6 +2679,249 @@ async def discover_proxmox_import(request: Request, _s=Depends(require_session),
 # Generic CRUD
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Online status, Wake-on-LAN and saved actions
+# ---------------------------------------------------------------------------
+
+def _status_row(conn, d: dict) -> dict:
+    return {k: d[k] for k in ("id", "name", "device_type", "status", "connected", "watch", "location_id",
+                              "location_name", "rack_id", "rack_name", "rack_u", "u_height", "host_id",
+                              "host_name", "mgmt_url", "manufacturer", "model")} | monitor.device_state(conn, d)
+
+
+@app.get("/api/status")
+def status_board(_s=Depends(require_session), conn=Depends(get_db)):
+    """Every device with an address, and whether it's answering."""
+    devices = fetch_list(conn, "devices", limit=5000)
+    with_ip = [d for d in devices if d["ips"]]
+    actions: dict[int, list] = {}
+    for a in fetch_list(conn, "actions", limit=5000):
+        if a["device_id"] and a["pinned"]:
+            actions.setdefault(a["device_id"], []).append({"id": a["id"], "name": a["name"], "confirm": a["confirm"]})
+    wakeable = {r[0] for r in conn.execute("SELECT DISTINCT device_id FROM interfaces WHERE mac IS NOT NULL AND mac != ''")}
+    rows = [_status_row(conn, d) | {"actions": actions.get(d["id"], []), "can_wake": d["id"] in wakeable} for d in with_ip]
+    last = conn.execute("SELECT MAX(checked_at) FROM device_status").fetchone()[0]
+    return {"devices": rows, "without_address": len(devices) - len(with_ip), "last_check": last,
+            "checking": monitor._full_lock.locked(), **monitor.settings(conn)}
+
+
+@app.post("/api/status/check")
+async def status_check(request: Request, _s=Depends(require_session)):
+    """Check now: one device, or all of them (skipped if a check finished less than max_age seconds ago)."""
+    body = await body_json(request)
+    did = body.get("device_id")
+    if DEMO:  # made-up devices keep their made-up states; only the time of the check moves
+        conn = db.connect()
+        try:
+            conn.execute("UPDATE device_status SET checked_at = ?" + (" WHERE device_id = ?" if did else ""),
+                         (monitor._now(), int(did)) if did else (monitor._now(),))
+            conn.commit()
+        finally:
+            conn.close()
+        return {"checked": True, "changes": []}
+    if did:
+        conn = db.connect()
+        try:
+            fetch_one(conn, "devices", int(did))
+        finally:
+            conn.close()
+        changes = await monitor.check(int(did))
+        return {"checked": True, "changes": changes}
+    ran = await monitor.check_if_older(float(body.get("max_age") or 0))
+    return {"checked": ran}
+
+
+def _wake_targets(conn, did: int) -> tuple[str, list[str]] | None:
+    """The MAC to wake (the main interface's, else any) and the broadcast addresses to send it to."""
+    rows = conn.execute(
+        f"SELECT i.mac, i.ip, i.subnet, n.cidr FROM interfaces i LEFT JOIN networks n ON n.id = i.network_id "
+        f"WHERE i.device_id = ? AND i.mac IS NOT NULL AND i.mac != '' ORDER BY {iface_order('i')}", (did,)).fetchall()
+    if not rows:
+        return None
+    main = rows[0]
+    casts = [b for r in rows if (b := monitor.broadcast_of(r["ip"], r["subnet"], r["cidr"]))]
+    return main["mac"], casts
+
+
+@app.post("/api/devices/{did}/wake")
+def device_wake(did: int, request: Request, _s=Depends(require_session), conn=Depends(get_db)):
+    dev = fetch_one(conn, "devices", did)
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    t = _wake_targets(conn, did)
+    if not t:
+        raise HTTPException(400, "Add the device's MAC address (Network tab) so HaRM can wake it")
+    try:
+        sent = monitor.wake(t[0], t[1])
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e))
+    audit(conn, request, "wake", "devices", did, f"{dev['name']} ({t[0]})")
+    conn.commit()
+    return {"mac": t[0], "sent_to": sent}
+
+
+ACTION_MODES = ("script", "lines")
+RUN_AAD = b"action_runs.output"
+
+
+def _action_hosts(text: str | None) -> list[str]:
+    return [h.strip() for h in re.split(r"[\s,;]+", text or "") if h.strip()]
+
+
+def _action_rules(conn, data: dict, existing: dict | None) -> None:
+    merged = {**(existing or {}), **data}
+    if merged.get("mode") not in ACTION_MODES:
+        if "mode" in data and data["mode"] is not None:
+            raise HTTPException(400, "mode must be script or lines")
+        data["mode"] = "script"
+    hosts = _action_hosts(merged.get("hosts"))
+    if "hosts" in data:
+        data["hosts"] = "\n".join(hosts) or None
+    if not hosts and not merged.get("device_id"):
+        raise HTTPException(400, "hosts: pick a device or enter an address to send it to")
+    for h in hosts:
+        if not remote._HOST.match(h) or h.startswith("-"):
+            raise HTTPException(400, f"hosts: “{h}” isn't a valid host name or IP address")
+    if merged.get("port") is not None and not 0 < merged["port"] < 65536:
+        raise HTTPException(400, "port: must be 1 to 65535")
+    if merged.get("username") and not remote._USER.match(merged["username"]):
+        raise HTTPException(400, "username: that doesn't look like a username")
+    try:
+        remote.parse_ssh_options(merged.get("ssh_options"))
+    except remote.RemoteError as e:
+        raise HTTPException(400, f"ssh_options: {e}")
+
+
+def _action_addresses(conn, a: dict) -> list[str]:
+    hosts = _action_hosts(a["hosts"])
+    if hosts or not a["device_id"]:
+        return hosts
+    st = monitor.device_state(conn, {"id": a["device_id"], "watch": 1, "connected": 1, "status": ""}, with_history=False)
+    return [st["address"]] if st["address"] else []
+
+
+@app.post("/api/actions/{aid}/run")
+async def action_run(aid: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Run a saved action on each of its addresses (or only the one asked for)."""
+    a = fetch_one(conn, "actions", aid)
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    hosts = _action_addresses(conn, a)
+    if body.get("host"):
+        if body["host"] not in hosts:
+            raise HTTPException(400, "That address isn't one of this action's")
+        hosts = [body["host"]]
+    if not hosts:
+        raise HTTPException(400, "This action has no address to send it to. Add one, or give the device an IP address")
+    user, pw = a["username"] or "", None
+    if a["credential_id"]:
+        row = conn.execute("SELECT * FROM credentials WHERE id = ?", (a["credential_id"],)).fetchone()
+        if row:
+            user = user or row["username"] or ""
+            pw = _decrypt(s["dek"], row["password_enc"], "password")
+            if pw and pw.startswith("<<"):
+                pw = None
+    port = a["port"] or 22
+    trust = bool(body.get("trust_new_key"))
+
+    async def one(host):
+        try:
+            if trust:
+                await asyncio.to_thread(remote.forget_host, host, port)
+            r = await asyncio.to_thread(remote.run_action, host, port, user, pw, a["mode"], a["command"],
+                                        bool(a["sudo"]), bool(a["legacy_ssh"]), a["ssh_options"])
+            return {"host": host, **r}
+        except remote.RemoteError as e:
+            return {"host": host, "ok": False, "exit_code": None, "output": "", "ms": None, "error": str(e), "code": e.code}
+
+    results = await asyncio.gather(*(one(h) for h in hosts[:16]))
+    for r in results:
+        out = r["output"] or r.get("error") or ""
+        conn.execute("INSERT INTO action_runs (action_id, host, ok, exit_code, ms, output_enc) VALUES (?,?,?,?,?,?)",
+                     (aid, r["host"], int(r["ok"]), r["exit_code"], r["ms"],
+                      crypto.seal(s["dek"], out.encode(), RUN_AAD) if out else None))
+    # Keep the newest 50 runs of each action.
+    conn.execute("DELETE FROM action_runs WHERE action_id = ? AND id NOT IN "
+                 "(SELECT id FROM action_runs WHERE action_id = ? ORDER BY id DESC LIMIT 50)", (aid, aid))
+    ok = sum(1 for r in results if r["ok"])
+    audit(conn, request, "run-action", "actions", aid,
+          f"{a['name']} on {', '.join(r['host'] for r in results)}: {ok} of {len(results)} worked")
+    conn.commit()
+    return {"action": a["name"], "results": results}
+
+
+@app.get("/api/actions/{aid}/runs")
+def action_runs(aid: int, s=Depends(require_session), conn=Depends(get_db)):
+    fetch_one(conn, "actions", aid)
+    out = []
+    for r in conn.execute("SELECT * FROM action_runs WHERE action_id = ? ORDER BY id DESC LIMIT 20", (aid,)):
+        r = dict(r)
+        blob = r.pop("output_enc")
+        try:
+            r["output"] = crypto.unseal(s["dek"], blob, RUN_AAD).decode() if blob else ""
+        except crypto.DecryptError:
+            r["output"] = "(can't be read)"
+        out.append(r)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# App settings and the new-version check
+# ---------------------------------------------------------------------------
+
+@app.get("/api/settings/app")
+def app_settings_get(_s=Depends(require_session), conn=Depends(get_db)):
+    return monitor.settings(conn)
+
+
+@app.post("/api/settings/app")
+async def app_settings_set(request: Request, _s=Depends(require_session), conn=Depends(get_db)):
+    body = await body_json(request)
+    try:
+        out = monitor.save_settings(conn, body)
+    except (TypeError, ValueError) as e:
+        raise HTTPException(400, str(e))
+    audit(conn, request, "settings", None, None, ", ".join(f"{k} = {v}" for k, v in body.items()))
+    conn.commit()
+    return out
+
+
+RELEASES_API = "https://api.github.com/repos/ZomBeatz/Zoms-HaRM/releases/latest"
+_update_cache: dict = {}
+
+
+def _version_tuple(v: str) -> tuple:
+    return tuple(int(x) for x in re.findall(r"\d+", v)[:3])
+
+
+def _latest_release() -> dict:
+    """The newest published release on GitHub, asked at most twice a day."""
+    if _update_cache.get("at", 0) > time.time() - 12 * 3600:
+        return _update_cache["data"]
+    import urllib.request
+    req = urllib.request.Request(RELEASES_API, headers={"Accept": "application/vnd.github+json",
+                                                        "User-Agent": f"Zoms-HaRM/{__version__}"})
+    with urllib.request.urlopen(req, timeout=8) as r:
+        rel = json.loads(r.read())
+    data = {"latest": str(rel.get("tag_name") or "").lstrip("v"), "url": rel.get("html_url"),
+            "published": rel.get("published_at")}
+    _update_cache.update(at=time.time(), data=data)
+    return data
+
+
+@app.get("/api/update-check")
+async def update_check(_s=Depends(require_session), conn=Depends(get_db)):
+    if not monitor.settings(conn)["update_check"]:
+        return {"enabled": False, "current": __version__}
+    try:
+        rel = await asyncio.to_thread(_latest_release)
+    except Exception:
+        return {"enabled": True, "current": __version__, "error": "Couldn't reach GitHub to check"}
+    newer = bool(rel["latest"]) and _version_tuple(rel["latest"]) > _version_tuple(__version__)
+    return {"enabled": True, "current": __version__, **rel, "newer": newer}
+
+
 @app.get("/api/{entity}")
 def list_entity(entity: str, request: Request, _s=Depends(require_session),
                 conn=Depends(get_db)):
@@ -2705,6 +2961,8 @@ def _apply_rules(conn, entity: str, data: dict, existing: dict | None) -> None:
     elif entity == "builds":
         if "status" in data and not data["status"]:
             data["status"] = "Planning"
+    elif entity == "actions":
+        _action_rules(conn, data, existing)
     elif entity == "connections":
         merged = {**(existing or {}), **data}
         if not merged.get("b_device_id") and not merged.get("b_endpoint"):

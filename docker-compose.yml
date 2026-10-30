@@ -19,6 +19,6 @@ services:
       HARM_BACKUP_KEEP: "14"                     # daily backups kept in ./data/backups
       TZ: "Etc/UTC"                              # your time zone, e.g. "Europe/London" (for backup and log times)
       # HARM_TLS: "0"                            # plain HTTP: only behind your own HTTPS reverse proxy
-    # Network discovery (scan / MAC addresses) only sees your LAN with host networking.
+    # Network discovery (scan / MAC addresses) and Wake-on-LAN only reach your LAN with host networking.
     # To use it, remove the "ports:" section above and uncomment this line:
     # network_mode: host

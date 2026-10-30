@@ -70,10 +70,13 @@ The full guide, with pictures, is at **[docs.zombeatzmedia.com/harm](https://doc
 
 ## What people use it for
 
-- **A home lab:** what's in the rack, which VM runs where, and the iDRAC login in one tap.
-- **A pile of spares:** photograph the boxes, let AI Assist identify and price them, and see which ones fit your servers.
-- **The whole house:** every device on the network, from the NAS to the TV, imported from your router's client list.
-- **Selling gear:** a clean sell sheet with specs and asking prices.
+| | |
+|---|---|
+| **Home lab** | what's in each rack, which VM runs on which host, iDRAC and iLO logins in one tap, IP and VLAN plans, cable runs |
+| **Spare parts** | drives, memory, cards and cables in bins and totes, what fits which server, RAID planning, warranty dates |
+| **The whole house** | every device on the network from the NAS to the TV, router client lists, Wi-Fi gear, smart home hubs |
+| **Small business and IT** | office closets and server rooms, asset tags and QR labels, purchase and warranty records, handover notes |
+| **Building and selling** | PC builds with compatibility checks, spec sheets, sell sheets with asking prices |
 
 ## Try it with demo data
 
@@ -103,13 +106,41 @@ Both set up HTTPS by themselves and keep everything in a `data` folder. Details:
 
 ## Questions
 
-**Does it send my data anywhere?** No. It runs on your own computer. Only optional things reach the internet: AI Assist with an online service (just the photos you add), and the parts library download.
+<details>
+<summary><b>Does it send my data anywhere?</b></summary>
 
-**Phones and iPads?** Yes, as a home-screen app over your Wi‑Fi, once the device trusts HaRM's own certificate. [Phones and tablets](https://docs.zombeatzmedia.com/harm/phones-and-tablets).
+No. It runs on your own computer. Only optional things reach the internet: AI Assist with an online service (just the photos you add), and the parts library download.
+</details>
 
-**Forgot the master password?** The recovery code you wrote down at the start gets you back in. Without either, stored logins can't be recovered; that's what keeps them safe.
+<details>
+<summary><b>Can I use it on my phone or iPad?</b></summary>
 
-**Something not working?** [Troubleshooting](https://docs.zombeatzmedia.com/harm/troubleshooting).
+Yes, as a home-screen app over your Wi‑Fi, once the device trusts HaRM's own certificate. See [Phones and tablets](https://docs.zombeatzmedia.com/harm/phones-and-tablets).
+</details>
+
+<details>
+<summary><b>I forgot the master password. Now what?</b></summary>
+
+The recovery code you wrote down at the start gets you back in. Without either, stored logins can't be recovered; that's what keeps them safe. Your hardware list is not affected.
+</details>
+
+<details>
+<summary><b>Windows says "Windows protected your PC". Is it safe?</b></summary>
+
+That warning appears for apps that aren't signed with a paid certificate yet. Click **More info > Run anyway**. The release files are built from the code in this repository.
+</details>
+
+<details>
+<summary><b>Where is my data saved?</b></summary>
+
+In the `data` folder next to HaRM: the database, its backups and HaRM's certificates. **Settings > Backup** downloads a copy. Details: [Backups and updates](https://docs.zombeatzmedia.com/harm/backups-and-updates).
+</details>
+
+<details>
+<summary><b>Something isn't working</b></summary>
+
+See [Troubleshooting](https://docs.zombeatzmedia.com/harm/troubleshooting), or email [info@zombeatzmedia.com](mailto:info@zombeatzmedia.com).
+</details>
 
 ## For developers
 

@@ -12,31 +12,27 @@ The full guide, with pictures and a page for every feature, is online at https:/
 
 ## Install on Windows
 
-You need Windows 10 or 11 and about 400 MB of disk space. No administrator rights are needed.
+You need Windows 10 or 11 (64-bit) and about 400 MB of disk space. No administrator rights are needed, and nothing else has to be installed first.
 
-1. **Extract the zip somewhere in your user folder**, for example `C:\Users\you\ZomsHaRM`.
-   Don't use *Program Files*: HaRM keeps its data next to the app, and Windows doesn't allow that there.
-2. Open the folder and **double-click `Install HaRM.cmd`**.
-   - If Windows shows *"Windows protected your PC"*, click **More info > Run anyway**. That warning appears for any script downloaded from the internet.
-   - If Python isn't installed, the installer offers to install it for you (using Windows' own `winget`). Otherwise, get it from [python.org](https://www.python.org/downloads/) and tick **"Add python.exe to PATH"**.
-3. Wait a few minutes while it downloads HaRM's parts (about 150 MB the first time).
-4. When it finishes there's a **Zom's HaRM** icon in the Start Menu and on the Desktop.
+1. From the [latest release](https://github.com/ZomBeatz/Zoms-HaRM/releases/latest), download **`Zoms-HaRM_(version)_x64-setup.exe`**.
+2. Open it. If Windows shows *"Windows protected your PC"*, click **More info > Run anyway**. The warning appears because the file isn't signed with a paid certificate yet; it's built by GitHub from HaRM's public code.
+3. Click **Install**, then **Finish** with **Run Zom's HaRM** ticked.
+
+HaRM is now in the Start Menu, and in **Settings > Apps** like any other app.
 
 ## Install on Linux
 
-You need Python 3.10 or newer (most distributions have it already).
+Download the file for your system from the [latest release](https://github.com/ZomBeatz/Zoms-HaRM/releases/latest):
 
-```bash
-tar xzf zoms-harm-0.3.1.tar.gz
-cd zoms-harm-0.3.1
-./install.sh
-```
+| Your system | File | How |
+|---|---|---|
+| Ubuntu, Mint, Debian | `zoms-harm_(version)_amd64.deb` | Open it in your software installer and click **Install**. |
+| Fedora, openSUSE | `zoms-harm-(version)-1.x86_64.rpm` | Open it in your software installer and click **Install**. |
+| Any other | `Zoms-HaRM_(version)_amd64.AppImage` | Right-click > **Properties** > allow running it as a program, then double-click it. |
 
-This sets HaRM up inside its folder and adds **Zom's HaRM** to your app menu (KDE, GNOME, and others). Nothing needs root.
+**Zom's HaRM** is then in your app menu. Optional extras: `tesseract` (reads printed text on labels), `zbar` (barcode reading on the server) and `qrencode`. Install them with your package manager if you want them; HaRM says where they help.
 
-- On Debian/Ubuntu, if it says the venv module is missing: `sudo apt install python3-venv`
-- Optional extras: `tesseract` (reads printed text on labels), `zbar` (barcode reading on the server), and `qrencode`. Install them with your package manager if you want them.
-- Prefer the terminal or a headless server? Use `./install.sh --no-menu`, then start HaRM with `HARM_HOST=0.0.0.0 HARM_TLS=1 ./run.sh`. There's also a `Dockerfile`.
+**Running HaRM from its source code instead** (developers, or a headless machine): extract the source archive and run `./install.sh` (Linux) or **Install HaRM.cmd** (Windows). Those keep data in the `data` folder next to the code.
 
 ## Run on a server (Docker or Linux service)
 
@@ -139,27 +135,31 @@ The **⋯** button holds the less common actions: Import specs, export/PDF, prin
 
 **Export & Share:** copy devices as text for a person or an AI assistant, download CSV/JSON, or print a spec sheet or sell sheet to PDF.
 
-**Settings:** password, two-factor login, recovery code, and appearance (dark or light). There may also be something to find if you click the logo enough.
+**Settings:** appearance (match your computer, light or dark), locking, master password, two-factor login, recovery code, phones and tablets, AI Assist, backups, keyboard shortcuts, and About with **Send feedback**.
 
 ## Backups and moving to a new PC
 
-- HaRM **backs itself up daily** into `data/backups/` and keeps the last 14.
-- **Settings > Backup** downloads a copy whenever you want one. Keep a copy on another drive or computer now and then.
-- **To move HaRM**, copy the whole `data` folder into the new installation's folder before starting it. That brings your database, certificates (so phones keep trusting it) and backups. Your master password stays the same.
+**Where your data is:** in your own data folder, never next to the app, so updating or reinstalling can't touch it.
+
+- Windows: `%APPDATA%\com.zombeatz.zoms-harm` (paste that into File Explorer's address bar)
+- Linux: `~/.local/share/com.zombeatz.zoms-harm`
+- A server, Docker, or a copy run from source: the `data` folder next to HaRM
+
+It holds the database, the daily backups (`backups`), HaRM's certificates (`tls`) and its log.
+
+- HaRM **backs itself up daily** and keeps the last 14.
+- **Settings > Data & backups > Download backup** saves a copy whenever you want one. Keep a copy on another drive or computer now and then.
+- **To move HaRM to a new computer**, install it there, press **Stop** in its control panel, and copy the whole data folder over the new one. That brings your devices, logins, certificates (so phones keep trusting it) and backups. Your master password stays the same.
+- **Used an older HaRM from a folder?** The first time the installed app opens, **Bring in data from an older HaRM…** copies that folder's data in for you.
 
 ## Updating
 
-1. Stop HaRM: in the control panel press **Stop**, then Quit from the tray.
-2. Extract the new version **over** your current HaRM folder, replacing the files. Your `data` folder isn't in the download, so it's kept.
-3. Run the installer again (`Install HaRM.cmd` or `./install.sh`) to pick up new parts.
-4. Start HaRM. Open browser tabs and the phone app show a **⟳ Reload** banner.
+Download the newer installer and open it, the same way you installed HaRM. It replaces the app and keeps your data and settings. Open browser tabs and the phone app show a **⟳ Reload** banner.
 
 ## Uninstalling
 
-- **Windows:** double-click `Uninstall HaRM.cmd` (removes the shortcuts and stops HaRM), then delete the HaRM folder.
-- **Linux:** run `./scripts/install-desktop-app.sh --uninstall`, then delete the HaRM folder.
-
-Back up `data/` first if you might want your inventory again.
+- **Windows:** **Settings > Apps > Zom's HaRM > Uninstall**. It asks whether to remove your data too; the answer is no unless you choose otherwise.
+- **Linux:** remove **zoms-harm** in your software center (or `sudo apt remove zoms-harm` / `sudo dnf remove zoms-harm`). For the AppImage, delete the file. Your data folder is kept; delete it yourself if you want it gone.
 
 ## Troubleshooting
 

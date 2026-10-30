@@ -4,7 +4,9 @@
 
 **Installing**
 - **One-click installers.** Windows gets a normal setup file (`Zoms-HaRM_0.3.2_x64-setup.exe`) and Linux gets `.deb`, `.rpm` and AppImage files, with everything inside. Nothing else to install first, and no administrator rights needed on Windows.
-- Your data now lives in its own folder, so updating or reinstalling never touches it: `%APPDATA%\com.zombeatz.zoms-harm` on Windows, `~/.local/share/com.zombeatz.zoms-harm` on Linux. An older install's data is moved over the first time.
+- The installed app keeps your data in its own folder, so updating or reinstalling never touches it: `%APPDATA%\com.zombeatz.zoms-harm` on Windows, `~/.local/share/com.zombeatz.zoms-harm` on Linux.
+- **Used HaRM from a folder before?** The first time the installed app opens, **Bring in data from an older HaRM…** copies your devices, logins and certificates over. The old folder isn't changed.
+- Uninstalling keeps your data, unless you tick the box to remove it.
 
 **Try it first**
 - **Live demo** at [zombeatz.github.io/Zoms-HaRM](https://zombeatz.github.io/Zoms-HaRM/): the real app with a made-up home lab, running in your browser. Changes stay in that browser until you press **Reset demo**.

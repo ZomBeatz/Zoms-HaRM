@@ -25,15 +25,17 @@
 
 ## Quick start
 
-1. **Download** the file for your computer from the [latest release](https://github.com/ZomBeatz/Zoms-HaRM/releases/latest) (under **Assets** at the bottom):
+1. **Download** the file for your computer from the [latest release](https://github.com/ZomBeatz/Zoms-HaRM/releases/latest) (under **Assets** at the bottom), and open it:
 
    | Your computer | File to download | Then |
    |---|---|---|
-   | **Windows 10/11** | `zoms-harm-(version).zip` | Extract it to your user folder (not Program Files) and double-click **Install HaRM.cmd**. If Windows says *"Windows protected your PC"*, click **More info > Run anyway**. |
-   | **Linux** | `zoms-harm-(version).tar.gz` | Extract it and run `./install.sh`. |
-   | **Home server or NAS** | either | See [Running on a server](#running-on-a-server). |
+   | **Windows 10/11** | `Zoms-HaRM_(version)_x64-setup.exe` | Open it and click **Install**. No administrator rights needed. If Windows says *"Windows protected your PC"*, click **More info > Run anyway** (the file is built by GitHub from this code). |
+   | **Ubuntu, Mint, Debian** | `zoms-harm_(version)_amd64.deb` | Open it in your software installer and click **Install**. |
+   | **Fedora, openSUSE** | `zoms-harm-(version)-1.x86_64.rpm` | Open it in your software installer and click **Install**. |
+   | **Any Linux** | `Zoms-HaRM_(version)_amd64.AppImage` | Right-click > **Properties** > allow running it as a program, then double-click it. |
+   | **Home server or NAS** | | See [Running on a server](#running-on-a-server). |
 
-2. **Open Zom's HaRM** from the Start Menu or app menu, press **Start**, then **Open HaRM**.
+2. **Open Zom's HaRM** (the installer offers to, or find it in the Start Menu or app menu), press **Start**, then **Open HaRM**.
 3. **Create your master password** (it encrypts your stored logins) and follow the short setup guide.
 4. **Connect your phone:** **Phone setup** in the desktop app shows QR codes and a checklist that follows your phone's progress.
 
@@ -135,7 +137,13 @@ That warning appears for apps that aren't signed with a paid certificate yet. Cl
 <details>
 <summary><b>Where is my data saved?</b></summary>
 
-In the `data` folder next to HaRM: the database, its backups and HaRM's certificates. **Settings > Backup** downloads a copy. Details: [Backups and updates](https://docs.zombeatzmedia.com/harm/backups-and-updates).
+In your own data folder, never next to the app, so updating or reinstalling can't touch it:
+
+- **Windows:** `%APPDATA%\com.zombeatz.zoms-harm`
+- **Linux:** `~/.local/share/com.zombeatz.zoms-harm`
+- **Server or a copy run from source:** the `data` folder next to HaRM.
+
+It holds the database, its daily backups and HaRM's certificates. **Settings > Data & backups** downloads a copy. Details: [Backups and updates](https://docs.zombeatzmedia.com/harm/backups-and-updates).
 </details>
 
 <details>
@@ -149,7 +157,7 @@ See [Troubleshooting](https://docs.zombeatzmedia.com/harm/troubleshooting), or e
 <details>
 <summary><b>Running from source, tests and project layout</b></summary>
 
-Python 3.10+ (FastAPI, SQLite) with a plain JavaScript front end: no build step.
+Python 3.10+ (FastAPI, SQLite) with a plain JavaScript front end: no build step. Releases: set the version in `harm/__init__.py`, add its section to `CHANGELOG.md`, and push a tag like `v0.3.2`. GitHub builds the installers into a draft release with those notes.
 
 ```bash
 ./install.sh --no-menu                 # .venv with the requirements
@@ -158,7 +166,8 @@ Python 3.10+ (FastAPI, SQLite) with a plain JavaScript front end: no build step.
 .venv/bin/python tests/full_test.py    # every feature
 python3 scripts/demo.py                # demo data on :8099
 python3 web-demo/build.py              # the online demo in demo-site/ (GitHub publishes it on every push)
-python3 scripts/package.py             # release archives in dist/
+python3 scripts/package.py             # source archives in dist/ (with Install HaRM.cmd and install.sh)
+pyinstaller packaging/zoms-harm.spec   # the frozen app the installers carry (see packaging/)
 python3 scripts/build-icons.py         # Lucide icons for the app
 python3 branding/make-logos.py         # icons and wordmarks
 ```
@@ -181,6 +190,8 @@ launcher/         Desktop control panel (Qt / PySide6)
 docker/, Dockerfile, docker-compose.yml   Server image
 scripts/          Installers, demo, packaging, certificates, screenshots
 web-demo/         Online demo: runs harm/ in the browser with Pyodide (built by .github/workflows/demo.yml)
+packaging/        Installers: PyInstaller, Inno Setup (Windows), nfpm and AppImage (Linux)
+.github/workflows build.yml makes the installers on a version tag (a draft release); demo.yml publishes the demo
 tests/            smoke.py and full_test.py
 ```
 

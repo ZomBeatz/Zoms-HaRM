@@ -127,7 +127,7 @@ def fake_proxmox():
 def main():
     tmp = tempfile.mkdtemp(prefix="harm-full-")
     env = {**os.environ, "HARM_DB": os.path.join(tmp, "harm.db"), "HARM_AUTO_BACKUP": "0", "HARM_IDLE_MINUTES": "30"}
-    server = subprocess.Popen([str(ROOT / ".venv/bin/uvicorn"), "harm.main:app", "--port", str(PORT)],
+    server = subprocess.Popen([sys.executable, "-m", "uvicorn", "harm.main:app", "--port", str(PORT)],
                               cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=open(os.path.join(tmp, "err.log"), "w"))
     try:
         for _ in range(60):

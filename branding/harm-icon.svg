@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#232833"/>
+      <stop offset="1" stop-color="#12151b"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4fb0ec"/>
+      <stop offset="1" stop-color="#2580c3"/>
+    </linearGradient>
+  </defs>
+  <rect x="48" y="48" width="928" height="928" rx="208" fill="url(#bg)"/>
+  <!-- headband: orange inner arc over a dark outer arc, like the ZomBeatz mark -->
+  <path d="M 214 600 A 298 298 0 0 1 810 600" fill="none" stroke="#0a0c10" stroke-width="64" stroke-linecap="round"/>
+  <path d="M 214 600 A 298 298 0 0 1 810 600" fill="none" stroke="#ec6a3f" stroke-width="30" stroke-linecap="round"/>
+  <!-- ear cups -->
+  <rect x="196" y="500" width="84" height="264" rx="30" fill="#ec6a3f"/>
+  <rect x="150" y="522" width="86" height="220" rx="30" fill="#0a0c10"/>
+  <rect x="744" y="500" width="84" height="264" rx="30" fill="#ec6a3f"/>
+  <rect x="788" y="522" width="86" height="220" rx="30" fill="#0a0c10"/>
+  <!-- rack posts -->
+  <rect x="318" y="404" width="22" height="378" rx="11" fill="#0a0c10"/>
+  <rect x="684" y="404" width="22" height="378" rx="11" fill="#0a0c10"/>
+  <!-- three rack-mounted servers -->
+  <rect x="330" y="420" width="364" height="98" rx="30" fill="url(#blue)"/>
+  <rect x="330" y="543" width="364" height="98" rx="30" fill="url(#blue)" opacity=".85"/>
+  <rect x="330" y="666" width="364" height="98" rx="30" fill="url(#blue)" opacity=".7"/>
+  <!-- drive bays -->
+  <rect x="362" y="458" width="60" height="22" rx="11" fill="#ffffff" opacity=".85"/>
+  <rect x="436" y="458" width="60" height="22" rx="11" fill="#ffffff" opacity=".85"/>
+  <rect x="362" y="581" width="60" height="22" rx="11" fill="#ffffff" opacity=".85"/>
+  <rect x="436" y="581" width="60" height="22" rx="11" fill="#ffffff" opacity=".85"/>
+  <rect x="362" y="704" width="60" height="22" rx="11" fill="#ffffff" opacity=".85"/>
+  <!-- status lights -->
+  <circle cx="646" cy="469" r="14" fill="#ec6a3f"/>
+  <circle cx="606" cy="469" r="14" fill="#ffffff" opacity=".85"/>
+  <circle cx="646" cy="592" r="14" fill="#ffffff" opacity=".85"/>
+  <circle cx="646" cy="715" r="14" fill="#ffffff" opacity=".85"/>
+</svg>

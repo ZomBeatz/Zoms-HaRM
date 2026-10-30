@@ -1,0 +1,4 @@
+# Extra packages for the desktop control panel (launcher/harm_launcher.py).
+# On Linux, a system PySide6 (e.g. `sudo pacman -S pyside6`) also works.
+PySide6-Essentials>=6.6,<7
+segno>=1.6,<2

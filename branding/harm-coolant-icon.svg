@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#123532"/>
+      <stop offset="1" stop-color="#071413"/>
+    </linearGradient>
+    <linearGradient id="band" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5ff7cf"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+    <linearGradient id="liquid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5ff7cf"/>
+      <stop offset="1" stop-color="#0e9f8c"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#5ff7cf"/>
+    </linearGradient>
+  </defs>
+  <rect x="48" y="48" width="928" height="928" rx="208" fill="url(#bg)"/>
+  <!-- headband glowing like coolant tubing -->
+  <path d="M 214 600 A 298 298 0 0 1 810 600" fill="none" stroke="#04100e" stroke-width="64" stroke-linecap="round"/>
+  <path d="M 214 600 A 298 298 0 0 1 810 600" fill="none" stroke="url(#band)" stroke-width="30" stroke-linecap="round"/>
+  <rect x="196" y="500" width="84" height="264" rx="30" fill="#5ff7cf"/>
+  <rect x="150" y="522" width="86" height="220" rx="30" fill="#04100e"/>
+  <rect x="744" y="500" width="84" height="264" rx="30" fill="#22d3ee"/>
+  <rect x="788" y="522" width="86" height="220" rx="30" fill="#04100e"/>
+  <!-- rack posts -->
+  <rect x="318" y="404" width="22" height="378" rx="11" fill="#04100e"/>
+  <rect x="684" y="404" width="22" height="378" rx="11" fill="#04100e"/>
+  <!-- three servers, each a coolant reservoir -->
+  <clipPath id="u0"><rect x="330" y="420" width="364" height="98" rx="30"/></clipPath>
+  <rect x="330" y="420" width="364" height="98" rx="30" fill="#0f2f2c" stroke="#5ff7cf" stroke-opacity=".55" stroke-width="5"/>
+  <g clip-path="url(#u0)">
+    <path d="M 330 452 Q 353.0 443 376 452 Q 399.0 461 422 452 Q 445.0 443 468 452 Q 491.0 461 514 452 Q 537.0 443 560 452 Q 583.0 461 606 452 Q 629.0 443 652 452 Q 673.0 461 694 452 L 694 518 L 330 518 Z" fill="url(#liquid)"></path>
+    <circle cx="560" cy="490" r="7" fill="#ffffff" opacity="0.55"/>
+    <circle cx="604" cy="478" r="4.5" fill="#ffffff" opacity="0.45"/>
+    <circle cx="520" cy="502" r="3.5" fill="#ffffff" opacity="0.4"/>
+  </g>
+  <clipPath id="u1"><rect x="330" y="543" width="364" height="98" rx="30"/></clipPath>
+  <rect x="330" y="543" width="364" height="98" rx="30" fill="#0f2f2c" stroke="#5ff7cf" stroke-opacity=".55" stroke-width="5"/>
+  <g clip-path="url(#u1)">
+    <path d="M 330 571 Q 353.0 562 376 571 Q 399.0 580 422 571 Q 445.0 562 468 571 Q 491.0 580 514 571 Q 537.0 562 560 571 Q 583.0 580 606 571 Q 629.0 562 652 571 Q 673.0 580 694 571 L 694 641 L 330 641 Z" fill="url(#liquid)"></path>
+    <circle cx="582" cy="613" r="7" fill="#ffffff" opacity="0.55"/>
+    <circle cx="586" cy="601" r="4.5" fill="#ffffff" opacity="0.45"/>
+    <circle cx="550" cy="625" r="3.5" fill="#ffffff" opacity="0.4"/>
+  </g>
+  <clipPath id="u2"><rect x="330" y="666" width="364" height="98" rx="30"/></clipPath>
+  <rect x="330" y="666" width="364" height="98" rx="30" fill="#0f2f2c" stroke="#5ff7cf" stroke-opacity=".55" stroke-width="5"/>
+  <g clip-path="url(#u2)">
+    <path d="M 330 702 Q 353.0 693 376 702 Q 399.0 711 422 702 Q 445.0 693 468 702 Q 491.0 711 514 702 Q 537.0 693 560 702 Q 583.0 711 606 702 Q 629.0 693 652 702 Q 673.0 711 694 702 L 694 764 L 330 764 Z" fill="url(#liquid)"></path>
+    <circle cx="604" cy="736" r="7" fill="#ffffff" opacity="0.55"/>
+    <circle cx="568" cy="724" r="4.5" fill="#ffffff" opacity="0.45"/>
+    <circle cx="580" cy="748" r="3.5" fill="#ffffff" opacity="0.4"/>
+  </g>
+  <!-- drive bays and status lights -->
+  <g fill="#ffffff" opacity=".88">
+    <rect x="362" y="446" width="60" height="22" rx="11"/><rect x="436" y="446" width="60" height="22" rx="11"/>
+    <rect x="362" y="569" width="60" height="22" rx="11"/><rect x="436" y="569" width="60" height="22" rx="11"/>
+    <rect x="362" y="692" width="60" height="22" rx="11"/>
+  </g>
+  <circle cx="646" cy="457" r="14" fill="#22d3ee"/>
+  <circle cx="646" cy="457" r="24" fill="#22d3ee" opacity=".25"></circle>
+  <circle cx="646" cy="580" r="14" fill="#ffffff" opacity=".85"/>
+  <circle cx="646" cy="703" r="14" fill="#ffffff" opacity=".85"/>
+  <!-- cord from the right ear cup to an RJ45 plug -->
+  <path d="M 786 760 C 786 860 700 884 600 884 L 520 884" fill="none" stroke="#0a0c10" stroke-width="30" stroke-linecap="round"/>
+  <path d="M 786 760 C 786 860 700 884 600 884 L 520 884" fill="none" stroke="url(#blue)" stroke-width="12" stroke-linecap="round"/>
+  <path d="M 470 860 L 516 866 Q 530 868 530 884 Q 530 900 516 902 L 470 908 Z" fill="#0a0c10"/>
+  <rect x="356" y="848" width="124" height="72" rx="14" fill="#0a0c10"/>
+  <rect x="364" y="856" width="108" height="56" rx="9" fill="#dff7ef" opacity=".92"/>
+  <rect x="438" y="872" width="26" height="24" rx="4" fill="#0a0c10" opacity=".22"/>
+  <g fill="#e9b949">
+    <rect x="372" y="862" width="40" height="5" rx="2.5"/>
+    <rect x="372" y="871" width="40" height="5" rx="2.5"/>
+    <rect x="372" y="880" width="40" height="5" rx="2.5"/>
+    <rect x="372" y="889" width="40" height="5" rx="2.5"/>
+    <rect x="372" y="898" width="40" height="5" rx="2.5"/>
+  </g>
+</svg>

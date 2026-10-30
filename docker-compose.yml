@@ -1,0 +1,24 @@
+# Zom's HaRM on a server or NAS.
+#   1. Set HARM_CERT_NAMES to the address phones will use (this server's LAN IP and/or hostname).
+#   2. docker compose up -d --build
+#   3. Open https://<that address>:8077 and create your master password.
+# Your data (database, certificates, backups) lives in ./data next to this file.
+services:
+  harm:
+    build: .
+    image: zoms-harm:latest
+    container_name: zoms-harm
+    restart: unless-stopped
+    ports:
+      - "8077:8077"
+    volumes:
+      - ./data:/data
+    environment:
+      HARM_CERT_NAMES: "192.168.1.50 harm.lan"   # <- change to this server's LAN IP / hostname
+      HARM_IDLE_MINUTES: "30"                    # auto-lock after this many idle minutes
+      HARM_BACKUP_KEEP: "14"                     # daily backups kept in ./data/backups
+      TZ: "America/Anchorage"                    # your time zone (for backup and log times)
+      # HARM_TLS: "0"                            # plain HTTP: only behind your own HTTPS reverse proxy
+    # Network discovery (scan / MAC addresses) only sees your LAN with host networking.
+    # To use it, remove the "ports:" section above and uncomment this line:
+    # network_mode: host

@@ -45,12 +45,14 @@ which ones fit in which devices.
 
 ## Install (for users)
 
-Download the release, then follow **[GUIDE.md](GUIDE.md)**, which covers setup, first start, phone setup, everyday use, backups, updates and troubleshooting.
+The full guide, with pictures, is at **[zombeatz.github.io/zombeatz-docs/harm](https://zombeatz.github.io/zombeatz-docs/harm/)**. A copy for offline use is in **[GUIDE.md](GUIDE.md)**. Download the release, then follow it, which covers setup, first start, phone setup, everyday use, backups, updates and troubleshooting.
 
 - **Windows:** extract the zip to your user folder and double-click `Install HaRM.cmd`.
 - **Linux:** `./install.sh`
 
 Run it on a server with **Docker** (`docker compose up -d --build`) or as a **Linux service** (`./scripts/install-server.sh`): see GUIDE.md > Run on a server.
+
+Try it with made-up data first: `python3 scripts/demo.py` (opens on http://127.0.0.1:8099, password `demo-password`).
 
 Build a release yourself with `python3 scripts/package.py` (writes `dist/zoms-harm-<version>.zip` and `.tar.gz`; your `data/` folder is never included). Tests: `.venv/bin/python tests/smoke.py` (quick) and `tests/full_test.py` (every feature).
 

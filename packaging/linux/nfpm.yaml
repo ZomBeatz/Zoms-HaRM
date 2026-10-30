@@ -22,8 +22,9 @@ overrides:
   rpm:
     depends: [libxkbcommon-x11, xcb-util-cursor, mesa-libEGL, fontconfig, dbus-libs]
 contents:
-  - src: dist/zoms-harm/
-    dst: /opt/zoms-harm/
+  - src: dist/zoms-harm
+    dst: /opt/zoms-harm
+    type: tree
   - src: /opt/zoms-harm/zoms-harm
     dst: /usr/bin/zoms-harm
     type: symlink

@@ -15,7 +15,7 @@
   <a href="https://github.com/ZomBeatz/Zoms-HaRM/releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/Windows-Download-2580c3?style=for-the-badge&logo=windows&logoColor=white"></a>
   <a href="https://github.com/ZomBeatz/Zoms-HaRM/releases/latest"><img alt="Download for Linux" src="https://img.shields.io/badge/Linux-Download-2580c3?style=for-the-badge&logo=linux&logoColor=white"></a>
   <a href="https://docs.zombeatzmedia.com/harm/"><img alt="Read the guide" src="https://img.shields.io/badge/Read_the-Guide-5b6375?style=for-the-badge&logo=readthedocs&logoColor=white"></a>
-  <a href="#try-it-with-demo-data"><img alt="Try the demo" src="https://img.shields.io/badge/Try_it-Demo_data-22c55e?style=for-the-badge&logo=python&logoColor=white"></a>
+  <a href="https://zombeatz.github.io/Zoms-HaRM/"><img alt="Try the online demo" src="https://img.shields.io/badge/Try_it-Online_demo-22c55e?style=for-the-badge&logo=googlechrome&logoColor=white"></a>
   <a href="#running-on-a-server"><img alt="Server with Docker" src="https://img.shields.io/badge/Server-Docker-ec6a3f?style=for-the-badge&logo=docker&logoColor=white"></a>
 </p>
 
@@ -80,7 +80,9 @@ The full guide, with pictures, is at **[docs.zombeatzmedia.com/harm](https://doc
 
 ## Try it with demo data
 
-Look around before entering your own gear. The demo starts a separate copy of HaRM with a made-up home lab, and never touches your data:
+**[Open the online demo](https://zombeatz.github.io/Zoms-HaRM/)**: the real app with a made-up home lab, running entirely in your browser. Nothing is installed and nothing you type leaves your device. Your changes stay in that browser until you press **Start over** (or a newer demo is published). The password, if you lock it, is `demo-password`. Features that reach out to other machines (network scan, UniFi, Proxmox, spec import, AI Assist) need HaRM on your own network.
+
+Or run the same demo on your computer, in a separate copy that never touches your data:
 
 ```bash
 python3 scripts/demo.py
@@ -155,6 +157,7 @@ Python 3.10+ (FastAPI, SQLite) with a plain JavaScript front end: no build step.
 .venv/bin/python tests/smoke.py        # quick end-to-end check
 .venv/bin/python tests/full_test.py    # every feature
 python3 scripts/demo.py                # demo data on :8099
+python3 web-demo/build.py              # the online demo in demo-site/ (GitHub publishes it on every push)
 python3 scripts/package.py             # release archives in dist/
 python3 scripts/build-icons.py         # Lucide icons for the app
 python3 branding/make-logos.py         # icons and wordmarks
@@ -177,6 +180,7 @@ harm/
 launcher/         Desktop control panel (Qt / PySide6)
 docker/, Dockerfile, docker-compose.yml   Server image
 scripts/          Installers, demo, packaging, certificates, screenshots
+web-demo/         Online demo: runs harm/ in the browser with Pyodide (built by .github/workflows/demo.yml)
 tests/            smoke.py and full_test.py
 ```
 

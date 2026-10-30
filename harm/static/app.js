@@ -261,6 +261,8 @@ async function api(method, path, body) {
   return data;
 }
 const GET = p => api('GET', p);
+// The online demo (web-demo/) answers /api/ inside the browser, so it fetches downloads itself.
+const openDownload = url => { if (window.harmDemo) window.harmDemo.download(url); else location.href = url; };
 
 async function loadLookups() {
   const res = await Promise.all(LOOKUPS.map(e => GET('/' + e)));
@@ -2428,7 +2430,7 @@ async function viewComponents(q) {
     pageHead('Spare Parts', 'Drives, memory, cards, cables: everything on the shelf or inside a device.',
       helpLink('parts'),
       btn('🤖 AI Assist', () => aiAssist()),
-      menuButton('⋯', [['⇩ Export CSV', () => { location.href = '/api/export/components.csv'; }]]),
+      menuButton('⋯', [['⇩ Export CSV', () => { openDownload('/api/export/components.csv'); }]]),
       btn('+ Add part', () => editEntity('components', { status: 'In Stock', quantity: 1 }), 'primary')),
     tabBar,
     h('div', { class: 'toolbar' }, qi, catSel, ifSel),
@@ -2818,7 +2820,7 @@ async function viewNetworks() {
     pageHead('Networks & IPs', 'Subnets, VLANs and Wi-Fi networks, and which device has which address.',
       helpLink('networks'),
       h('a', { class: 'button', href: '#/discover' }, '⌖ Discover'),
-      menuButton('⋯', [['⇩ Export CSV', () => { location.href = '/api/export/networks.csv'; }]]),
+      menuButton('⋯', [['⇩ Export CSV', () => { openDownload('/api/export/networks.csv'); }]]),
       btn('+ Add network', add, 'primary')),
     rows.length ? card('Networks', table([
       { label: 'VLAN', get: r => r.vlan_id ?? '', sort: r => r.vlan_id ?? 99999 },
@@ -4564,7 +4566,7 @@ setInterval(async () => {
 }, 15000);
 
 // Installable app: register the service worker and keep Chrome's install prompt for our own button.
-if ('serviceWorker' in navigator && window.isSecureContext) {
+if ('serviceWorker' in navigator && window.isSecureContext && !window.harmDemo) {
   navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => { /* untrusted certificate etc. */ });
 }
 window.addEventListener('beforeinstallprompt', e => {

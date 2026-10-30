@@ -3,6 +3,7 @@
     python3 scripts/demo.py               # starts a demo on http://127.0.0.1:8099 (password: demo-password)
     python3 scripts/demo.py --port 8100
     python3 scripts/demo.py --keep        # keep the demo's data folder afterwards (it's printed)
+    python3 scripts/demo.py --save demo.db  # just write the filled-in demo database and stop (the online demo uses it)
 
 The demo is also what the guide's screenshots are taken from. Everything in it is fictional.
 """
@@ -12,6 +13,8 @@ import http.cookiejar
 import json
 import os
 import shutil
+import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -208,10 +211,14 @@ def main():
     ap.add_argument("--port", type=int, default=8099)
     ap.add_argument("--keep", action="store_true", help="keep the demo's data folder afterwards")
     ap.add_argument("--seed-only", metavar="URL", help="fill an already running, empty HaRM at URL instead")
+    ap.add_argument("--save", metavar="FILE", help="write the filled-in demo database to FILE and stop")
     args = ap.parse_args()
     if args.seed_only:
         seed(Api(args.seed_only.rstrip("/")))
         return
+    with socket.socket() as s:
+        if s.connect_ex(("127.0.0.1", args.port)) == 0:
+            raise SystemExit(f"Port {args.port} is already in use. Pick another with --port.")
     tmp = tempfile.mkdtemp(prefix="harm-demo-")
     py = ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     env = {**os.environ, "HARM_DB": str(Path(tmp) / "harm.db"), "HARM_AUTO_BACKUP": "0", "HARM_IDLE_MINUTES": "720"}
@@ -226,6 +233,8 @@ def main():
             except Exception:
                 time.sleep(0.2)
         seed(Api(base))
+        if args.save:
+            return
         print(f"Demo running at {base}  ·  password: {PASSWORD}  ·  Ctrl+C to stop", flush=True)
         server.wait()
     except KeyboardInterrupt:
@@ -236,6 +245,13 @@ def main():
             server.wait(10)
         except subprocess.TimeoutExpired:
             server.kill()
+        if args.save:
+            out = Path(args.save).resolve()
+            out.unlink(missing_ok=True)
+            conn = sqlite3.connect(Path(tmp) / "harm.db")
+            conn.execute("VACUUM INTO ?", (str(out),))
+            conn.close()
+            print(f"Demo database saved to {out}")
         if args.keep:
             print(f"Demo data kept in {tmp}")
         else:

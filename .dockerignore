@@ -7,3 +7,6 @@ dist/
 *.db-shm
 launcher/
 branding/old-icons/
+web-demo/
+demo-site/
+.github/

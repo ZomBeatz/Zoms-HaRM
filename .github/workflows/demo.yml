@@ -1,0 +1,47 @@
+# Publishes the online demo to GitHub Pages: https://zombeatz.github.io/Zoms-HaRM/
+# It's HaRM's real app and server (run in the browser by Pyodide) with a made-up home lab.
+# Built from the current code on every push, so the demo always matches the app.
+# Each visitor's changes stay in their own browser.
+# One-time setup: repository Settings > Pages > Source: "GitHub Actions".
+name: Online demo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["harm/**", "scripts/demo.py", "web-demo/**", "requirements.txt", ".github/workflows/demo.yml"]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Build the demo
+        run: python web-demo/build.py --out demo-site --python python
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: demo-site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

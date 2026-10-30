@@ -1,0 +1,24 @@
+/* Online demo badge (web-demo/demo-boot.js). Uses the ZomBeatz tokens the app already loads. */
+.demo-badge {
+  position: fixed; right: 12px; bottom: 12px; z-index: 40;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  max-width: calc(100vw - 24px); padding: 6px 6px 6px 14px;
+  background: var(--zb-surface-2); color: var(--zb-text-2); border: 1px solid var(--zb-border);
+  border-radius: 999px; box-shadow: var(--zb-shadow); font: 13px/1.3 var(--zb-font);
+}
+.demo-badge .demo-short { display: none; }
+.demo-badge code { font-family: var(--zb-font-mono); color: var(--zb-text); }
+.demo-badge button, .demo-badge a {
+  font: inherit; font-weight: 600; padding: 4px 12px; border-radius: 999px; text-decoration: none; cursor: pointer;
+  border: 1px solid var(--zb-border); background: var(--zb-surface); color: var(--zb-text);
+}
+.demo-badge a { background: var(--zb-accent); border-color: var(--zb-accent); color: var(--zb-on-accent); }
+/* Phones: sit above the bottom tab bar, and keep it short. */
+@media (max-width: 700px) {
+  .demo-badge { bottom: calc(68px + env(safe-area-inset-bottom)); right: 8px; max-width: calc(100vw - 16px); gap: 4px; flex-wrap: nowrap;
+                padding: 4px 4px 4px 10px; font-size: 12px; white-space: nowrap; }
+  .demo-badge .demo-long { display: none; }
+  .demo-badge .demo-short { display: inline; }
+  .demo-badge button, .demo-badge a { padding: 3px 8px; }
+}
+@media print { .demo-badge { display: none; } }

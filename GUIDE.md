@@ -2,6 +2,8 @@
 
 HaRM (Hardware and Rack Manager) keeps track of your hardware: where every device lives, what's inside it, how it's networked, how to log into it, and what still needs doing. It runs on your own computer. Your phone connects to it over your home Wi-Fi, and nothing is sent to the internet.
 
+To look around first, the **[live demo](https://zombeatz.github.io/Zoms-HaRM/)** runs HaRM in your browser with made-up data (password `demo-password`), or run `python3 scripts/demo.py` for the same demo on your computer.
+
 The full guide, with pictures and a page for every feature, is online at https://docs.zombeatzmedia.com/harm/. This copy covers the essentials for offline use.
 
 **Contents:** [Install on Windows](#install-on-windows) · [Install on Linux](#install-on-linux) · [Run on a server (Docker / service)](#run-on-a-server-docker-or-linux-service) · [First start](#first-start) · [Connect your phone](#connect-your-phone) · [Everyday use](#everyday-use) · [Backups and moving to a new PC](#backups-and-moving-to-a-new-pc) · [Updating](#updating) · [Uninstalling](#uninstalling) · [Troubleshooting](#troubleshooting) · [Security](#security)
@@ -94,6 +96,8 @@ In the control panel, press **📱 Phone setup**. (It appears once HaRM is runni
 - **A checklist that ticks itself off** as your phone connects, downloads the certificate, trusts it, signs in and installs the app. If something isn't working, the checklist says which step and offers a fix button where it can.
 
 When it's done, HaRM sits on your phone's home screen like an app. Long-press the icon for **Scan**, **Devices** and **Tasks** shortcuts.
+
+**When the phone is the better tool:** wherever the hardware is. At the rack, search finds a device by name, IP, serial or MAC, and its **Network** tab lists every port. At a console, a device's **Logins > Open** copies the password. When parts arrive or you sort a bin, **+ New > New part from label** opens the camera on the label. **AI Assist** turns photos of a whole shelf into inventory. While you work, tick off tasks and note what you did on the device. Setup, Discover and other bulk imports, the PC builder, exports and settings are quicker on a computer.
 
 ## Everyday use
 

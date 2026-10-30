@@ -581,8 +581,8 @@ html.modal-open, body.modal-open { overflow: hidden; overscroll-behavior: none; 
   .toolbar input[type=search], .toolbar select { max-width: none; flex: 1 1 140px; }
   .modal-back { padding: 0; align-items: stretch; }
   .modal, .modal.wide { max-width: none; min-height: 100dvh; border-radius: 0; border: none; display: flex; flex-direction: column; }
-  .modal-head { position: sticky; top: 0; z-index: 3; background: var(--panel); padding: 10px 14px; }
-  .modal-head h2 { font-size: 16px; }
+  .modal-head { position: sticky; top: 0; z-index: 3; background: var(--panel); padding: 10px 14px; flex-wrap: wrap; gap: 6px 8px; }
+  .modal-head h2 { font-size: 16px; white-space: nowrap; margin-right: auto; }
   .modal-body { padding: 14px; flex: 1; padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
   .sticky-actions { bottom: calc(-14px - env(safe-area-inset-bottom)); padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
   .actions button { flex: 1; justify-content: center; }

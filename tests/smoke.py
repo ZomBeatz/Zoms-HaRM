@@ -6,7 +6,7 @@ import json, os, subprocess, tempfile, time, urllib.request, http.cookiejar
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PORT = 8099
+PORT = 8091
 tmp = tempfile.mkdtemp(prefix="harm-smoke-")
 env = {**os.environ, "HARM_DB": os.path.join(tmp, "harm.db"), "HARM_AUTO_BACKUP": "0"}
 server = subprocess.Popen([str(ROOT / ".venv/bin/uvicorn"), "harm.main:app", "--port", str(PORT)],

@@ -48,15 +48,33 @@ DEFAULTS = {"network": True, "https": True, "port": 8077, "autostart": False, "c
             "tray_hint_shown": False}
 AUTOSTART = Path.home() / ".config" / "autostart" / f"{APP_ID}.desktop"
 
-COLORS = {"bg": "#14161c", "panel": "#1a1e27", "panel2": "#222733", "line": "#2e3442", "text": "#e6e9ef",
-          "muted": "#9aa3b5", "blue": "#4fb0ec", "blue_dk": "#2580c3", "orange": "#ec6a3f",
-          "ok": "#46c2a0", "warn": "#e8b04a", "bad": "#ef6b6b"}
+# Colors come from the ZomBeatz design tokens (harm/static/zb-tokens.json, a copy of
+# zombeatz-docs/design/tokens.json) and follow the system's light or dark setting.
+try:
+    TOKENS = json.loads((ROOT / "harm" / "static" / "zb-tokens.json").read_text())
+except (OSError, ValueError):
+    TOKENS = None
+_FALLBACK = {"bg": "#14161c", "surface": "#1d2028", "surface2": "#252935", "border": "#303544", "text": "#e6e8ef",
+             "text2": "#b4b9c8", "muted": "#868c9f", "accent": "#4fb0ec", "onAccent": "#0a0c10",
+             "danger": "#f87171", "warn": "#fbbf24", "ok": "#4ade80"}
+COLORS: dict = {}
+STYLE = ""
 
-STYLE = f"""
+
+def set_theme(dark: bool) -> None:
+    """Pick the light or dark token set and rebuild the stylesheet."""
+    global COLORS, STYLE
+    t = (TOKENS or {}).get("dark" if dark else "light") or _FALLBACK
+    brand = (TOKENS or {}).get("brand", {})
+    COLORS = {"bg": t["bg"], "panel": t["surface"], "panel2": t["surface2"], "line": t["border"], "text": t["text"],
+              "text2": t["text2"], "muted": t["muted"], "blue": t["accent"], "on_accent": t["onAccent"],
+              "orange": brand.get("orange", "#ec6a3f"), "ok": t["ok"], "warn": t["warn"], "bad": t["danger"],
+              "console": "#0c0e13" if dark else "#f8f9fb", "disabled": brand.get("slate", "#5b6375")}
+    STYLE = f"""
 QWidget {{ background: {COLORS['bg']}; color: {COLORS['text']}; font-size: 10.5pt; }}
 QFrame#card {{ background: {COLORS['panel']}; border: 1px solid {COLORS['line']}; border-radius: 10px; }}
 QFrame#card QLabel, QFrame#card QCheckBox, QWidget#clear {{ background: transparent; }}
-QLabel#h {{ color: {COLORS['muted']}; font-size: 8.5pt; font-weight: 700; letter-spacing: 1px; }}
+QLabel#h {{ color: {COLORS['text']}; font-size: 10.5pt; font-weight: 700; }}
 QLabel#muted {{ color: {COLORS['muted']}; }}
 QLabel#status {{ font-size: 17pt; font-weight: 800; }}
 QLabel#addr {{ font-family: monospace; font-size: 11pt; }}
@@ -64,21 +82,36 @@ QLabel#warn {{ color: {COLORS['warn']}; }}
 QPushButton, QToolButton {{ background: {COLORS['panel2']}; border: 1px solid {COLORS['line']}; border-radius: 7px;
   padding: 7px 14px; color: {COLORS['text']}; }}
 QPushButton:hover, QToolButton:hover {{ border-color: {COLORS['muted']}; }}
-QPushButton:disabled {{ color: #5b6375; }}
-QPushButton#primary {{ background: {COLORS['blue']}; border-color: {COLORS['blue']}; color: #06223a; font-weight: 700; }}
-QPushButton#primary:hover {{ background: #6cc0f2; }}
+QPushButton:disabled {{ color: {COLORS['disabled']}; }}
+QPushButton#primary {{ background: {COLORS['blue']}; border-color: {COLORS['blue']}; color: {COLORS['on_accent']}; font-weight: 700; }}
+QPushButton#primary:hover {{ border-color: {COLORS['text']}; }}
 QPushButton#danger {{ color: {COLORS['bad']}; }}
 QToolButton#small {{ padding: 3px 9px; font-size: 9pt; }}
 QCheckBox {{ spacing: 9px; }}
 QCheckBox::indicator {{ width: 17px; height: 17px; border-radius: 4px; border: 1px solid {COLORS['muted']}; background: {COLORS['panel2']}; }}
 QCheckBox::indicator:checked {{ background: {COLORS['blue']}; border-color: {COLORS['blue']}; image: url({CHECK}); }}
 QSpinBox {{ background: {COLORS['panel2']}; border: 1px solid {COLORS['line']}; border-radius: 6px; padding: 4px 6px; }}
-QPlainTextEdit {{ background: #0c0e13; border: 1px solid {COLORS['line']}; border-radius: 8px; font-family: monospace;
+QPlainTextEdit {{ background: {COLORS['console']}; border: 1px solid {COLORS['line']}; border-radius: 8px; font-family: monospace;
   font-size: 9pt; color: {COLORS['muted']}; }}
 QMenu {{ background: {COLORS['panel']}; border: 1px solid {COLORS['line']}; padding: 4px; }}
 QMenu::item {{ padding: 6px 18px; border-radius: 5px; }}
 QMenu::item:selected {{ background: {COLORS['panel2']}; }}
 """
+
+
+def system_is_dark(app) -> bool:
+    try:
+        scheme = app.styleHints().colorScheme()
+        if scheme == Qt.ColorScheme.Dark:
+            return True
+        if scheme == Qt.ColorScheme.Light:
+            return False
+    except AttributeError:  # Qt older than 6.5
+        pass
+    return app.palette().window().color().lightness() < 128
+
+
+set_theme(True)
 
 
 # ---------------------------------------------------------------- self-update
@@ -262,7 +295,7 @@ def card(title: str | None = None) -> tuple[QFrame, QVBoxLayout]:
     lay.setContentsMargins(16, 14, 16, 14)
     lay.setSpacing(10)
     if title:
-        lay.addWidget(QLabel(title.upper(), objectName="h"))
+        lay.addWidget(QLabel(title, objectName="h"))
     return f, lay
 
 
@@ -277,7 +310,8 @@ class Panel(QWidget):
         self.setWindowTitle(f"Zom's HaRM {VERSION}".strip())
         self.setWindowIcon(app.windowIcon())
         self.setMinimumWidth(500)
-        self.setStyleSheet(STYLE)
+        self.restyle = lambda: self.setStyleSheet(STYLE)
+        self.restyle()
         self.build()
         self.build_tray()
         self.timer = QTimer(self, interval=1500, timeout=self.refresh)
@@ -922,14 +956,15 @@ class PhoneSetup(QWidget):
         self.platform = panel.conf.get("phone_platform", "android")
         self.setWindowTitle("Phone setup · Zom's HaRM")
         self.setWindowIcon(panel.app.windowIcon())
-        self.setStyleSheet(STYLE + f"""
+        self.restyle = lambda: self.setStyleSheet(STYLE + f"""
             QLabel#qrcap {{ font-weight: 700; }}
             QLabel#qr {{ background: #ffffff; border-radius: 10px; padding: 8px; }}
-            QLabel#step {{ color: {COLORS['orange']}; font-weight: 800; font-size: 8.5pt; letter-spacing: 1px; }}
+            QLabel#step {{ color: {COLORS['blue']}; font-weight: 700; font-size: 10pt; }}
             QPushButton#seg {{ padding: 5px 12px; }}
-            QPushButton#seg:checked {{ background: {COLORS['blue']}; color: #06223a; border-color: {COLORS['blue']}; font-weight: 700; }}
+            QPushButton#seg:checked {{ background: {COLORS['blue']}; color: {COLORS['on_accent']}; border-color: {COLORS['blue']}; font-weight: 700; }}
             QComboBox {{ background: {COLORS['panel2']}; border: 1px solid {COLORS['line']}; border-radius: 6px; padding: 4px 8px; }}
             QScrollArea {{ border: none; }}""")
+        self.restyle()
         self.resize(760, 860)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -967,13 +1002,13 @@ class PhoneSetup(QWidget):
 
         # step 1
         c, lay = card()
-        lay.addWidget(QLabel("STEP 1", objectName="step"))
-        lay.addWidget(QLabel("Connect your phone to the <b>same Wi-Fi</b> as this PC.", wordWrap=True))
+        lay.addWidget(QLabel("Step 1", objectName="step"))
+        lay.addWidget(QLabel("Scan these with your phone's camera. Both need to be on the <b>same Wi‑Fi</b>.", wordWrap=True))
         root.addWidget(c)
 
         # step 2: certificate
         c, lay = card()
-        lay.addWidget(QLabel("STEP 2 · TRUST HaRM (ONCE)", objectName="step"))
+        lay.addWidget(QLabel("Step 2: trust HaRM (once)", objectName="step"))
         row = QHBoxLayout()
         row.setSpacing(16)
         qcol = QVBoxLayout()
@@ -1001,7 +1036,7 @@ class PhoneSetup(QWidget):
 
         # step 3: open HaRM
         c, lay = card()
-        lay.addWidget(QLabel("STEP 3 · OPEN HaRM", objectName="step"))
+        lay.addWidget(QLabel("Step 3: open HaRM", objectName="step"))
         row = QHBoxLayout()
         row.setSpacing(16)
         qcol = QVBoxLayout()
@@ -1021,7 +1056,7 @@ class PhoneSetup(QWidget):
 
         # step 4: install
         c, lay = card()
-        lay.addWidget(QLabel("STEP 4 · ADD IT AS AN APP", objectName="step"))
+        lay.addWidget(QLabel("Step 4: add it as an app", objectName="step"))
         lay.addWidget(QLabel(
             "<b>Android (Chrome):</b> tap <b>⋮ > Add to Home screen > Install</b>. HaRM gets its own icon and opens "
             "without the browser bars. Long-press the icon for Scan, Devices and Tasks shortcuts.<br><br>"
@@ -1029,7 +1064,7 @@ class PhoneSetup(QWidget):
         root.addWidget(c)
 
         c, lay = card()
-        lay.addWidget(QLabel("STILL NOT WORKING?", objectName="step"))
+        lay.addWidget(QLabel("Still not working?", objectName="step"))
         self.trouble = QLabel(wordWrap=True, textFormat=Qt.RichText)
         lay.addWidget(self.trouble)
         root.addWidget(c)
@@ -1226,6 +1261,17 @@ def main():
     app.setApplicationName("Zom's HaRM")
     app.setWindowIcon(QIcon.fromTheme(APP_ID, QIcon(str(ICON))))
     app.setQuitOnLastWindowClosed(False)
+    set_theme(system_is_dark(app))
+
+    def scheme_changed(*_):
+        set_theme(system_is_dark(app))
+        for w in app.topLevelWidgets():
+            if hasattr(w, "restyle"):
+                w.restyle()
+    try:
+        app.styleHints().colorSchemeChanged.connect(scheme_changed)
+    except AttributeError:
+        pass
 
     # Only one control panel: a second launch just brings the first one forward.
     probe = QLocalSocket()

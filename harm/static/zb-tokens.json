@@ -1,0 +1,89 @@
+{
+  "brand": {
+    "orange": "#ec6a3f",
+    "blue": "#2580c3",
+    "blueLight": "#4fb0ec",
+    "ink": "#0a0c10",
+    "tileTop": "#232833",
+    "tileBottom": "#12151b",
+    "slate": "#5b6375"
+  },
+  "light": {
+    "bg": "#f4f5f8",
+    "surface": "#ffffff",
+    "surface2": "#eef0f4",
+    "surface3": "#e3e6ec",
+    "border": "#dcdfe6",
+    "text": "#1c2030",
+    "text2": "#4b5266",
+    "muted": "#7a8196",
+    "accent": "#2580c3",
+    "onAccent": "#ffffff",
+    "danger": "#dc2626",
+    "warn": "#d97706",
+    "ok": "#16a34a"
+  },
+  "dark": {
+    "bg": "#14161c",
+    "surface": "#1d2028",
+    "surface2": "#252935",
+    "surface3": "#2e3341",
+    "border": "#303544",
+    "text": "#e6e8ef",
+    "text2": "#b4b9c8",
+    "muted": "#868c9f",
+    "accent": "#4fb0ec",
+    "onAccent": "#0a0c10",
+    "danger": "#f87171",
+    "warn": "#fbbf24",
+    "ok": "#4ade80"
+  },
+  "categories": [
+    "#2f5d7c",
+    "#3d6b4f",
+    "#6a4f7d",
+    "#7a5a33",
+    "#3e6470",
+    "#6e3f4a"
+  ],
+  "categoryOther": "#5b6375",
+  "radius": {
+    "sm": 7,
+    "md": 10,
+    "lg": 14,
+    "iconPercent": 20.3
+  },
+  "font": {
+    "ui": "Inter, \"Segoe UI\", system-ui, -apple-system, \"Noto Sans\", sans-serif",
+    "brand": "Open Sans",
+    "mono": "ui-monospace, Menlo, Consolas, monospace",
+    "sizeApp": 14,
+    "sizeDoc": 16,
+    "line": 1.45
+  },
+  "space": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32
+  ],
+  "products": {
+    "zomello": {
+      "accentLight": "#2580c3",
+      "accentDark": "#4fb0ec",
+      "symbol": "kanban columns / equalizer bars"
+    },
+    "harm": {
+      "accentLight": "#2580c3",
+      "accentDark": "#4fb0ec",
+      "symbol": "rack servers"
+    },
+    "harm-coolant": {
+      "accentLight": "#0e9f8c",
+      "accentDark": "#5ff7cf",
+      "symbol": "rack servers with a coolant cord"
+    }
+  }
+}

@@ -22,6 +22,7 @@
   --radius-sm: var(--zb-radius-sm);
   --radius-lg: var(--zb-radius-lg);
   --mono: var(--zb-font-mono);
+  --top-offset: 0px;  /* room for a banner fixed across the top (the online demo's) */
 }
 /* Coolant (the hidden edition) swaps only the accent and highlight, as the design system asks. */
 :root[data-product="harm-coolant"] { --zb-accent: #0e9f8c; --brand2: #0891b2; --print-accent: #0e8f7e; }
@@ -75,11 +76,12 @@ input[type=checkbox] { width: auto; accent-color: var(--accent); }
 textarea { resize: vertical; }
 
 /* ---------- layout */
-#app { display: flex; min-height: 100vh; }
+body { padding-top: var(--top-offset); }
+#app { display: flex; min-height: calc(100vh - var(--top-offset)); }
 .boot { margin: auto; color: var(--muted); }
 .sidebar {
   width: 240px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--line);
-  display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; padding: 14px 10px;
+  display: flex; flex-direction: column; position: sticky; top: var(--top-offset); height: calc(100vh - var(--top-offset)); padding: 14px 10px;
 }
 .brand { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 4px 6px 18px; color: var(--text); }
 .brand:hover { text-decoration: none; }
@@ -102,7 +104,7 @@ textarea { resize: vertical; }
 .sidebar .lock { margin-top: 10px; justify-content: center; }
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar {
-  position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line);
+  position: sticky; top: var(--top-offset); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line);
   padding: 10px 24px; display: flex; gap: 10px; align-items: center;
 }
 .topbar input { max-width: 520px; }
@@ -543,12 +545,24 @@ html.modal-open, body.modal-open { overflow: hidden; overscroll-behavior: none; 
 .phone-help ol li { margin-bottom: 8px; line-height: 1.5; }
 
 /* QR labels (print) */
+/* QR labels: always light. Roll sizes print one label per page (see doPrintLabels). */
 .labels { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4mm; }
-.label { display: flex; gap: 3mm; align-items: center; border: 1px dashed #999; border-radius: 2mm; padding: 2.5mm; break-inside: avoid; color: #000; font: 9pt/1.25 system-ui, sans-serif; height: 30mm; overflow: hidden; }
+.label { display: flex; gap: 3mm; align-items: center; border: 1px dashed #999; border-radius: 2mm; padding: 2.5mm; break-inside: avoid; color: #000; background: #fff; font: 9pt/1.25 system-ui, sans-serif; height: 30mm; overflow: hidden; }
 .label-qr svg { width: 25mm; height: 25mm; display: block; }
-.label-text b { font-size: 11pt; display: block; }
+.label-text { min-width: 0; }
+.label-text b { font-size: 11pt; display: block; overflow-wrap: anywhere; }
 .label-text .mono { font-family: ui-monospace, monospace; font-size: 8pt; }
-.label-loc { color: #444; font-size: 8pt; }
+.labels-62x29, .labels-2x1, .labels-1x1 { display: block; }
+.labels-62x29 .label, .labels-2x1 .label, .labels-1x1 .label { border: none; border-radius: 0; break-after: page; }
+.labels-62x29 .label { width: 62mm; height: 29mm; padding: 2mm; }
+.labels-2x1 .label { width: 50.8mm; height: 25.4mm; padding: 1.5mm; gap: 2mm; font-size: 7.5pt; }
+.labels-2x1 .label-qr svg { width: 21mm; height: 21mm; }
+.labels-2x1 .label-text b { font-size: 9pt; }
+.labels-1x1 .label { width: 25.4mm; height: 25.4mm; padding: 1.5mm; flex-direction: column; justify-content: center; gap: .5mm; text-align: center; }
+.labels-1x1 .label-qr svg { width: 17mm; height: 17mm; }
+.labels-1x1 .label-text b { font-size: 6.5pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22mm; }
+.radio-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 14px; }
+.radio-row { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 
 /* ---------- round 5: fleet + rack status */
 .update-bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 90; background: var(--panel-2); border: 1px solid var(--accent); border-radius: 999px; padding: 6px 8px 6px 16px; display: flex; gap: 10px; align-items: center; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
@@ -563,14 +577,14 @@ html.modal-open, body.modal-open { overflow: hidden; overscroll-behavior: none; 
 /* ---------- small screens */
 @media (max-width: 700px) {
   body { font-size: 15px; }
-  .sidebar { position: fixed; left: 0; top: 0; z-index: 40; transform: translateX(-100%); transition: transform .2s; box-shadow: 0 0 40px rgba(0,0,0,.5); height: 100dvh; }
+  .sidebar { position: fixed; left: 0; top: var(--top-offset); z-index: 40; transform: translateX(-100%); transition: transform .2s; box-shadow: 0 0 40px rgba(0,0,0,.5); height: calc(100dvh - var(--top-offset)); }
   body.nav-open .sidebar { transform: none; }
   body.nav-open .nav-scrim { display: block; position: fixed; inset: 0; z-index: 35; background: rgba(0,0,0,.45); }
   .sidebar nav a { padding: 11px 10px; }
   .topbar { padding: 8px 12px; gap: 8px; }
   .topbar .menu { display: inline-flex; font-size: 22px; }
   .qa-btn { padding: 8px 12px; }
-  .qa-menu { position: fixed; left: 12px; right: 12px; top: 58px; min-width: 0; }
+  .qa-menu { position: fixed; left: 12px; right: 12px; top: calc(58px + var(--top-offset)); min-width: 0; }
   .qa-menu button { padding: 12px; font-size: 16px; }
   #view { padding: 14px 14px 80px; }
   h1 { font-size: 22px; }
@@ -719,7 +733,7 @@ details.more-stats > summary { cursor: pointer; color: var(--muted); font-weight
 .sh-main b, .sh-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-hit.on, .search-hit:hover, .search-all:hover { background: var(--panel-2); }
 .search-all { color: var(--accent); justify-content: center; font-weight: 600; }
-@media (max-width: 700px) { .search-pop { position: fixed; left: 8px; right: 8px; top: 58px; } }
+@media (max-width: 700px) { .search-pop { position: fixed; left: 8px; right: 8px; top: calc(58px + var(--top-offset)); } }
 
 /* Coolant easter egg: the current-page marker flows like coolant in a tube. */
 :root[data-product="harm-coolant"] .sidebar nav a { position: relative; }
@@ -823,3 +837,10 @@ kbd { font-family: var(--mono); font-size: 12px; padding: 1px 6px; margin-right:
   body.nav-folded .sidebar .brand img { width: 40px; height: 40px; }
   body.nav-folded .sidebar nav a, body.nav-folded .sidebar .lock { justify-content: center; padding: 8px 0; }
 }
+
+/* ---------- secrets: eye button, 2FA code split 3 + 3 with a ring for the seconds left */
+.eye-btn { width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+code.totp { font-family: var(--mono); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.totp-ring { --p: 1; width: 18px; height: 18px; border-radius: 50%; flex: none;
+  background: conic-gradient(var(--accent) calc(var(--p) * 1turn), var(--panel-2) 0);
+  -webkit-mask: radial-gradient(circle, transparent 5px, #000 5.5px); mask: radial-gradient(circle, transparent 5px, #000 5.5px); }

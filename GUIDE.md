@@ -40,17 +40,18 @@ Want HaRM always on, on a home server, NAS or mini PC? There are two ways. Both 
 
 ### Docker (any OS with Docker: Linux servers, Unraid, TrueNAS SCALE, Synology with Container Manager…)
 
-1. Extract the release on the server.
+1. Make a folder for HaRM on the server and download [`docker-compose.yml`](https://github.com/ZomBeatz/Zoms-HaRM/raw/main/docker-compose.yml) into it.
 2. Open `docker-compose.yml` and set `HARM_CERT_NAMES` to the address phones will use: the server's LAN IP and/or hostname, e.g. `"192.168.1.50 harm.lan"`. Set `TZ` to your time zone.
 3. Start it:
    ```bash
-   docker compose up -d --build
+   docker compose up -d
    ```
+   Docker downloads HaRM's image (built by GitHub, for PCs and Raspberry Pis).
 4. Open `https://<that address>:8077` and create your master password.
 
 - **Data** (database, certificates, daily backups) is in `./data` next to the compose file.
 - **Changing the address** later: edit `HARM_CERT_NAMES` and run `docker compose up -d`. The certificate is re-issued, and phones keep trusting it.
-- **Updating:** extract the new release over the old one (keep `data`), then `docker compose up -d --build`.
+- **Updating:** `docker compose pull && docker compose up -d`. Your `data` folder is kept.
 - **Network discovery** (scan / MAC addresses) needs host networking. In `docker-compose.yml`, remove `ports:` and uncomment `network_mode: host`. The UniFi, Proxmox and router-list imports work either way.
 - **Behind your own reverse proxy** (Caddy, Traefik, Nginx Proxy Manager)? Set `HARM_TLS: "0"` and let the proxy handle HTTPS.
 

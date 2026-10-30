@@ -1,0 +1,43 @@
+# Builds the HaRM server's Docker image on GitHub's machines and publishes it as
+# ghcr.io/zombeatz/zoms-harm, for PCs and servers (amd64) and Raspberry Pis (arm64).
+# Runs on every push to main that changes the app, on version tags like v0.3.2, and from the Actions tab.
+# docker-compose.yml uses this image, so a server only needs that file and `docker compose up -d`.
+name: Server image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths: ["harm/**", "docker/**", "Dockerfile", "requirements.txt", ".github/workflows/docker.yml"]
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/zoms-harm
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=sha,format=short
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

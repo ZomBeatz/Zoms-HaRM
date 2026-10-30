@@ -1,6 +1,6 @@
 """Read a Proxmox VE cluster (or single node): nodes, VMs and containers, for import into HaRM.
 
-Uses an API token (Datacenter › Permissions › API Tokens). A token with the PVEAuditor role is
+Uses an API token (Datacenter > Permissions > API Tokens). A token with the PVEAuditor role is
 enough: HaRM only reads. Redirects are never followed so the token can't leak to another host.
 """
 

@@ -1,0 +1,112 @@
+/* ZomBeatz design tokens, copied from zombeatz-docs/design/tokens.css (the source of truth).
+   Update this copy when the design system changes. */
+/*
+ * ZomBeatz design tokens: the shared look of every ZomBeatz Media tool and site.
+ * Copy this file into a project (or import it) and build the interface from these variables.
+ * Light theme by default; dark when the system asks for it, or when <html data-theme="dark">.
+ * A product sets its own accent with data-product="zomello" | "harm" (see the bottom).
+ * Read DESIGN.md next to this file for how to use them.
+ */
+
+:root {
+  /* Brand (the same in every product and theme) */
+  --zb-orange: #ec6a3f;          /* headphones, highlights, never body text */
+  --zb-blue: #2580c3;            /* the default accent, the product half of wordmarks */
+  --zb-blue-light: #4fb0ec;      /* the accent on dark backgrounds */
+  --zb-ink: #0a0c10;             /* outlines in icons */
+  --zb-tile-top: #232833;        /* app icon background, top of the gradient */
+  --zb-tile-bottom: #12151b;     /* app icon background, bottom */
+  --zb-slate: #5b6375;           /* wordmark taglines ("BY ZOMBEATZ MEDIA") */
+
+  /* Surfaces and text (light) */
+  --zb-bg: #f4f5f8;
+  --zb-surface: #ffffff;
+  --zb-surface-2: #eef0f4;
+  --zb-surface-3: #e3e6ec;
+  --zb-border: #dcdfe6;
+  --zb-text: #1c2030;
+  --zb-text-2: #4b5266;
+  --zb-muted: #7a8196;
+
+  /* Accent (a product may change these two) */
+  --zb-accent: var(--zb-blue);
+  --zb-on-accent: #ffffff;
+  --zb-accent-soft: color-mix(in srgb, var(--zb-accent) 15%, transparent);
+
+  /* Status: always paired with an icon or a word, never color alone */
+  --zb-danger: #dc2626;
+  --zb-warn: #d97706;
+  --zb-ok: #16a34a;
+
+  /* Shape and depth */
+  --zb-radius-sm: 7px;           /* inputs, small buttons, chips */
+  --zb-radius: 10px;             /* cards, panels, menus */
+  --zb-radius-lg: 14px;          /* dialogs */
+  --zb-radius-icon: 20.3%;       /* app icon corners (208 of 1024) */
+  --zb-shadow: 0 1px 2px #0000000f, 0 1px 3px #0000001a;
+  --zb-shadow-lg: 0 10px 40px #00000033;
+
+  /* Type */
+  --zb-font: Inter, "Segoe UI", system-ui, -apple-system, "Noto Sans", sans-serif;
+  --zb-font-brand: "Open Sans", var(--zb-font);   /* logos and big headings only */
+  --zb-font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --zb-size: 14px;               /* app body text */
+  --zb-size-doc: 16px;           /* reading text on websites and guides */
+  --zb-line: 1.45;
+
+  /* Spacing scale */
+  --zb-space-1: 4px;
+  --zb-space-2: 8px;
+  --zb-space-3: 12px;
+  --zb-space-4: 16px;
+  --zb-space-5: 24px;
+  --zb-space-6: 32px;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --zb-bg: #14161c;
+    --zb-surface: #1d2028;
+    --zb-surface-2: #252935;
+    --zb-surface-3: #2e3341;
+    --zb-border: #303544;
+    --zb-text: #e6e8ef;
+    --zb-text-2: #b4b9c8;
+    --zb-muted: #868c9f;
+    --zb-accent: var(--zb-blue-light);
+    --zb-on-accent: #0a0c10;
+    --zb-danger: #f87171;
+    --zb-warn: #fbbf24;
+    --zb-ok: #4ade80;
+    --zb-shadow: 0 1px 2px #00000066;
+    --zb-shadow-lg: 0 10px 40px #00000099;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --zb-bg: #14161c;
+  --zb-surface: #1d2028;
+  --zb-surface-2: #252935;
+  --zb-surface-3: #2e3341;
+  --zb-border: #303544;
+  --zb-text: #e6e8ef;
+  --zb-text-2: #b4b9c8;
+  --zb-muted: #868c9f;
+  --zb-accent: var(--zb-blue-light);
+  --zb-on-accent: #0a0c10;
+  --zb-danger: #f87171;
+  --zb-warn: #fbbf24;
+  --zb-ok: #4ade80;
+  --zb-shadow: 0 1px 2px #00000066;
+  --zb-shadow-lg: 0 10px 40px #00000099;
+  color-scheme: dark;
+}
+
+/* Product accents. Zomello uses the ZomBeatz blue. A themed edition (like HaRM "Coolant") swaps
+   only the accent; everything else stays the same so the tools still look like one family. */
+[data-product="harm-coolant"] { --zb-accent: #0e9f8c; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) [data-product="harm-coolant"] { --zb-accent: #5ff7cf; }
+}

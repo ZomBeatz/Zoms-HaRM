@@ -125,7 +125,7 @@ def collect_ssh(host: str, port: int, user: str, password: str | None, sudo: boo
     if not _USER.match(user) or user.startswith("-"):
         raise RemoteError("Enter a valid username", "auth")
     if not 0 < int(port) < 65536:
-        raise RemoteError("Port must be 1–65535", "host")
+        raise RemoteError("Port must be 1 to 65535", "host")
     sudo = sudo and user != "root"
     if sudo and not password:
         sudo = False  # sudo without a password only works with NOPASSWD; try it non-interactively

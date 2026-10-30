@@ -80,7 +80,7 @@ sleep 2
 if systemctl is-active --quiet zoms-harm.service; then
   say "HaRM is running. Open one of these and create your master password:"
   for n in $NAMES; do echo "      https://$n:$PORT"; done
-  echo "    Phones: trust the certificate first (https://<address>:$PORT/harm-ca.crt; see GUIDE.md › Connect your phone)."
+  echo "    Phones: trust the certificate first (https://<address>:$PORT/harm-ca.crt; see GUIDE.md > Connect your phone)."
   if command -v ufw >/dev/null && sudo ufw status 2>/dev/null | grep -q "Status: active"; then
     echo "    Firewall (ufw) is on. Allow your network, e.g.:  sudo ufw allow from 192.168.1.0/24 to any port $PORT proto tcp"
   fi

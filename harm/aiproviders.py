@@ -52,7 +52,7 @@ def _post(url: str, headers: dict, body: dict) -> dict:
         except ValueError:
             pass
         if e.code in (401, 403):
-            raise AIError(f"The AI service rejected the API key ({e.code}). Check it in Settings › AI Assist.")
+            raise AIError(f"The AI service rejected the API key ({e.code}). Check it in Settings > AI Assist.")
         if e.code == 429:
             raise AIError("The AI service says you're over its rate or spending limit (429). Try again later or check your plan.")
         raise AIError(f"The AI service answered {e.code}: {str(detail)[:400]}")
@@ -119,9 +119,9 @@ def _compatible(conf, key, prompt, images, web):
     base = (conf.get("base_url") or "").rstrip("/")
     u = urlparse(base)
     if u.scheme not in ("http", "https") or not u.hostname:
-        raise AIError("Set the service address in Settings › AI Assist, e.g. http://localhost:11434/v1 for Ollama.")
+        raise AIError("Set the service address in Settings > AI Assist, e.g. http://localhost:11434/v1 for Ollama.")
     if not conf.get("model"):
-        raise AIError("Set the model name in Settings › AI Assist (one that can see images, e.g. llava or qwen2.5vl).")
+        raise AIError("Set the model name in Settings > AI Assist (one that can see images, e.g. llava or qwen2.5vl).")
     content = [{"type": "text", "text": prompt}] + [{"type": "image_url", "image_url": {"url": url}} for url in images]
     body = {"model": conf["model"], "messages": [{"role": "user", "content": content}], "max_tokens": MAX_TOKENS}
     r = _post(f"{base}/chat/completions", {"Authorization": f"Bearer {key}"} if key else {}, body)
@@ -138,9 +138,9 @@ def ask(conf: dict, key: str | None, prompt: str, images: list[str]) -> dict:
     """Send the photos and prompt; returns {"text": reply, "web": used_web_search, "note": str|None}."""
     provider = conf.get("provider")
     if provider not in CALL:
-        raise AIError("Choose an AI service in Settings › AI Assist first.")
+        raise AIError("Choose an AI service in Settings > AI Assist first.")
     if PROVIDERS[provider]["key"] and not key:
-        raise AIError("Add your API key in Settings › AI Assist first.")
+        raise AIError("Add your API key in Settings > AI Assist first.")
     if not images:
         raise AIError("Add at least one photo.")
     conf = {**conf, "model": conf.get("model") or PROVIDERS[provider]["model"]}

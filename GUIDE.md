@@ -13,7 +13,7 @@ You need Windows 10 or 11 and about 400 MB of disk space. No administrator right
 1. **Extract the zip somewhere in your user folder**, for example `C:\Users\you\ZomsHaRM`.
    Don't use *Program Files*: HaRM keeps its data next to the app, and Windows doesn't allow that there.
 2. Open the folder and **double-click `Install HaRM.cmd`**.
-   - If Windows shows *"Windows protected your PC"*, click **More info › Run anyway**. That warning appears for any script downloaded from the internet.
+   - If Windows shows *"Windows protected your PC"*, click **More info > Run anyway**. That warning appears for any script downloaded from the internet.
    - If Python isn't installed, the installer offers to install it for you (using Windows' own `winget`). Otherwise, get it from [python.org](https://www.python.org/downloads/) and tick **"Add python.exe to PATH"**.
 3. Wait a few minutes while it downloads HaRM's parts (about 150 MB the first time).
 4. When it finishes there's a **Zom's HaRM** icon in the Start Menu and on the Desktop.
@@ -23,8 +23,8 @@ You need Windows 10 or 11 and about 400 MB of disk space. No administrator right
 You need Python 3.10 or newer (most distributions have it already).
 
 ```bash
-tar xzf zoms-harm-1.1.0.tar.gz
-cd zoms-harm-1.1.0
+tar xzf zoms-harm-0.3.1.tar.gz
+cd zoms-harm-0.3.1
 ./install.sh
 ```
 
@@ -66,7 +66,7 @@ This sets HaRM up in its folder, creates the certificate, and installs a system 
 - **Stop / start:** `sudo systemctl stop zoms-harm` / `sudo systemctl start zoms-harm`
 - **Remove:** `./scripts/install-server.sh --uninstall` (your data stays)
 
-Then connect your phone as below: open `https://<address>:8077/harm-ca.crt` on the phone to get the certificate, and follow **Help & Guide › Troubleshooting** in HaRM for the exact steps per phone.
+Then connect your phone as below: open `https://<address>:8077/harm-ca.crt` on the phone to get the certificate, and follow **Help & Guide > Troubleshooting** in HaRM for the exact steps per phone.
 
 ## First start
 
@@ -76,7 +76,7 @@ Then connect your phone as below: open `https://<address>:8077/harm-ca.crt` on t
    - **Use HTTPS** (phones need it for the camera and for installing HaRM as an app)
 3. Press **▶ Start**. The first time, HaRM offers to create its HTTPS certificate: choose **Yes**.
    - **Windows:** a firewall prompt appears. Tick **Private networks** and choose **Allow**.
-4. Press **Open HaRM ↗**. Your browser warns once about the certificate, because it doesn't know HaRM's private certificate authority yet. On *this* computer it's safe to continue (Advanced › Proceed), or you can set up trust properly with the phone steps below.
+4. Press **Open HaRM ↗**. Your browser warns once about the certificate, because it doesn't know HaRM's private certificate authority yet. On *this* computer it's safe to continue (Advanced > Proceed), or you can set up trust properly with the phone steps below.
 5. **Create your master password** (10+ characters). It encrypts your stored logins.
 6. **Write down the recovery code** HaRM shows you and keep it somewhere safe. It's the only way back in if you forget the password.
 7. Follow the **setup guide**: locations → racks, shelves and bins → networks → devices. It takes about 10 minutes, and you can skip any step.
@@ -123,7 +123,7 @@ The **⋯** button holds the less common actions: Import specs, export/PDF, prin
 
 **Spare Parts:** everything on the shelf or inside devices. Install parts into devices and take them out again; quantities split automatically.
 
-**Virtual & Clusters:** track VMs and containers as devices that **run on** a host (VM ID, vCPUs, memory, disk). A host's **VMs** tab shows what's running on it and how much of its CPU and memory is claimed. Group hosts into **clusters** (Proxmox, Kubernetes, vSphere…). **Discover › Proxmox** imports a whole Proxmox cluster with all its VMs and containers.
+**Virtual & Clusters:** track VMs and containers as devices that **run on** a host (VM ID, vCPUs, memory, disk). A host's **VMs** tab shows what's running on it and how much of its CPU and memory is claimed. Group hosts into **clusters** (Proxmox, Kubernetes, vSphere…). **Discover > Proxmox** imports a whole Proxmox cluster with all its VMs and containers.
 
 **Main address:** if a device has several IPs (OS plus iDRAC, for example), tap the 🌐 address on its page and pick **☆ Main**. That one is used for quick links, logins and lists. Management ports are never picked automatically.
 
@@ -138,7 +138,7 @@ The **⋯** button holds the less common actions: Import specs, export/PDF, prin
 ## Backups and moving to a new PC
 
 - HaRM **backs itself up daily** into `data/backups/` and keeps the last 14.
-- **Settings › Backup** downloads a copy whenever you want one. Keep a copy on another drive or computer now and then.
+- **Settings > Backup** downloads a copy whenever you want one. Keep a copy on another drive or computer now and then.
 - **To move HaRM**, copy the whole `data` folder into the new installation's folder before starting it. That brings your database, certificates (so phones keep trusting it) and backups. Your master password stays the same.
 
 ## Updating
@@ -157,13 +157,13 @@ Back up `data/` first if you might want your inventory again.
 
 ## Troubleshooting
 
-HaRM has these steps built in too: **Help & Guide › Troubleshooting**, the **Show troubleshooting steps** button when HaRM can't start on a device, and **Still not working?** in the desktop app's Phone setup.
+HaRM has these steps built in too: **Help & Guide > Troubleshooting**, the **Show troubleshooting steps** button when HaRM can't start on a device, and **Still not working?** in the desktop app's Phone setup.
 
 | Problem | Fix |
 |---|---|
 | The phone shows "Your connection is not private" | The certificate isn't trusted on the phone yet. Open **Phone setup**, do step 2, then fully close and reopen Chrome. |
-| The phone can't connect at all | Same Wi-Fi as the computer? **Phone setup**'s checklist checks sharing, HTTPS, the certificate and the firewall. On Windows, allow Python in *Windows Security › Firewall › Allow an app*. |
-| iPhone/iPad: works in Safari but the home-screen app says "Cannot reach the HaRM server" | The certificate isn't fully trusted. Check **Settings › General › About › Certificate Trust Settings** and turn on *Zom's HaRM local CA*. If it isn't listed, redo **Phone setup** step 2. Then delete the home-screen icon and add it again from Safari. |
+| The phone can't connect at all | Same Wi-Fi as the computer? **Phone setup**'s checklist checks sharing, HTTPS, the certificate and the firewall. On Windows, allow Python in *Windows Security > Firewall > Allow an app*. |
+| iPhone/iPad: works in Safari but the home-screen app says "Cannot reach the HaRM server" | The certificate isn't fully trusted. Check **Settings > General > About > Certificate Trust Settings** and turn on *Zom's HaRM local CA*. If it isn't listed, redo **Phone setup** step 2. Then delete the home-screen icon and add it again from Safari. |
 | iPhone/iPad home-screen icon is just a letter ("H") | iOS couldn't fetch the icon because it doesn't trust HaRM's certificate yet. Do **Phone setup** step 2 (iPhone / iPad), remove the home-screen icon, then open HaRM in Safari and Add to Home Screen again. |
 | The computer's IP address changed | The control panel shows **Fix certificate**. Click it. Phones keep trusting HaRM. Better still, give the computer a fixed IP in your router. |
 | "Port in use" | Another program uses port 8077. Change **Port** in the control panel's settings. |

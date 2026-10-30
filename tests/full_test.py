@@ -481,7 +481,7 @@ def run(c: Client):
         loc = c.call("POST", "/locations", {"name": "Garage"})
         bin_ = c.call("POST", "/racks", {"name": "Bin 4", "kind": "Bin", "location_id": loc["id"]})
         pr = c.call("POST", "/ai/prompt", {"hint": "drives from a recycler", "location_id": loc["id"], "rack_id": bin_["id"], "position": "top"})["prompt"]
-        assert "Garage › Bin 4 › top" in pr and "drives from a recycler" in pr and '"harm_ai": 1' in pr, pr[:400]
+        assert "Garage > Bin 4 > top" in pr and "drives from a recycler" in pr and '"harm_ai": 1' in pr, pr[:400]
         c.call("POST", "/devices", {"name": "Old R710", "serial": "7XK9P2"})
         reply = """Sure! Here's what I found in your photos:
 ```json

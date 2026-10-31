@@ -64,6 +64,7 @@ def seed(api: Api) -> None:
     P("/networks", {"name": "Servers", "kind": "Servers", "vlan_id": 20, "cidr": "10.20.0.0/24", "gateway": "10.20.0.1"})
     P("/networks", {"name": "Management", "kind": "Management", "vlan_id": 30, "cidr": "10.30.0.0/24", "gateway": "10.30.0.1"})
     P("/networks", {"name": "IoT", "kind": "IoT", "vlan_id": 40, "cidr": "10.40.0.0/24", "gateway": "10.40.0.1"})
+    P("/networks", {"name": "Guest Wi-Fi", "kind": "Guest", "vlan_id": 50, "cidr": "192.168.50.0/24", "gateway": "192.168.50.1", "ssid": "Home-Guest"})
     _ = lan
 
     cluster = P("/clusters", {"name": "homelab", "kind": "Proxmox VE", "location_id": closet["id"],

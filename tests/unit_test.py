@@ -239,6 +239,27 @@ def _():
     assert r["state"] == "up" and r["cert_expires"] == end.strftime("%Y-%m-%d"), r
 
 
+@test
+def _():
+    """certificates: one alert when one runs out within 14 days, not again for the same date"""
+    d = sql("INSERT INTO devices (name, status, connected) VALUES ('nas2', 'Active', 1)")
+    sv = sql("INSERT INTO services (device_id, name, url) VALUES (?, 'DSM', 'https://10.0.0.9:5001')", d)
+    soon = (datetime.now(timezone.utc) + timedelta(days=9)).strftime("%Y-%m-%d")
+    far = (datetime.now(timezone.utc) + timedelta(days=90)).strftime("%Y-%m-%d")
+    sql("INSERT INTO service_status (service_id, device_id, state, checked_at, changed_at, cert_expires) VALUES (?, ?, 'up', '2026-01-01 00:00:00', '2026-01-01 00:00:00', ?)", sv, d, soon)
+    conn = db.connect()
+    try:
+        db.set_meta(conn, "alerts", '{"enabled": true, "certs": true}')
+        ev = [e for e in alerts.due(conn) if e["kind"] == "certificate"]
+        assert len(ev) == 1 and "DSM on nas2 runs out soon" in ev[0]["title"], ev
+        assert not [e for e in alerts.due(conn) if e["kind"] == "certificate"], "alerted twice"
+        conn.execute("UPDATE service_status SET cert_expires = ? WHERE service_id = ?", (far, sv))  # renewed
+        assert not [e for e in alerts.due(conn) if e["kind"] == "certificate"]
+        assert [x["name"] for x in monitor.certs_expiring(conn, 30)] == [], "renewed: no warning on Home"
+    finally:
+        conn.close()
+
+
 failed = [r for r in results if r]
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")

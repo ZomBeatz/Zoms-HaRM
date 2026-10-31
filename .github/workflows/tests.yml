@@ -23,3 +23,5 @@ jobs:
         run: python tests/smoke.py
       - name: Full tests
         run: python tests/full_test.py
+      - name: Unit tests
+        run: python tests/unit_test.py

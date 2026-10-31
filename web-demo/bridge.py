@@ -129,7 +129,17 @@ def _touch_status(minutes_ago: int) -> None:
         mod = f"{int(shift):+d} seconds"
         conn.execute("UPDATE device_status SET checked_at = datetime(checked_at, ?), changed_at = datetime(changed_at, ?)", (mod, mod))
         conn.execute("UPDATE status_events SET at = datetime(at, ?)", (mod,))
-        conn.execute("UPDATE service_status SET checked_at = datetime(checked_at, ?), changed_at = datetime(changed_at, ?)", (mod, mod))
+        conn.execute("UPDATE service_status SET checked_at = datetime(checked_at, ?), changed_at = datetime(changed_at, ?), "
+                     "cert_expires = date(cert_expires, ?)", (mod, mod, mod))
+        conn.execute("UPDATE service_events SET at = datetime(at, ?)", (mod,))
+        conn.execute("UPDATE net_seen SET first_seen = datetime(first_seen, ?), last_seen = datetime(last_seen, ?)", (mod, mod))
+        nw = db.get_meta(conn, "netwatch")
+        if nw:
+            conf = json.loads(nw)
+            for k in ("baseline_at", "last_scan"):
+                if conf.get(k):
+                    conf[k] = conn.execute("SELECT datetime(?, ?)", (conf[k], mod)).fetchone()[0]
+            db.set_meta(conn, "netwatch", json.dumps(conf))
         conn.commit()
     finally:
         conn.close()

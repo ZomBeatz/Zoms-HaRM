@@ -12,6 +12,7 @@ import os
 import re
 import smtplib
 import ssl
+import threading
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -27,13 +28,17 @@ DELAYS = (0, 5, 10, 15, 30, 60)
 SECURITY = ("starttls", "ssl", "none")
 TIMEOUT = 15
 BATCH = 3  # more changes than this in one check go out as one message (a power cut, a switch dying)
-DEFAULTS = {"enabled": False, "delay": 5, "recovery": True, "services": True, "enabled_at": None,
+CERT_DAYS = 14  # a certificate alert this many days before it runs out
+DEFAULTS = {"enabled": False, "delay": 5, "recovery": True, "services": True, "certs": True, "enabled_at": None,
+            "quiet_on": False, "quiet_from": "22:00", "quiet_to": "07:00",
             "ntfy_on": False, "ntfy_url": "",
             "email_on": False, "email_host": "", "email_port": 587, "email_security": "starttls",
             "email_username": "", "email_from": "", "email_to": "",
             "webhook_on": False}
 _EMAIL = re.compile(r"^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$")
 TS = "%Y-%m-%d %H:%M:%S"
+_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+_held_lock = threading.Lock()
 
 
 class AlertError(ValueError):
@@ -94,7 +99,7 @@ def save(conn, body: dict) -> dict:
     for k in DEFAULTS:
         if k in body and k != "enabled_at":
             new[k] = body[k]
-    for k in ("enabled", "recovery", "services", "ntfy_on", "email_on", "webhook_on"):
+    for k in ("enabled", "recovery", "services", "certs", "quiet_on", "ntfy_on", "email_on", "webhook_on"):
         new[k] = bool(new[k])
     try:
         new["delay"] = int(new["delay"])
@@ -105,6 +110,10 @@ def save(conn, body: dict) -> dict:
         raise AlertError("Wait 0, 5, 10, 15, 30 or 60 minutes")
     if not 0 < new["email_port"] < 65536:
         raise AlertError("email_port: must be 1 to 65535")
+    for k in ("quiet_from", "quiet_to"):
+        new[k] = str(new[k] or "").strip()[:5]
+        if not _TIME.match(new[k]):
+            raise AlertError(f"{k}: enter a time like 22:00")
     if new["email_security"] not in SECURITY:
         raise AlertError("email_security: starttls, ssl or none")
     for k in ("ntfy_url", "email_host", "email_username", "email_from", "email_to"):
@@ -207,6 +216,20 @@ def due(conn) -> list[dict]:
                     events.append({"kind": "service", "state": "up", "device": dev["name"], "device_id": r["device_id"],
                                    "service": r["name"], "address": where,
                                    "title": f"{r['name']} on {dev['name']} is answering again", "message": f"{where} answers again."})
+    if conf["certs"]:
+        soon = (now + timedelta(days=CERT_DAYS)).strftime("%Y-%m-%d")
+        for r in conn.execute("SELECT st.service_id, st.cert_expires, st.cert_alerted, s.name, s.url, d.name AS device "
+                              "FROM service_status st JOIN services s ON s.id = st.service_id JOIN devices d ON d.id = st.device_id "
+                              "WHERE st.cert_expires IS NOT NULL AND st.cert_expires <= ?", (soon,)):
+            if r["cert_alerted"] == r["cert_expires"]:
+                continue
+            conn.execute("UPDATE service_status SET cert_alerted = ? WHERE service_id = ?", (r["cert_expires"], r["service_id"]))
+            d = datetime.strptime(r["cert_expires"], "%Y-%m-%d")
+            when = f"{d:%b} {d.day}, {d.year}"
+            gone = r["cert_expires"] < now.strftime("%Y-%m-%d")
+            events.append({"kind": "certificate", "state": "down", "device": r["device"], "service": r["name"], "address": r["url"],
+                           "title": f"The certificate for {r['name']} on {r['device']} {'ran out' if gone else 'runs out soon'}",
+                           "message": f"{r['url']}: {'it ran out on' if gone else 'it runs out on'} {when}. Renew it, or browsers and apps will refuse the connection."})
     return events
 
 
@@ -291,16 +314,68 @@ def send(title: str, message: str, urgent: bool = True, extra: dict | None = Non
         conn.close()
 
 
+def in_quiet_hours(conf: dict, now: datetime | None = None) -> bool:
+    if not conf.get("quiet_on"):
+        return False
+    t = (now or datetime.now().astimezone()).strftime("%H:%M")
+    a, b = conf["quiet_from"], conf["quiet_to"]
+    return a <= t < b if a < b else (t >= a or t < b)
+
+
+def _held(conn) -> list:
+    try:
+        return json.loads(db.get_meta(conn, "alerts_held") or "[]")
+    except ValueError:
+        return []
+
+
 def deliver(events: list[dict]) -> None:
-    """Send what due() found: one message each, or one together when a lot changed at once."""
+    """Send alerts: held during quiet hours (then sent together), one message each, or one message
+    together when a lot changed at once."""
+    with _held_lock:
+        conn = db.connect()
+        try:
+            conf = config(conn)
+            held = _held(conn)
+            if in_quiet_hours(conf):
+                if events:
+                    db.set_meta(conn, "alerts_held", json.dumps((held + events)[-200:]))
+                    conn.commit()
+                return
+            if held:
+                db.set_meta(conn, "alerts_held", None)
+                conn.commit()
+        finally:
+            conn.close()
+    if held:
+        lines = "\n".join(f"• {e['title']}" for e in held + events)
+        downs = sum(1 for e in held + events if e["state"] != "up")
+        send(f"HaRM: {len(held) + len(events)} alert{'s' if len(held) + len(events) != 1 else ''} from quiet hours",
+             lines, downs > 0, {"kind": "summary", "count": len(held) + len(events)})
+        return
+    _send_events(events)
+
+
+def flush_held() -> None:
+    """After quiet hours end, send what was held (called by the background checker)."""
+    conn = db.connect()
+    try:
+        waiting = bool(_held(conn)) and not in_quiet_hours(config(conn))
+    finally:
+        conn.close()
+    if waiting:
+        deliver([])
+
+
+def _send_events(events: list[dict]) -> None:
     if len(events) <= BATCH:
         for e in events:
-            send(e["title"], e["message"], e["state"] == "down",
+            send(e["title"], e["message"], e["state"] != "up",
                  {k: e.get(k) for k in ("kind", "device", "service", "address")})
         return
-    downs = sum(1 for e in events if e["state"] == "down")
+    downs = sum(1 for e in events if e["state"] != "up")
     ups = len(events) - downs
-    title = ", ".join(p for p in (f"{downs} stopped answering" if downs else "", f"{ups} back" if ups else "") if p)
+    title = ", ".join(p for p in (f"{downs} problem{'s' if downs != 1 else ''}" if downs else "", f"{ups} back" if ups else "") if p)
     send(f"HaRM: {title}", "\n".join(f"• {e['title']}" for e in events), downs > 0, {"kind": "summary", "count": len(events)})
 
 

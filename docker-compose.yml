@@ -13,6 +13,7 @@ services:
       - "8077:8077"
     volumes:
       - ./data:/data
+      # - /mnt/nas/harm-backups:/backup-copies     # a second place for backups: then pick /backup-copies in Settings > Data & backups
     environment:
       HARM_CERT_NAMES: "192.168.1.50 harm.lan"   # <- change to this server's LAN IP / hostname
       HARM_IDLE_MINUTES: "30"                    # auto-lock after this many idle minutes

@@ -882,6 +882,30 @@ Let me know if you need anything else!"""
         assert not [t for t in titles if "No alerts please" in t or "Closed" in t or "Broken web" in t], titles
         c.call("POST", "/alerts", {"enabled": False})
 
+    @test("power, uptime report, new-device watch and backup copies: the API checks what it's sent")
+    def _():
+        ups = c.call("POST", "/devices", {"name": "Rack UPS", "device_type": "UPS", "status": "Active", "connected": True, "power_capacity_w": 900})
+        srv = c.call("POST", "/devices", {"name": "Hungry", "status": "Active", "connected": True, "power_draw_w": 800, "powered_by_id": ups["id"]})
+        c.call("PUT", f"/devices/{ups['id']}", {"powered_by_id": srv["id"]}, expect=400)
+        c.call("PUT", f"/devices/{ups['id']}", {"powered_by_id": ups["id"]}, expect=400)
+        sup = next(x for x in c.call("GET", "/power")["supplies"] if x["id"] == ups["id"])
+        assert sup["load_w"] == 800 and sup["level"] == "warn", sup
+        assert c.call("GET", f"/devices/{ups['id']}/full")["power"]["load_w"] == 800
+        assert any(w["name"] == "Rack UPS" for w in c.call("GET", "/dashboard")["power"])
+        rep = c.call("GET", "/status/report?days=7")
+        names = {x["name"]: x for x in rep["devices"]}
+        assert names["Answers"]["uptime"] == 1 and names["Gone quiet"]["uptime"] == 0, names
+        assert any(x["name"] == "Flaky" and x["outages"] == 1 for x in rep["services"]), rep["services"]
+        c.call("GET", "/status/report?days=5", expect=400)
+        nw = c.call("GET", "/netwatch")
+        assert nw["enabled"] is False and nw["pending"] == [] and nw["all_networks"], nw
+        c.call("POST", "/netwatch", {"enabled": True, "networks": []}, expect=400)
+        c.call("POST", "/netwatch/9999", {"status": "ignored"}, expect=404)
+        c.call("POST", "/backup-copy", {"dir": "relative/folder"}, expect=400)
+        c.call("POST", "/backup-copy", {"dir": "/no/such/harm/folder"}, expect=400)
+        c.call("POST", "/backup-copy/run", {}, expect=400)
+        c.call("POST", "/alerts", {"quiet_on": True, "quiet_from": "25:00"}, expect=400)
+
     @test("deleting a device removes its actions and online history")
     def _():
         c.call("DELETE", f"/devices/{S['up']['id']}")

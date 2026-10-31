@@ -37,7 +37,7 @@ ENTITIES: dict[str, dict] = {
         "fields": {
             "name": f(T, True), "kind": f(T), "location_id": f(fk("locations")),
             "height_u": f(I), "numbering_desc": f(B), "width": f(T), "depth_mm": f(I),
-            "manufacturer": f(T), "model": f(T), "notes": f(T),
+            "manufacturer": f(T), "model": f(T), "notes": f(T), "power_budget_w": f(I),
         },
         "search": ["name", "kind", "manufacturer", "model", "notes"],
         "select": """SELECT t.*, l.name AS location_name,
@@ -63,6 +63,7 @@ ENTITIES: dict[str, dict] = {
             "msrp": f(R), "market_value": f(R), "value_checked": f(D),
             "host_id": f(fk("devices")), "cluster_id": f(fk("clusters")), "vm_id": f(T),
             "vcpus": f(I), "vm_ram_gb": f(R), "vm_disk_gb": f(R), "watch": f(B), "alerts": f(B),
+            "power_capacity_w": f(I), "powered_by_id": f(fk("devices")),
         },
         "search": ["name", "device_type", "manufacturer", "model", "serial", "asset_tag",
                    "hostname", "os", "tags", "notes"],

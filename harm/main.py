@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from . import __version__, ai, aiproviders, alerts, certs, collect, crypto, db, discover, monitor, pcbuild, proxmox, remote, units
+from . import __version__, ai, aiproviders, alerts, certs, collect, crypto, db, discover, monitor, netwatch, pcbuild, power, proxmox, remote, units
 from .models import ENTITIES, ENUMS, iface_order
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -64,13 +64,60 @@ def auto_backup() -> str | None:
     return target.name
 
 
+COPY_KEEP = (7, 14, 30, 90)
+
+
+def _copy_conf(conn) -> dict:
+    try:
+        return {"dir": "", "keep": 14, "last": None, **json.loads(db.get_meta(conn, "backup_copy") or "{}")}
+    except ValueError:
+        return {"dir": "", "keep": 14, "last": None}
+
+
+def copy_backup() -> dict | None:
+    """Copy the newest daily backup to the second place (a NAS share or USB drive mounted on this
+    computer), and keep the newest `keep` there. Returns what happened, or None when it's not set up."""
+    conn = db.connect()
+    try:
+        conf = _copy_conf(conn)
+        if not conf["dir"]:
+            return None
+        target = Path(conf["dir"])
+        result = {"at": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()), "ok": False}
+        try:
+            auto_backup()
+            newest = sorted(BACKUP_DIR.glob("harm-*.db"))[-1:]
+            if not newest:
+                raise OSError("There's no backup to copy yet")
+            src = newest[0]
+            if not target.is_dir():
+                raise OSError(f"{target} isn't there. Is the drive or share connected?")
+            dest = target / src.name
+            if not dest.exists() or dest.stat().st_size != src.stat().st_size:
+                tmp = target / (src.name + ".part")
+                shutil.copyfile(src, tmp)
+                os.replace(tmp, dest)
+            for old in sorted(target.glob("harm-*.db"))[:-int(conf["keep"])]:
+                old.unlink(missing_ok=True)
+            result.update(ok=True, file=src.name, copies=len(list(target.glob("harm-*.db"))))
+        except OSError as e:
+            result["error"] = str(e.strerror or e) if isinstance(e, OSError) and e.strerror else str(e)
+        conf["last"] = result
+        db.set_meta(conn, "backup_copy", json.dumps(conf))
+        conn.commit()
+        return result
+    finally:
+        conn.close()
+
+
 def _housekeeping(stop: threading.Event, backups: bool) -> None:
-    """Hourly: forget expired sessions; make the daily backup if it's due."""
+    """Hourly: forget expired sessions; make the daily backup if it's due, and copy it to the second place."""
     while not stop.is_set():
         purge_sessions()
         if backups:
             try:
                 auto_backup()
+                copy_backup()
             except Exception as e:  # never take the app down over a backup
                 print(f"auto-backup failed: {e}")
         stop.wait(3600)
@@ -82,11 +129,12 @@ async def lifespan(_app):
     stop = threading.Event()
     threading.Thread(target=_housekeeping, args=(stop, os.environ.get("HARM_AUTO_BACKUP", "1") != "0"),
                      daemon=True).start()
-    checker = asyncio.create_task(monitor.run_forever()) if os.environ.get("HARM_MONITOR", "1") != "0" and not DEMO else None
+    background = os.environ.get("HARM_MONITOR", "1") != "0" and not DEMO
+    tasks = [asyncio.create_task(monitor.run_forever()), asyncio.create_task(netwatch.run_forever())] if background else []
     yield
     stop.set()
-    if checker:
-        checker.cancel()
+    for t in tasks:
+        t.cancel()
 
 
 app = FastAPI(title=APP_NAME, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
@@ -364,6 +412,11 @@ IFACE_ORDER = iface_order()  # main address first, management ports last
 def _device_rules(conn, data: dict, existing: dict | None) -> None:
     merged = {**(existing or {}), **data}
     rid = existing["id"] if existing else None
+    if data.get("powered_by_id"):
+        try:
+            power.check_loop(conn, rid, data["powered_by_id"])
+        except ValueError as e:
+            raise HTTPException(400, f"powered_by_id: {e}")
     # Virtual machines / containers run on a host: no host loops, no rack space, and they live where the host lives.
     if data.get("host_id"):
         cur = data["host_id"]
@@ -864,6 +917,9 @@ def dashboard(_s=Depends(require_session), conn=Depends(get_db)):
         "recent": group("SELECT * FROM audit ORDER BY id DESC LIMIT 12"),
         "offline": monitor.offline(conn),
         "services_down": monitor.services_down(conn),
+        "certs": monitor.certs_expiring(conn, 30),
+        "power": power.warnings(conn),
+        "new_on_network": len(netwatch.pending(conn)),
     }
 
 
@@ -1167,6 +1223,7 @@ def device_full(did: int, _s=Depends(require_session), conn=Depends(get_db)):
         "online": monitor.device_state(conn, dev),
         "actions": fetch_list(conn, "actions", {"device_id": did}),
         "can_wake": _wake_targets(conn, did) is not None,
+        "power": next((x for x in power.summary(conn)["supplies"] if x["id"] == did), None),
     }
 
 
@@ -1383,6 +1440,8 @@ def rack_layout(rid: int, _s=Depends(require_session), conn=Depends(get_db)):
         "components": fetch_list(conn, "components", {"rack_id": rid, "device_id": "null"}),
         "online": {d["id"]: monitor.device_state(conn, d, with_history=False)["state"]
                    for d in fetch_list(conn, "devices", {"rack_id": rid})},
+        "power": (p := power.summary(conn)) and {"rack": next((r for r in p["racks"] if r["id"] == rid), None),
+                                                  "supplies": [x for x in p["supplies"] if x["rack_id"] == rid]},
     }
 
 
@@ -2012,7 +2071,8 @@ def capabilities(request: Request, _s=Depends(require_session)):
     sha = {f.suffix[1:]: hashlib.sha256(f.read_bytes()).hexdigest() for f in collect_dir.glob("harm-collect.*")}
     return {**_tools(), "ca_cert": (db.DB_PATH.parent / "tls" / "harm-ca.crt").is_file(), "collect_sha256": sha,
             "phone_urls": _phone_urls(request),
-            "backups": [{"name": b.name, "size": b.stat().st_size} for b in backups], "backup_dir": str(BACKUP_DIR)}
+            "backups": [{"name": b.name, "size": b.stat().st_size} for b in backups], "backup_dir": str(BACKUP_DIR),
+            "platform": "windows" if os.name == "nt" else "unix"}
 
 
 def _run_scan(path: str) -> dict:
@@ -2868,6 +2928,116 @@ def action_runs(aid: int, s=Depends(require_session), conn=Depends(get_db)):
             r["output"] = "(can't be read)"
         out.append(r)
     return out
+
+
+@app.get("/api/status/report")
+def status_report(days: int = 7, _s=Depends(require_session), conn=Depends(get_db)):
+    if days not in (1, 7, 30):
+        raise HTTPException(400, "days must be 1, 7 or 30")
+    return monitor.report(conn, days)
+
+
+@app.get("/api/power")
+def power_summary(_s=Depends(require_session), conn=Depends(get_db)):
+    return power.summary(conn)
+
+
+# ---------------------------------------------------------------------------
+# Watching for new devices on the network
+# ---------------------------------------------------------------------------
+
+@app.get("/api/netwatch")
+def netwatch_get(_s=Depends(require_session), conn=Depends(get_db)):
+    nets = [dict(r) for r in conn.execute("SELECT id, name, kind, vlan_id, cidr FROM networks ORDER BY vlan_id, name")]
+    return {**netwatch.config(conn), "all_networks": nets, "pending": netwatch.pending(conn)}
+
+
+@app.post("/api/netwatch")
+async def netwatch_set(request: Request, _s=Depends(require_session), conn=Depends(get_db)):
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    try:
+        out = netwatch.save(conn, body)
+    except (TypeError, ValueError) as e:
+        raise HTTPException(400, str(e))
+    audit(conn, request, "settings", "networks", None,
+          f"new-device watch {'on' if out['enabled'] else 'off'}: {len(out['networks'])} network(s)")
+    conn.commit()
+    return out
+
+
+@app.post("/api/netwatch/scan")
+async def netwatch_scan(_s=Depends(require_session)):
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    if netwatch._lock.locked():
+        raise HTTPException(409, "A scan is already running")
+    return await netwatch.scan_now()
+
+
+@app.post("/api/netwatch/{sid}")
+async def netwatch_mark(sid: int, request: Request, _s=Depends(require_session), conn=Depends(get_db)):
+    body = await body_json(request)
+    try:
+        netwatch.mark(conn, sid, str(body.get("status")))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    conn.commit()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Copying backups to a second place
+# ---------------------------------------------------------------------------
+
+@app.get("/api/backup-copy")
+def backup_copy_get(_s=Depends(require_session), conn=Depends(get_db)):
+    return _copy_conf(conn)
+
+
+@app.post("/api/backup-copy")
+async def backup_copy_set(request: Request, _s=Depends(require_session), conn=Depends(get_db)):
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    conf = _copy_conf(conn)
+    folder = str(body.get("dir") or "").strip()
+    keep = int(body.get("keep") or conf["keep"])
+    if keep not in COPY_KEEP:
+        raise HTTPException(400, "keep: 7, 14, 30 or 90")
+    if folder:
+        p = Path(folder).expanduser()
+        if not p.is_absolute():
+            raise HTTPException(400, "dir: enter the whole path, like /mnt/nas/harm-backups or D:\\HaRM backups")
+        if not p.is_dir():
+            raise HTTPException(400, f"dir: {p} doesn't exist on the HaRM computer. Connect the drive or share, or create the folder")
+        if p.resolve() == BACKUP_DIR.resolve():
+            raise HTTPException(400, "dir: that's where HaRM already keeps its backups. Pick another disk")
+        try:
+            probe = p / ".harm-write-test"
+            probe.write_bytes(b"ok")
+            probe.unlink()
+        except OSError as e:
+            raise HTTPException(400, f"dir: HaRM can't write there ({e.strerror or e})")
+        folder = str(p)
+    conf.update(dir=folder, keep=keep)
+    db.set_meta(conn, "backup_copy", json.dumps(conf))
+    audit(conn, request, "settings", None, None, f"backup copies: {folder or 'off'}")
+    conn.commit()
+    return conf
+
+
+@app.post("/api/backup-copy/run")
+async def backup_copy_run(_s=Depends(require_session)):
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    r = await asyncio.to_thread(copy_backup)
+    if r is None:
+        raise HTTPException(400, "Choose a folder first")
+    return r
 
 
 # ---------------------------------------------------------------------------

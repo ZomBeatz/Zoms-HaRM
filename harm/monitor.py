@@ -23,6 +23,7 @@ import socket
 import ssl
 import subprocess
 import urllib.error
+import urllib.parse
 import urllib.request
 import sys
 import time
@@ -237,7 +238,31 @@ def _http_sync(url: str) -> dict:
     ms = round((time.monotonic() - t0) * 1000, 1)
     if code >= 500:
         return {"state": "down", "code": code, "latency_ms": ms, "detail": f"HTTP {code}"}
-    return {"state": "up", "code": code, "latency_ms": ms, "detail": f"HTTP {code}"}
+    return {"state": "up", "code": code, "latency_ms": ms, "detail": f"HTTP {code}",
+            "cert_expires": _cert_expiry(url) if url.lower().startswith("https://") else None}
+
+
+def _cert_expiry(url: str) -> str | None:
+    """The date (YYYY-MM-DD, UTC) the service's certificate runs out, whoever issued it."""
+    from cryptography import x509
+    u = urllib.parse.urlsplit(url)
+    host, port = u.hostname, u.port or 443
+    if not host:
+        return None
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    try:
+        ipaddress.ip_address(host)
+        sni = None
+    except ValueError:
+        sni = host
+    try:
+        with socket.create_connection((host, port), timeout=HTTP_TIMEOUT) as raw, ctx.wrap_socket(raw, server_hostname=sni) as tls:
+            der = tls.getpeercert(binary_form=True)
+        return x509.load_der_x509_certificate(der).not_valid_after_utc.strftime("%Y-%m-%d") if der else None
+    except (OSError, ValueError):
+        return None
 
 
 async def _port_open(host: str, port: int) -> dict:
@@ -266,17 +291,22 @@ async def check_service(svc: dict, host: str | None) -> dict:
 
 def _record_service(conn, svc: dict, res: dict) -> None:
     now = _now()
-    prev = conn.execute("SELECT state FROM service_status WHERE service_id = ?", (svc["id"],)).fetchone()
+    prev = conn.execute("SELECT state, cert_expires FROM service_status WHERE service_id = ?", (svc["id"],)).fetchone()
+    cert = res.get("cert_expires") or (prev["cert_expires"] if prev and res["state"] != "up" else None)
     if prev and prev["state"] == res["state"]:
-        conn.execute("UPDATE service_status SET code = ?, latency_ms = ?, detail = ?, checked_at = ? WHERE service_id = ?",
-                     (res["code"], res["latency_ms"], res["detail"], now, svc["id"]))
-    elif prev:
-        conn.execute("UPDATE service_status SET state = ?, code = ?, latency_ms = ?, detail = ?, checked_at = ?, changed_at = ? "
-                     "WHERE service_id = ?", (res["state"], res["code"], res["latency_ms"], res["detail"], now, now, svc["id"]))
+        conn.execute("UPDATE service_status SET code = ?, latency_ms = ?, detail = ?, checked_at = ?, cert_expires = ? WHERE service_id = ?",
+                     (res["code"], res["latency_ms"], res["detail"], now, cert, svc["id"]))
+        return
+    if prev:
+        conn.execute("UPDATE service_status SET state = ?, code = ?, latency_ms = ?, detail = ?, checked_at = ?, changed_at = ?, "
+                     "cert_expires = ? WHERE service_id = ?",
+                     (res["state"], res["code"], res["latency_ms"], res["detail"], now, now, cert, svc["id"]))
     else:
-        conn.execute("INSERT INTO service_status (service_id, device_id, state, code, latency_ms, detail, checked_at, changed_at) "
-                     "VALUES (?,?,?,?,?,?,?,?)", (svc["id"], svc["device_id"], res["state"], res["code"], res["latency_ms"],
-                                                  res["detail"], now, now))
+        conn.execute("INSERT INTO service_status (service_id, device_id, state, code, latency_ms, detail, checked_at, changed_at, "
+                     "cert_expires) VALUES (?,?,?,?,?,?,?,?,?)", (svc["id"], svc["device_id"], res["state"], res["code"],
+                                                                  res["latency_ms"], res["detail"], now, now, cert))
+    if res["state"] in ("up", "down"):  # history for the uptime report ("unknown" isn't a state of the service)
+        conn.execute("INSERT INTO service_events (service_id, state, at) VALUES (?,?,?)", (svc["id"], res["state"], now))
 
 
 def _record(conn, device_id: int, results: dict[str, dict]) -> list[dict]:
@@ -389,8 +419,9 @@ async def check_if_older(max_age: float) -> bool:
 
 
 def prune(conn) -> None:
-    conn.execute("DELETE FROM status_events WHERE at < ?",
-                 ((datetime.now(timezone.utc) - timedelta(days=HISTORY_DAYS)).strftime("%Y-%m-%d %H:%M:%S"),))
+    old = (datetime.now(timezone.utc) - timedelta(days=HISTORY_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute("DELETE FROM status_events WHERE at < ?", (old,))
+    conn.execute("DELETE FROM service_events WHERE at < ?", (old,))
 
 
 async def run_forever() -> None:
@@ -410,6 +441,7 @@ async def run_forever() -> None:
                 conn.close()
             if mins and seconds_since_full() >= mins * 60 - 5:
                 await check()
+            await asyncio.to_thread(alerts.flush_held)  # quiet hours over: send what was held
         except asyncio.CancelledError:
             raise
         except Exception as e:  # never take the app down over a check
@@ -484,7 +516,8 @@ def device_state(conn, dev: dict, with_history: bool = True) -> dict:
     else:
         state = main["state"]
     services = [dict(r) for r in conn.execute(
-        "SELECT s.id, s.name, s.url, s.port, st.state, st.code, st.latency_ms, st.detail, st.checked_at, st.changed_at AS since "
+        "SELECT s.id, s.name, s.url, s.port, st.state, st.code, st.latency_ms, st.detail, st.checked_at, st.changed_at AS since, "
+        "st.cert_expires "
         "FROM service_status st JOIN services s ON s.id = st.service_id WHERE st.device_id = ? ORDER BY s.name", (dev["id"],))]
     out = {"state": state, "address": main["address"] if main else None, "services": services if state in ("up", "down") else [],
            "latency_ms": main["latency_ms"] if main else None, "since": main["since"] if main else None,
@@ -513,6 +546,70 @@ def services_down(conn) -> list[dict]:
         f"SELECT s.id, s.name, d.id AS device_id, d.name AS device_name, st.detail, st.changed_at AS since "
         f"FROM service_status st JOIN services s ON s.id = st.service_id JOIN devices d ON d.id = st.device_id "
         f"WHERE st.state = 'down' AND {_WATCHED} ORDER BY d.name, s.name")]
+
+
+def certs_expiring(conn, days: int = 30) -> list[dict]:
+    """HTTPS services whose certificate runs out within `days` (or already has)."""
+    until = (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%d")
+    return [dict(r) for r in conn.execute(
+        "SELECT s.id, s.name, s.url, d.id AS device_id, d.name AS device_name, st.cert_expires "
+        "FROM service_status st JOIN services s ON s.id = st.service_id JOIN devices d ON d.id = st.device_id "
+        "WHERE st.cert_expires IS NOT NULL AND st.cert_expires <= ? ORDER BY st.cert_expires", (until,))]
+
+
+# --------------------------------------------------------------------------- the uptime report
+
+def _uptime(events: list, before: str | None, start: datetime, now: datetime) -> dict:
+    """Seconds up and down in [start, now], outages that started in it, and the longest one."""
+    timeline = [(start, before)] + [(_parse(at), st) for st, at in events]
+    up = down = longest = 0.0
+    outages = 0
+    run = 0.0
+    for i, (t, st) in enumerate(timeline):
+        end = timeline[i + 1][0] if i + 1 < len(timeline) else now
+        secs = max(0.0, (end - t).total_seconds())
+        if st == "down":
+            down += secs
+            run += secs
+            if i == 0 or timeline[i - 1][1] != "down":
+                outages += 1
+            longest = max(longest, run)
+        else:
+            run = 0.0
+            if st == "up":
+                up += secs
+    known = up + down
+    return {"uptime": round(up / known, 5) if known else None, "outages": outages,
+            "down_s": int(down), "longest_s": int(longest), "known_s": int(known)}
+
+
+def report(conn, days: int) -> dict:
+    """Uptime over the last `days` days for every checked device (by its main address) and service."""
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=days)
+    since = start.strftime("%Y-%m-%d %H:%M:%S")
+
+    def window(table, where, args):
+        before = conn.execute(f"SELECT state FROM {table} WHERE {where} AND at < ? ORDER BY at DESC, id DESC LIMIT 1",
+                              (*args, since)).fetchone()
+        ev = conn.execute(f"SELECT state, at FROM {table} WHERE {where} AND at >= ? ORDER BY at, id", (*args, since)).fetchall()
+        return _uptime([(r["state"], r["at"]) for r in ev], before["state"] if before else None, start, now)
+
+    info = {r["id"]: dict(r) for r in conn.execute(
+        "SELECT d.id, d.name, d.device_type, h.name AS host_name FROM devices d LEFT JOIN devices h ON h.id = d.host_id")}
+    devices = []
+    for did, t in targets(conn).items():
+        u = window("status_events", "device_id = ? AND address = ?", (did, t["addresses"][0]))
+        if u["known_s"]:
+            devices.append({**info[did], "address": t["addresses"][0], **u})
+    services = []
+    for r in conn.execute("SELECT s.id, s.name, s.url, s.port, d.id AS device_id, d.name AS device_name, d.device_type "
+                          "FROM service_status st JOIN services s ON s.id = st.service_id JOIN devices d ON d.id = s.device_id"):
+        u = window("service_events", "service_id = ?", (r["id"],))
+        if u["known_s"]:
+            services.append({**dict(r), **u})
+    key = lambda x: (x["uptime"] if x["uptime"] is not None else 2, -x["down_s"])
+    return {"days": days, "devices": sorted(devices, key=key), "services": sorted(services, key=key)}
 
 
 # --------------------------------------------------------------------------- Wake-on-LAN

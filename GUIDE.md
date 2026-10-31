@@ -106,7 +106,10 @@ When it's done, HaRM sits on your phone's home screen like an app. Long-press th
 - A server's iLO, iDRAC or IPMI port is checked too and shown under it.
 - Its **services** (Network tab) are checked once it answers: a web address must reply (anything below a 500 error), and a port must accept the connection. Each says **Answering** or **Not answering**.
 - In the rack drawing, a device that isn't answering is outlined in red and says **Offline**.
-- **Alerts** (**Settings > Status and actions > Alerts**): a message by ntfy (a free phone app), email or a webhook when a device or service stops answering, and when it's back. Choose how long to wait first, so a restart doesn't wake you. Press **Send a test** after setting it up. Their passwords are kept encrypted in `alerts.key` in the data folder (not in backups), because alerts are sent while HaRM is locked too.
+- **📊 Uptime** shows how much of the last day, week or month each device and service answered, worst first. Docker containers count as the services (ports) they publish: add those to the Docker host's **Network** tab.
+- **New devices:** **⋯ > Watch for new devices** scans the networks you tick (leave the guest Wi-Fi out) and lists anything HaRM doesn't know at the top of the Status page, with **+ Add…** and **Ignore**. The first scan only learns what's there.
+- **Certificates:** for https services, HaRM notes when the certificate runs out and warns on **Home** 30 days before.
+- **Alerts** (**Settings > Status and actions > Alerts**): a message by ntfy (a free phone app), email or a webhook when a device or service stops answering, and when it's back. Choose how long to wait first, so a restart doesn't wake you. Press **Send a test** after setting it up. **Quiet hours** hold them overnight and send them together in the morning, and a certificate alert comes 14 days before one runs out. Their passwords are kept encrypted in `alerts.key` in the data folder (not in backups), because alerts are sent while HaRM is locked too.
 - **Wake** sends a Wake-on-LAN packet to an offline device that has a MAC address (Wake-on-LAN must be on in its BIOS). In Docker this needs `network_mode: host`.
 - **⋯ > Full screen** makes it a wall display that keeps itself up to date.
 
@@ -138,6 +141,8 @@ The **⋯** button holds the less common actions: Import specs, check if it's on
 - **Run it yourself:** copy a one-line command, run it on the machine, and paste the result.
 
 **Racks & Storage:** racks show a front/rear picture. Click an empty U to put a device there. Shelves, bins, totes and piles work too.
+
+**Power:** give a UPS or PDU what it **Can supply** (in watts, not VA) and each device its **Typical draw** and what it's **Plugged into** (both under **More details**), and give a rack its **Power available**. The rack and UPS pages show how close they are to the limit, and **Home** warns at 80%.
 
 **🤖 AI Assist** (in **+ New**, Spare Parts, and on location and rack pages) logs a pile of hardware from photos:
 1. Copy HaRM's prompt and paste it into any AI app (ChatGPT, Claude, Gemini) with your photos. Turn on web search so it can look up prices.
@@ -172,6 +177,10 @@ It holds the database, the daily backups (`backups`), HaRM's certificates (`tls`
 - **Settings > Data & backups > Download backup** saves a copy whenever you want one. Keep a copy on another drive or computer now and then.
 - **To move HaRM to a new computer**, install it there, press **Stop** in its control panel, and copy the whole data folder over the new one. That brings your devices, logins, certificates (so phones keep trusting it) and backups. Your master password stays the same.
 - **Used an older HaRM from a folder?** The first time the installed app opens, **Bring in data from an older HaRM…** copies that folder's data in for you.
+
+### Copying backups to a second place
+
+**Settings > Data & backups > Copy to a second place** copies each day's backup to another disk, like a NAS share or a USB drive, and keeps the last 7 to 90 there. The folder must be on (or mounted on) the computer HaRM runs on; in Docker, add it under `volumes:` (see `docker-compose.yml`). Logins stay encrypted in the copies.
 
 ## Updating
 

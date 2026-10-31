@@ -74,7 +74,7 @@ const ICON_FOR = {
   '🔳': 'qr-code', '🔧': 'wrench', '🛠': 'wrench', '🔒': 'lock', '✎': 'pencil', '⚑': 'flag', '★': 'star', '☆': 'star',
   '▾': 'chevron-down', '▸': 'chevron-right', '🧭': 'compass', '🛡': 'shield', '🖨': 'printer', '📍': 'map-pin',
   '💾': 'hard-drive', '🎥': 'video', '🌙': 'moon', '☀': 'sun', '◐': 'sun-moon', '⟳': 'rotate-cw', '🧩': 'boxes',
-  '⚠': 'triangle-alert', '▶': 'play', '■': 'square', '⎘': 'copy', '💬': 'message-square', '⌨': 'keyboard', '📶': 'activity', '⚡': 'zap', '⏻': 'power', '⛶': 'maximize', '🔔': 'bell', '🎉': '',
+  '⚠': 'triangle-alert', '▶': 'play', '■': 'square', '⎘': 'copy', '💬': 'message-square', '⌨': 'keyboard', '📶': 'activity', '⚡': 'zap', '⏻': 'power', '⛶': 'maximize', '🔔': 'bell', '📊': 'chart-column', '🎉': '',
 };
 const NO_ICONS = new Set(['OPTION', 'TEXTAREA', 'TITLE', 'STYLE', 'SCRIPT', 'CODE', 'PRE']);
 const ICON_KEYS = Object.keys(ICON_FOR).filter(k => k.length <= 2).sort((a, b) => b.length - a.length);
@@ -687,6 +687,8 @@ const FORMS = {
     { k: 'numbering_desc', label: 'Number U1 from the top', type: 'checkbox', showIf: v => !!v.height_u },
     { k: 'width', label: 'Width', ph: '19"' },
     { k: 'depth_mm', label: 'Depth (mm)', type: 'number', min: 0 },
+    { k: 'power_budget_w', label: 'Power available (W)', type: 'number', min: 0,
+      help: 'The circuit’s limit for the whole rack. A 15 A, 120 V circuit is 1,440 W at the safe 80%; a 16 A, 230 V one is about 2,900 W.' },
     { k: 'manufacturer', label: 'Manufacturer' },
     { k: 'model', label: 'Model' },
     { k: 'notes', label: 'Notes', type: 'textarea', wide: true },
@@ -725,7 +727,11 @@ const FORMS = {
     { k: 'cpu', label: 'CPU', adv: true },
     { k: 'ram', label: 'RAM', ph: '128 GB DDR4 ECC', adv: true },
     { k: 'psu', label: 'Power supply', ph: '2x 750W redundant', adv: true },
-    { k: 'power_draw_w', label: 'Typical draw (W)', type: 'number', min: 0, adv: true },
+    { k: 'power_draw_w', label: 'Typical draw (W)', type: 'number', min: 0, adv: true, help: 'Counts toward its rack’s and its UPS’s power budget while it’s hooked up.' },
+    { k: 'power_capacity_w', label: 'Can supply (W)', type: 'number', min: 0, adv: true, showIf: v => /UPS|PDU/.test(v.device_type || '') || !!v.power_capacity_w,
+      help: 'For a UPS or PDU: the most it can power, in watts (a UPS’s W rating, not its VA).' },
+    { k: 'powered_by_id', label: 'Plugged into', type: 'fk', entity: 'devices', none: 'Not set', adv: true,
+      filter: d => /UPS|PDU/.test(d.device_type || '') || !!d.power_capacity_w, help: 'The UPS or PDU it draws power from.' },
     { k: 'mgmt_url', label: 'Management URL (iDRAC, iLO, web UI)', ph: 'https://10.0.0.5', inputmode: 'url', adv: true, wide: true },
     { section: 'Tracking', adv: true },
     { k: 'asset_tag', label: 'Asset tag (your own label)', adv: true, help: 'Only if you stick your own inventory labels on things.' },
@@ -1687,6 +1693,7 @@ const ROUTES = [
   [/^\/?(dashboard)?$/, () => viewDashboard()],
   [/^\/status$/, () => viewStatus()],
   [/^\/actions$/, () => viewActions()],
+  [/^\/uptime$/, (m, q) => viewUptime(q)],
   [/^\/devices$/, () => viewDevices()],
   [/^\/devices\/(\d+)$/, (m, q) => viewDevice(+m[1], q)],
   [/^\/racks$/, () => viewRacks()],
@@ -1751,7 +1758,7 @@ async function route() {
   const raw = location.hash.replace(/^#/, '');
   const [path, qs] = raw.split('?');
   const q = new URLSearchParams(qs || '');
-  const top = { clusters: 'virtual' }[path.split('/')[1]] || path.split('/')[1] || 'dashboard';
+  const top = { clusters: 'virtual', uptime: 'status' }[path.split('/')[1]] || path.split('/')[1] || 'dashboard';
   document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === top));
   const more = document.querySelector('.nav-more');
   if (more && more.querySelector('a.active')) more.open = true;
@@ -1804,6 +1811,9 @@ async function viewDashboard() {
     h('span', { class: 'muted' }, r.since ? ` since ${clock(r.since)}, ${forHowLong(r.since)}` : '')]));
   (d.services_down || []).forEach(r => item('📶', [r.name, ' on ', link(`#/devices/${r.device_id}`, r.device_name), ' ', h('span', { class: 'badge bad' }, 'Not answering'),
     h('span', { class: 'muted' }, r.detail ? ` ${r.detail}` : '')]));
+  if (d.new_on_network) item('📶', [link('#/status', `${d.new_on_network} new device${d.new_on_network === 1 ? '' : 's'} on the network`), ' to add or ignore']);
+  (d.certs || []).forEach(r => item('🛡', ['The certificate for ', r.name, ' on ', link(`#/devices/${r.device_id}`, r.device_name), ' ', certText(r.cert_expires)]));
+  (d.power || []).forEach(r => item('🔌', [link(r.kind === 'rack' ? `#/racks/${r.id}` : `#/devices/${r.id}`, r.name), ` is at ${Math.round(r.pct * 100)}% of its power (${r.used_w} of ${r.limit_w} W)`]));
   d.ip_conflicts.forEach(r => item('⚠', [h('b', { class: 'mono bad-text' }, r.label), ` is used by more than one device: ${r.devices}`]));
   (d.needs_repair || []).forEach(r => item('🛠', [link(`#/devices/${r.id}`, r.label), ' ', badge(r.status)]));
   d.warranty_soon.forEach(r => item('🛡', [link(r.kind === 'device' ? `#/devices/${r.id}` : `#/components?id=${r.id}`, r.label), ' warranty ends ', warrantyCell(r.warranty_until)]));
@@ -2166,6 +2176,7 @@ async function viewDevice(id, q) {
     tabs('device', [
       ['overview', 'Overview', null, () => [
         journalCard('devices', id, d.notes, back),
+        devicePowerCard(dev, d.power, back),
         h('div', { class: 'grid two' },
           card('Details', kv([
             ...(virtual ? [['Runs on', dev.host_id ? link(`#/devices/${dev.host_id}`, dev.host_name || 'host') : 'Not set'], ['VM / container ID', dev.vm_id],
@@ -2178,6 +2189,8 @@ async function viewDevice(id, q) {
             ['RAM', d.memory.sticks ? `${d.memory.total} (${d.memory.groups.map(g => `${g.count}× ${g.capacity}`).join(', ')})` : dev.ram],
             ['Storage', d.storage.drives ? `${d.storage.total} raw in ${d.storage.drives} drives` : null],
             ['Power supply', dev.psu], ['Typical draw', dev.power_draw_w != null ? `${dev.power_draw_w} W` : ''],
+            ['Can supply', dev.power_capacity_w != null ? `${dev.power_capacity_w} W` : ''],
+            ['Plugged into', dev.powered_by_id ? link(`#/devices/${dev.powered_by_id}`, S.lk.devices.find(x => x.id === dev.powered_by_id)?.name || 'device') : ''],
             ['Asset tag', dev.asset_tag],
             ['Tags', dev.tags ? h('span', null, dev.tags.split(',').map(t => t.trim()).filter(Boolean).map(t => h('span', { class: 'tag' }, t))) : ''],
             ['PC build', d.builds.length ? h('span', null, d.builds.map(b => link(`#/builds/${b.id}`, b.name))) : ''],
@@ -2248,6 +2261,7 @@ async function viewDevice(id, q) {
             { label: 'Service', get: r => r.name },
             { label: 'State', get: r => servicePill(r) },
             { label: 'Answer', get: r => nz(r.detail, r.state === 'up' && r.latency_ms != null ? `· ${fmtMs(r.latency_ms)}` : '') },
+            { label: 'Certificate', get: r => certText(r.cert_expires) },
             { label: 'Checked', get: r => r.checked_at ? timeAgo(r.checked_at) : '' },
           ], on.services) : null,
           ['off', 'unwatched'].includes(on.state) ? h('p', { class: 'muted small' }, onlineTitle(on), '.') : null)
@@ -2375,7 +2389,7 @@ function elevation(rack, devices, face, onEmpty) {
 }
 
 async function viewRack(id) {
-  const [{ rack, devices, components, online }, rackNotes, sum] = await Promise.all([GET(`/racks/${id}/layout`), GET(`/notes?entity=racks&entity_id=${id}`), GET('/devices/summary')]);
+  const [{ rack, devices, components, online, power: pw }, rackNotes, sum] = await Promise.all([GET(`/racks/${id}/layout`), GET(`/notes?entity=racks&entity_id=${id}`), GET('/devices/summary')]);
   for (const d of devices) { d._sum = sum.devices[d.id]; d._online = (online || {})[d.id]; }
   const back = () => viewRack(id);
   const unplaced = devices.filter(d => !d.rack_u);
@@ -2439,7 +2453,39 @@ async function viewRack(id) {
       h('div', { class: 'rack-pair' }, elevation(rack, devices, 'front', onEmpty), elevation(rack, devices, 'rear', onEmpty)),
       h('div', { class: 'rack-side' },
         h('p', { class: 'muted small' }, 'Click an empty unit to add or place a device there. Faded blocks are full-depth devices mounted on the other face. Striped blocks are not hooked up.'),
-        contents)) : contents);
+        rackPowerCard(rack, pw, back), contents)) : [rackPowerCard(rack, pw, back), contents]);
+}
+
+/* A bar of watts used against a limit, with the numbers (and the word when it's high). */
+function powerBar(used, limit, level) {
+  const pct = limit ? Math.round((used / limit) * 100) : null;
+  const fill = h('div', { class: `bar-fill${level === 'over' ? ' over' : level === 'warn' ? ' hot' : ''}` });
+  fill.style.width = `${Math.min(100, pct || 0)}%`;
+  return h('div', { class: 'bar-row' }, h('div', { class: 'bar' }, fill),
+    h('div', { class: 'bar-n' }, limit ? `${used.toLocaleString()} of ${limit.toLocaleString()} W · ${pct}%` : `${used.toLocaleString()} W`,
+      level === 'over' ? h('span', { class: 'bad-text' }, ' Over') : level === 'warn' ? h('span', { class: 'warn-text' }, ' Near the limit') : null));
+}
+function rackPowerCard(rack, pw, after) {
+  const r = pw?.rack;
+  const sup = pw?.supplies || [];
+  if (!r && !sup.length) return null;
+  return card('Power', h('div', null,
+    r ? h('div', null, h('div', { class: 'small' }, 'Everything hooked up in this rack'), powerBar(r.draw_w, r.budget_w, r.level),
+      !r.budget_w ? h('p', { class: 'muted small' }, 'Add the circuit’s limit with ', h('b', null, 'Edit > Power available'), ' to see how close it is.') : null,
+      r.without_draw.length ? h('p', { class: 'muted small' }, `No typical draw yet: ${r.without_draw.join(', ')}.`) : null) : null,
+    sup.map(x => h('div', { class: 'power-supply' }, h('div', { class: 'small' }, link(`#/devices/${x.id}`, x.name), ` powers ${x.devices.length} device${x.devices.length === 1 ? '' : 's'}`),
+      powerBar(x.load_w, x.capacity_w, x.level)))));
+}
+function devicePowerCard(dev, p, after) {
+  if (!p) return null;
+  return card('Power', h('div', null,
+    powerBar(p.load_w, p.capacity_w, p.level),
+    !p.capacity_w ? h('p', { class: 'muted small' }, 'Add what it can supply under ', h('b', null, 'Edit > More details > Can supply'), '.') : null,
+    table([
+      { label: 'Plugged in', get: r => link(`#/devices/${r.id}`, r.name) },
+      { label: 'Typical draw', get: r => r.draw_w != null ? `${r.draw_w} W` : h('span', { class: 'muted' }, 'Not set') },
+      { label: '', get: r => r.connected ? '' : h('span', { class: 'muted small' }, 'Not hooked up, not counted') },
+    ], p.devices, { empty: 'Nothing is plugged into it yet. Set “Plugged into” on each device.' })));
 }
 
 // ---------------------------------------------------------------- views: components
@@ -2689,8 +2735,8 @@ async function viewSearch(q) {
 // ---------------------------------------------------------------- views: settings
 
 async function viewSettings() {
-  [S.auth, S.caps, S.appSettings, S.alerts] = await Promise.all([api('GET', '/auth/status'), GET('/meta/capabilities'),
-    GET('/settings/app').catch(() => ({})), GET('/alerts').catch(() => ({}))]);
+  [S.auth, S.caps, S.appSettings, S.alerts, S.netwatch, S.backupCopy] = await Promise.all([api('GET', '/auth/status'), GET('/meta/capabilities'),
+    GET('/settings/app').catch(() => ({})), GET('/alerts').catch(() => ({})), GET('/netwatch').catch(() => ({})), GET('/backup-copy').catch(() => ({}))]);
   const totpBody = h('div');
   const drawTotp = () => {
     if (S.auth.totp_enabled) {
@@ -2763,7 +2809,7 @@ async function viewSettings() {
         ['Barcode reader (server)', S.caps.barcodes ? 'Available' : 'Not installed (the phone reads barcodes itself)'],
         ['Address', mono(location.origin)],
       ]), h('p', null, h('a', { class: 'button', href: '#/help?s=mobile' }, 'How scanning works'))))),
-    group('Status and actions', onlineChecksCard(), alertsCard(), card('Actions', h('div', null,
+    group('Status and actions', onlineChecksCard(), alertsCard(), netwatchCard(), card('Actions', h('div', null,
       h('p', null, 'Saved commands HaRM sends to your devices over SSH with one click. They use the logins in your Vault, so they only run while HaRM is unlocked.'),
       h('a', { class: 'button', href: '#/actions' }, '⚡ Actions')))),
     group('AI Assist', aiSettingsCard()),
@@ -2773,6 +2819,7 @@ async function viewSettings() {
         S.caps.backups?.length ? h('ul', { class: 'plain' }, S.caps.backups.slice(0, 5).map(b => h('li', { class: 'mono small' }, `${b.name} · ${(b.size / 1e6).toFixed(1)} MB`)))
           : h('p', { class: 'muted small' }, 'The first one is made a few seconds after the server starts.'),
         h('p', { class: 'muted small' }, `Kept on the HaRM computer in ${S.caps.backup_dir || 'data/backups'}. Copy that folder to another disk now and then.`))),
+      backupCopyCard(),
       card('Download a backup', h('div', null,
         h('p', null, 'The whole database in one file. Saved logins stay encrypted and only open with your master password or recovery code.'),
         h('a', { class: 'button primary', href: '/api/backup' }, '⬇ Download backup (.db)'))),
@@ -2818,6 +2865,51 @@ function onlineChecksCard() {
     h('p', { class: 'muted small' }, 'Only the addresses you’ve recorded are contacted. Turn it off for one device with “Check if it’s online” when you edit it.')));
 }
 
+/* Settings > Status and actions > New devices on the network. */
+function netwatchCard() {
+  const n = S.netwatch || {};
+  const names = (n.all_networks || []).filter(x => (n.networks || []).includes(x.id)).map(x => x.name);
+  return card('New devices on the network', h('div', null,
+    n.enabled ? h('p', null, h('span', { class: 'badge ok' }, 'On'), ` Watching ${names.join(', ')} every ${n.interval >= 60 ? `${n.interval / 60} hour${n.interval > 60 ? 's' : ''}` : `${n.interval} minutes`}.`,
+      n.last_scan ? h('span', { class: 'muted small' }, ` Last scan ${timeAgo(n.last_scan)}.`) : null)
+      : h('p', null, h('span', { class: 'badge muted' }, 'Off'), ' Scan the networks you pick now and then, and list (or alert about) any device HaRM doesn’t know. Leave the guest Wi-Fi out.'),
+    n.last_error ? h('p', { class: 'bad-text small' }, n.last_error) : null,
+    (n.pending || []).length ? h('p', null, link('#/status', `${n.pending.length} new device${n.pending.length === 1 ? '' : 's'} to look at`)) : null,
+    h('div', { class: 'inline' }, btn('📶 Watch for new devices…', () => editNetwatch(), 'primary'),
+      n.enabled ? btn('Scan now', async () => {
+        toast('Scanning…');
+        try { const r = await api('POST', '/netwatch/scan', {}); toast(r.baseline ? 'First scan done: HaRM learned what’s there.' : r.new.length ? `${r.new.length} new device${r.new.length === 1 ? '' : 's'} found` : 'Nothing new'); }
+        catch (e) { toast(e.message, 'bad'); }
+        viewSettings();
+      }) : null)));
+}
+
+/* Settings > Data & backups: a copy of each day's backup on another disk (a NAS share or USB drive). */
+function backupCopyCard() {
+  const c = S.backupCopy || {};
+  const last = c.last;
+  return card('Copy to a second place', h('div', null,
+    h('p', null, 'Each day’s backup is also copied to another disk, so one dead drive can’t take everything with it.'),
+    c.dir ? h('p', null, h('span', { class: 'badge ok' }, 'On'), ' To ', h('span', { class: 'mono' }, c.dir), `, keeping the last ${c.keep}.`)
+      : h('p', null, h('span', { class: 'badge muted' }, 'Off')),
+    last ? h('p', { class: 'small' }, last.ok ? h('span', { class: 'ok-text' }, `✓ Copied ${last.file} ${timeAgo(last.at)}`) : h('span', { class: 'bad-text' }, `✗ ${timeAgo(last.at)}: ${last.error}`)) : null,
+    h('div', { class: 'inline' }, btn('Choose a folder…', () => formDialog({
+      title: 'Copy backups to a second place', rec: { dir: c.dir || '', keep: String(c.keep || 14) },
+      fields: [
+        { k: 'dir', label: 'Folder on the HaRM computer', wide: true, raw: true, ph: S.caps?.platform === 'windows' ? 'D:\\HaRM backups' : '/mnt/nas/harm-backups',
+          help: 'A NAS share or USB drive connected to the computer HaRM runs on. Leave it empty to stop copying. In Docker, mount the folder into the container first.' },
+        { k: 'keep', label: 'Keep', type: 'select', required: true, options: [7, 14, 30, 90].map(n => ({ value: String(n), label: `The last ${n} copies` })) },
+      ],
+      submit: v => api('POST', '/backup-copy', { dir: v.dir || '', keep: +v.keep }),
+      onDone: async r => { toast(r.dir ? 'Saved. Copying now…' : 'Copying is off'); if (r.dir) await api('POST', '/backup-copy/run', {}).catch(() => {}); viewSettings(); },
+    }), 'primary'),
+    c.dir ? btn('Copy now', async () => {
+      try { const r = await api('POST', '/backup-copy/run', {}); toast(r.ok ? `Copied ${r.file}` : r.error, r.ok ? 'ok' : 'bad'); } catch (e) { toast(e.message, 'bad'); }
+      viewSettings();
+    }) : null),
+    h('p', { class: 'muted small' }, 'Logins stay encrypted in the copies, like in every backup.')));
+}
+
 /* Settings > Status and actions > Alerts: a message when a device or service stops answering. */
 function alertsCard() {
   const a = S.alerts || {};
@@ -2828,6 +2920,7 @@ function alertsCard() {
     a.enabled && ways.length
       ? h('p', null, h('span', { class: 'badge ok' }, 'On'), ` By ${ways.join(' and ')}, ${wait} when a device${a.services ? ' or service' : ''} stops answering${a.recovery ? ', and when it’s back' : ''}.`)
       : h('p', null, h('span', { class: 'badge muted' }, 'Off'), ' Get a message on your phone (ntfy), by email or by webhook when a device or service stops answering.'),
+    a.enabled && a.quiet_on ? h('p', { class: 'muted small' }, `Quiet from ${a.quiet_from} to ${a.quiet_to}: alerts are held and sent together after.`) : null,
     h('div', { class: 'inline' }, btn('🔔 Set up alerts…', () => editAlerts(), 'primary'), ways.length ? btn('Send a test', testAlerts) : null),
     recent.length ? h('ul', { class: 'plain alert-log' }, recent.map(r => h('li', { class: 'small' },
       h('span', { class: r.ok ? 'ok-text' : 'bad-text' }, r.ok ? '✓ ' : '✗ '), h('b', null, r.channel), ` · ${r.title} · `,
@@ -2848,6 +2941,11 @@ function editAlerts(after) {
         help: 'Waiting skips short blips, like a restart.' },
       { k: 'recovery', wide: true, label: 'Also tell me when it’s back', type: 'checkbox' },
       { k: 'services', wide: true, label: 'Also when a service stops answering', type: 'checkbox', help: 'A web page or port on a device’s Network tab, while the device itself answers.' },
+      { k: 'certs', wide: true, label: 'Also when a certificate runs out soon', type: 'checkbox', help: 'Two weeks before an https service’s certificate runs out, once.' },
+      { section: 'Quiet hours' },
+      { k: 'quiet_on', wide: true, label: 'Hold alerts during quiet hours', type: 'checkbox', help: 'What happens overnight arrives as one message when quiet hours end.' },
+      { k: 'quiet_from', label: 'From', type: 'time', showIf: v => v.quiet_on },
+      { k: 'quiet_to', label: 'Until', type: 'time', showIf: v => v.quiet_on },
       { section: 'ntfy (notifications on your phone)' },
       { k: 'ntfy_on', wide: true, label: 'Send by ntfy', type: 'checkbox', help: 'Install the ntfy app and subscribe to a topic name only you know. ntfy.sh is free; you can also run your own server.' },
       { k: 'ntfy_url', label: 'Server and topic', wide: true, inputmode: 'url', ph: 'https://ntfy.sh/a-long-name-only-you-know', showIf: v => v.ntfy_on },
@@ -3598,7 +3696,11 @@ const HELP = [
     P(B('Wake-on-LAN: '), 'a device with a MAC address gets a ', B('Wake'), ' button while it’s offline. Wake-on-LAN has to be turned on in its BIOS or network card. HaRM in Docker can only wake devices with ', h('code', null, 'network_mode: host'), '.'),
     P(B('On a wall screen: '), '⋯ > ', B('Full screen'), ' hides the sidebar and keeps the page up to date by itself.'),
     P(B('Alerts: '), 'in ', link('#/settings', 'Settings > Status and actions > Alerts'), ', get a message by ntfy (a phone app), email or a webhook when a device or service stops answering, and when it’s back. A short wait skips blips like restarts. Many changes at once (a power cut) arrive as one message.'),
-    P(B('In the rack: '), 'each device in the rack drawing says ', B('Online'), ' or ', B('Offline'), ', and one that isn’t answering is outlined in red.'),
+    P(B('In the rack: '), 'a device that isn’t answering is outlined in red and says ', B('Offline'), '.'),
+    P(B('Uptime report: '), link('#/uptime', '📊 Uptime'), ' shows how much of the last day, week or month each device and service answered, worst first, with outages. Docker containers count as the services (ports) they publish.'),
+    P(B('New devices: '), '⋯ > ', B('Watch for new devices'), ' scans the networks you tick (leave the guest Wi-Fi out) and lists anything HaRM doesn’t know at the top of this page, to add or ignore.'),
+    P(B('Certificates: '), 'for https services, HaRM notes when the certificate runs out, and warns on Home 30 days before (and alerts 14 days before).'),
+    P(B('Power: '), 'give a UPS or PDU what it ', B('Can supply'), ', set ', B('Plugged into'), ' on each device, and a rack its ', B('Power available'), '. The rack and UPS pages show how close they are, and Home warns at 80%.'),
   ]],
   ['actions', 'Actions: one-click commands', () => [
     P('An action is a command you save once and send to a device over SSH with one click: quieting a server’s fans, updating, restarting, powering on through the iLO.'),
@@ -5681,6 +5783,14 @@ function servicePill(sv) {
   const [word, cls] = SERVICE_STATE[sv.state] || SERVICE_STATE.unknown;
   return h('span', { class: `badge ${cls}`, title: nz(sv.detail, sv.checked_at ? `checked ${timeAgo(sv.checked_at)}` : '') }, word);
 }
+/* "runs out Nov 12" (amber within 30 days, red once it has). */
+function certText(date) {
+  if (!date) return '';
+  const d = new Date(date + 'T00:00:00Z');
+  const days = Math.round((d - Date.now()) / 864e5);
+  const when = d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getUTCFullYear() !== new Date().getFullYear() ? 'numeric' : undefined, timeZone: 'UTC' });
+  return h('span', { class: days < 0 ? 'bad-text' : days <= 30 ? 'warn-text' : 'muted' }, days < 0 ? `ran out ${when}` : `runs out ${when}`);
+}
 const fmtMs = ms => ms == null ? '' : ms < 1 ? 'under 1 ms' : `${Math.round(ms)} ms`;
 const utcDate = ts => new Date(String(ts).replace(' ', 'T') + 'Z');
 const clock = ts => utcDate(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -5767,7 +5877,8 @@ function statusTile(d, after) {
     h('div', { class: 'muted small' }, nz(d.device_type, where ? `· ${where}` : '')),
     d.others.length ? h('div', { class: 'st-others' }, d.others.map(o => h('span', { class: 'st-other small', title: onlineTitle(o) },
       o.label || o.address, ' ', h('span', { class: `badge ${(ONLINE[o.state] || ONLINE.unknown)[1]}` }, (ONLINE[o.state] || ONLINE.unknown)[0])))) : null,
-    d.services?.length ? h('div', { class: 'st-others' }, d.services.map(sv => h('span', { class: 'st-other small' }, sv.name, ' ', servicePill(sv)))) : null,
+    d.services?.length ? h('div', { class: 'st-others' }, d.services.map(sv => h('span', { class: 'st-other small' }, sv.name, ' ', servicePill(sv),
+      sv.cert_expires && (new Date(sv.cert_expires) - Date.now()) < 30 * 864e5 ? [' ', h('span', { class: 'badge warn', title: 'Its certificate' }, 'Certificate ', certText(sv.cert_expires))] : null))) : null,
     historyStrip(d),
     acts.length ? h('div', { class: 'st-actions' }, acts) : null);
 }
@@ -5775,7 +5886,7 @@ const svcDown = d => (d.services || []).filter(sv => sv.state === 'down').length
 
 async function viewStatus() {
   clearInterval(S.statusTimer);
-  const d = await GET('/status');
+  const [d, nw] = await Promise.all([GET('/status'), GET('/netwatch').catch(() => ({ pending: [] }))]);
   const filter = prefGet('harm-status-filter') || 'all';
   const counts = { up: 0, down: 0, other: 0 };
   for (const x of d.devices) counts[x.state === 'up' ? 'up' : x.state === 'down' ? 'down' : 'other']++;
@@ -5812,17 +5923,20 @@ async function viewStatus() {
   const stat = (n, label, cls) => h('div', { class: `stat ${cls}` }, h('div', { class: 'stat-n' }, n), h('div', { class: 'stat-l' }, label));
   render(
     pageHead('Status', d.last_check ? `Which devices are answering. Last checked ${timeAgo(d.last_check)}.` : 'Which devices are answering right now.',
-      pick, btn('⟳ Check now', checkNow, 'primary'),
+      pick, h('a', { class: 'button', href: '#/uptime' }, '📊 Uptime'), btn('⟳ Check now', checkNow, 'primary'),
       menuButton('⋯', [
         ['⛶ Full screen (for a wall screen)', wall],
         ['⚙ How often to check…', () => { location.hash = '#/settings'; }],
         ['🔔 Alerts…', () => editAlerts(() => viewStatus())],
+        ['📶 Watch for new devices…', () => editNetwatch(() => viewStatus())],
+        ['📊 Uptime report', () => { location.hash = '#/uptime'; }],
         ['⚡ Actions', () => { location.hash = '#/actions'; }],
         ['❓ How this works', () => { location.hash = '#/help?s=status'; }],
       ])),
     d.devices.length ? h('div', { class: 'stats st-stats' },
       stat(counts.up, 'Online', 'st-up'), stat(counts.down, 'Offline', counts.down ? 'st-down' : ''),
       stat(counts.other, 'Not checked', '')) : null,
+    newDevicesCard(nw.pending || [], viewStatus),
     !d.status_interval ? h('div', { class: 'banner' }, 'Automatic checks are off, so this page only changes when you press Check now. ',
       h('a', { class: 'button sm', href: '#/settings' }, 'Settings')) : null,
     !d.devices.length ? h('div', { class: 'empty-state' }, h('div', { class: 'empty-ico' }, '📶'),
@@ -5850,6 +5964,99 @@ async function viewStatus() {
   if (!d.last_check || (Date.now() - utcDate(d.last_check).getTime()) > 60000) setTimeout(tick, 300);
 }
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) document.body.classList.remove('wall'); });
+
+/* Devices the new-device watch found that HaRM doesn't know yet: add each one, or ignore it. */
+function newDevicesCard(list, after) {
+  if (!list.length) return null;
+  const mark = async (x, status) => { try { await api('POST', `/netwatch/${x.id}`, { status }); after(); } catch (e) { toast(e.message, 'bad'); } };
+  const add = x => editEntity('devices', { name: (x.hostname || '').split('.')[0] || `Device at ${x.ip}`, status: 'Active', connected: true }, async r => {
+    try {
+      await api('POST', '/interfaces', { device_id: r.id, ip: x.ip, mac: x.mac || null, is_primary: true });
+      await api('POST', `/netwatch/${x.id}`, { status: 'added' });
+    } catch (e) { toast(e.message, 'bad'); }
+    await loadLookups();
+    location.hash = `#/devices/${r.id}`;
+  });
+  return card(`New on the network · ${list.length}`, h('div', null,
+    h('p', { class: 'muted small' }, 'Addresses HaRM doesn’t know yet, on the networks it watches. Add each one, or ignore it if it’s a visitor.'),
+    table([
+      { label: 'Address', get: x => h('span', { class: 'mono' }, x.ip) },
+      { label: 'Name', get: x => x.hostname || h('span', { class: 'muted' }, 'Unknown') },
+      { label: 'MAC', get: x => x.mac ? h('span', { class: 'mono small' }, x.mac) : '' },
+      { label: 'Network', get: x => x.network || '' },
+      { label: 'First seen', get: x => timeAgo(x.first_seen) },
+      { label: '', nosort: true, get: x => h('div', { class: 'row-actions' }, small('+ Add…', () => add(x), 'primary'), small('Ignore', () => mark(x, 'ignored'))) },
+    ], list)), small('⚙ Watch settings', () => editNetwatch(after)));
+}
+
+/* Settings for the new-device watch: which networks (leave the guest Wi-Fi out), how often, alerts. */
+async function editNetwatch(after) {
+  let nw;
+  try { nw = await GET('/netwatch'); } catch (e) { toast(e.message, 'bad'); return; }
+  const nets = nw.all_networks || [];
+  const suggested = n => !/guest|iot|wan|vpn|transit|dmz|wi-?fi/i.test(`${n.kind} ${n.name}`);
+  const picked = new Set(nw.networks.length || nw.enabled ? nw.networks : nets.filter(n => n.cidr && suggested(n)).map(n => n.id));
+  formDialog({
+    title: 'Watch for new devices', saveLabel: 'Save',
+    rec: { enabled: nw.enabled, interval: String(nw.interval), alert: nw.alert, ...Object.fromEntries(nets.map(n => [`net_${n.id}`, picked.has(n.id)])) },
+    fields: [
+      { k: 'enabled', label: 'Watch for new devices', type: 'checkbox', wide: true,
+        help: 'HaRM scans the networks you tick now and then, and lists any address it doesn’t know. The first scan only learns what’s already there.' },
+      { k: 'interval', label: 'Scan', type: 'select', required: true, options: [
+        { value: '15', label: 'Every 15 minutes' }, { value: '30', label: 'Every 30 minutes' }, { value: '60', label: 'Every hour' },
+        { value: '120', label: 'Every 2 hours' }, { value: '360', label: 'Every 6 hours' }] },
+      { k: 'alert', label: 'Send an alert for each new one', type: 'checkbox', wide: true, help: 'Uses the ways set up in Alerts, and their quiet hours.' },
+      { section: 'Networks to watch' },
+      ...(nets.length ? nets.map(n => ({ k: `net_${n.id}`, type: 'checkbox', wide: true,
+        label: `${n.name}${n.vlan_id ? ` · VLAN ${n.vlan_id}` : ''}${n.cidr ? ` · ${n.cidr}` : ' (no address range)'}`,
+        help: !n.cidr ? 'Add its address range on its page to watch it.' : !suggested(n) ? 'Guest, IoT and Wi-Fi networks are usually left out: visitors come and go.' : null }))
+        : [{ k: '_none', type: 'hidden' }]),
+    ],
+    extra: nets.length ? h('p', { class: 'muted small' }, nw.last_scan ? `Last scan ${timeAgo(nw.last_scan)}.` : '', nw.last_error ? h('span', { class: 'bad-text' }, ` ${nw.last_error}`) : '')
+      : h('p', null, 'Add your networks first, with their address ranges: ', link('#/networks', 'Networks & IPs'), '.'),
+    submit: v => api('POST', '/netwatch', { enabled: v.enabled, alert: v.alert, interval: +v.interval,
+      networks: nets.filter(n => v[`net_${n.id}`]).map(n => n.id) }),
+    onDone: async r => {
+      toast(r.enabled ? 'Watching. The first scan learns what’s there; new devices after that show on the Status page.' : 'Saved');
+      if (r.enabled) api('POST', '/netwatch/scan', {}).catch(() => {});
+      (after || (() => location.hash.startsWith('#/settings') && viewSettings()))();
+    },
+  });
+}
+
+/* The uptime report: how much of the last day, week or month each device and service answered. */
+async function viewUptime(q) {
+  const days = +(q?.get('days') || prefGet('harm-uptime-days') || 7);
+  const r = await GET(`/status/report?days=${days}`);
+  const pick = h('select', { 'aria-label': 'Period', onchange: e => { prefSet('harm-uptime-days', e.target.value); location.hash = `#/uptime?days=${e.target.value}`; } },
+    [[1, 'Last 24 hours'], [7, 'Last 7 days'], [30, 'Last 30 days']].map(([v, l]) => h('option', { value: v, selected: v === days }, l)));
+  const dur = s => s < 60 ? (s ? 'under a minute' : '') : s < 3600 ? `${Math.round(s / 60)} min` : s < 172800 ? `${(s / 3600).toFixed(s < 36000 ? 1 : 0)} h` : `${Math.round(s / 86400)} days`;
+  const pctCell = x => {
+    if (x.uptime == null) return '';
+    const p = x.uptime * 100;
+    const fill = h('div', { class: `bar-fill${p < 99 ? ' over' : p < 99.9 ? ' hot' : ' good'}` });
+    fill.style.width = `${p}%`;
+    return h('div', { class: 'bar-row up-bar' }, h('div', { class: 'bar' }, fill), h('div', { class: 'bar-n' }, `${p >= 99.95 || p === 0 ? Math.round(p) : p.toFixed(p >= 99 ? 2 : 1)}%`));
+  };
+  const kind = x => /container/i.test(x.device_type || '') ? 'Container' : /virtual/i.test(x.device_type || '') ? 'VM' : '';
+  const common = [
+    { label: 'Answered', get: pctCell, sort: x => x.uptime ?? 2 },
+    { label: 'Outages', get: x => x.outages || '', sort: x => x.outages },
+    { label: 'Longest', get: x => dur(x.longest_s), sort: x => x.longest_s },
+    { label: 'Down in total', get: x => dur(x.down_s), sort: x => x.down_s },
+  ];
+  render(
+    pageHead('Uptime report', 'How much of the time each device and service answered, worst first.', pick, h('a', { class: 'button', href: '#/status' }, '📶 Status')),
+    card(`Devices · ${r.devices.length}`, table([
+      { label: 'Device', get: x => h('span', null, link(`#/devices/${x.id}`, x.name), kind(x) ? h('span', { class: 'muted small' }, ` ${kind(x)}${x.host_name ? ` on ${x.host_name}` : ''}`) : null), sort: x => x.name },
+      ...common,
+    ], r.devices, { empty: 'Nothing checked yet in this period. Devices show here once HaRM has checked them.' })),
+    card(`Services · ${r.services.length}`, table([
+      { label: 'Service', get: x => h('span', null, x.name, ' on ', link(`#/devices/${x.device_id}`, x.device_name), kind(x) ? h('span', { class: 'muted small' }, ` (${kind(x)})`) : null), sort: x => x.name },
+      ...common,
+    ], r.services, { empty: 'No services checked yet. Add web addresses or ports on a device’s Network tab, including the ones your Docker containers publish.' })),
+    h('p', { class: 'muted small' }, 'Only time HaRM was checking counts: if the HaRM computer was off, that time is left out. History is kept for 30 days.'));
+}
 
 /* Ready-made actions to start from. The commands are examples: check them for your own gear. */
 const ACTION_TEMPLATES = [

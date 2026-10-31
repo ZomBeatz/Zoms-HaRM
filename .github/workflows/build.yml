@@ -33,6 +33,7 @@ jobs:
         run: |
           python tests/smoke.py
           python tests/full_test.py
+          python tests/unit_test.py
 
   windows:
     needs: test

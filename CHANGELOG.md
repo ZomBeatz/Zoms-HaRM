@@ -8,9 +8,17 @@
 - HaRM checks every 5 minutes, and every minute while the page is open. Change it, or turn it off, in **Settings > Status and actions**. Devices that go offline also show on **Home**.
 - **Services are checked too:** each web page or port on a device's **Network** tab says **Answering** or **Not answering** (a 502 from a proxy counts as not answering), on its tile, on the device's page and on **Home**.
 - **Alerts:** a message by **ntfy** (a phone app), **email** or a **webhook** (Home Assistant, Discord, Slack, Gotify…) when a device or service stops answering, and when it's back. A short wait skips blips like restarts, many changes at once arrive as one message, and **Send a test** checks it works. Set it up in **Settings > Status and actions > Alerts**; turn it off for one device with **Send alerts about it**.
+- **Quiet hours** hold alerts overnight (or whenever you choose) and send them as one message when they end.
+- **Certificates:** HaRM notes when each https service's certificate runs out, warns on **Home** 30 days before, and alerts 14 days before.
+- **Uptime report** (**📊 Uptime** on the Status page): how much of the last day, week or month each device and service answered, worst first, with the number of outages, the longest, and the total time down. VMs, containers and the services your Docker containers publish are in it too.
+- **New devices on the network:** HaRM can scan the networks you pick now and then (leave the guest Wi-Fi out) and list anything it doesn't know at the top of the Status page, with **+ Add…** and **Ignore**, and an alert if you want one. The first scan only learns what's already there.
 - **The rack drawing** outlines a device in red and says **Offline** when it isn't answering.
 - **Wake** sends a Wake-on-LAN packet to an offline device with a MAC address.
 - **⋯ > Full screen** turns the page into a wall display.
+
+**Power budget**
+- Give a UPS or PDU what it **Can supply**, set what each device is **Plugged into**, and give a rack its **Power available** (its circuit's limit).
+- The rack page and the UPS's page show how much is used, counting through PDUs, and **Home** warns at 80% and over 100%.
 
 **One-click actions**
 - Save a command once and send it to a device over SSH with one click: quiet a server's fans, update, restart, power on through the iLO or iDRAC.
@@ -39,6 +47,7 @@
 **Settings**
 - Settings are grouped: Appearance, Locking and security, Phones & tablets, Status and actions, AI Assist, Data & backups, Shortcuts and About.
 - **Settings > About** shows the version and license, links to the code and this list, and has **Send feedback**, which starts an email with your version and device filled in.
+- **Copy to a second place** (**Settings > Data & backups**): each day's backup is also copied to another disk, like a NAS share or USB drive, keeping the last 7 to 90.
 - **Check for new versions** (off unless you turn it on) asks GitHub about twice a day and puts a note on **Home** when a newer HaRM is out.
 
 **On GitHub**

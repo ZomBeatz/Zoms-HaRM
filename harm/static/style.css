@@ -899,3 +899,6 @@ body.wall .st-name { font-size: 16px; }
 .u-dev.net-down-dev { outline: 2px solid var(--bad); outline-offset: -2px; }
 .rack-net-note { margin-top: 6px; max-width: 312px; }
 .u-dev.net-down-dev .u-dev-sub { display: none; }
+.bar-fill.over { background: var(--bad); }
+.power-supply { margin-top: 10px; }
+.bar-fill.good { background: color-mix(in srgb, var(--ok) 75%, transparent); }

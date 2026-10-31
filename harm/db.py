@@ -27,7 +27,7 @@ def data_dir() -> Path:
 
 DB_PATH = Path(os.environ.get("HARM_DB") or data_dir() / "harm.db")
 
-SCHEMA_VERSION = 9  # highest key in MIGRATIONS
+SCHEMA_VERSION = 10  # highest key in MIGRATIONS
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -461,6 +461,34 @@ MIGRATIONS: dict[int, list[str]] = {
             title   TEXT NOT NULL,
             ok      INTEGER NOT NULL,
             error   TEXT
+        )""",
+    ],
+    10: [
+        # Services: their history (for the uptime report) and when their certificate runs out.
+        """CREATE TABLE IF NOT EXISTS service_events (
+            id         INTEGER PRIMARY KEY,
+            service_id INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+            state      TEXT NOT NULL,
+            at         TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_service_events ON service_events(service_id, at)",
+        "ALTER TABLE service_status ADD COLUMN cert_expires TEXT",
+        "ALTER TABLE service_status ADD COLUMN cert_alerted TEXT",
+        # Power: what a UPS or PDU can supply, what each device is plugged into, and a rack's limit.
+        "ALTER TABLE devices ADD COLUMN power_capacity_w INTEGER",
+        "ALTER TABLE devices ADD COLUMN powered_by_id INTEGER REFERENCES devices(id) ON DELETE SET NULL",
+        "ALTER TABLE racks ADD COLUMN power_budget_w INTEGER",
+        # Watching for new devices on chosen networks.
+        """CREATE TABLE IF NOT EXISTS net_seen (
+            id         INTEGER PRIMARY KEY,
+            key        TEXT NOT NULL UNIQUE,
+            ip         TEXT,
+            mac        TEXT,
+            hostname   TEXT,
+            network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+            status     TEXT NOT NULL DEFAULT 'new',
+            first_seen TEXT NOT NULL,
+            last_seen  TEXT NOT NULL
         )""",
     ],
 }

@@ -52,7 +52,7 @@ The full guide, with pictures, is at **[docs.zombeatzmedia.com/harm](https://doc
 | **Virtual machines** | VMs and containers on their hosts, CPU and memory overcommit, clusters, and a one-click Proxmox import. |
 | **Logins** | Encrypted passwords and 2FA codes. **Open** goes straight to the iDRAC, iLO or web page and copies the password. |
 | **Fill it in fast** | Import specs over SSH, Discover from any router, UniFi or a network scan, label scanning with the phone camera, and AI Assist from photos. |
-| **Status and actions** | A live page of what's online and which services answer, grouped by place, with 24-hour history, management ports and Wake-on-LAN. Alerts by ntfy, email or webhook. Saved SSH commands run with one click, even on old iLO and iDRAC ports. |
+| **Status and actions** | A live page of what's online and which services answer, grouped by place, with 24-hour history, management ports and Wake-on-LAN. Alerts by ntfy, email or webhook, with quiet hours. An uptime report, certificate warnings, a power budget, and a watch for new devices on the networks you pick. Saved SSH commands run with one click, even on old iLO and iDRAC ports. |
 | **Notes and tasks** | A journal on every device, rack and room. Home shows what needs attention. |
 | **Share and plan** | Copy as text for a person or an AI, CSV and JSON, spec sheets and sell sheets, QR labels, and a PC builder with compatibility checks. |
 | **Privacy** | Runs on your own computer. No account, no cloud, no tracking. Daily backups. |

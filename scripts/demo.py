@@ -118,6 +118,12 @@ def seed(api: Api) -> None:
     iface(pi, "eth0", "192.168.10.53", "DC:A6:32:44:55:66", is_primary=True)
     iface(ups, "NMC", "10.30.0.5", "00:C0:B7:12:34:56", kind="IPMI / BMC")
 
+    # Power: everything in the rack runs off the UPS (1000 W), on a 15 A circuit (1,440 W).
+    api("PUT", f"/devices/{ups['id']}", {"power_capacity_w": 1000})
+    for d, watts in ((gw, 33), (sw, 45), (r730, None), (dl380, None), (nas, 65)):
+        api("PUT", f"/devices/{d['id']}", {"powered_by_id": ups["id"], **({"power_draw_w": watts} if watts else {})})
+    api("PUT", f"/racks/{rack['id']}", {"power_budget_w": 1440})
+
     P("/services", {"device_id": r730["id"], "name": "Proxmox VE", "protocol": "HTTPS", "port": 8006, "url": "https://10.20.0.10:8006", "status": "Running"})
     P("/services", {"device_id": dl380["id"], "name": "Proxmox VE", "protocol": "HTTPS", "port": 8006, "url": "https://10.20.0.11:8006", "status": "Running"})
     P("/services", {"device_id": nas["id"], "name": "DSM", "protocol": "HTTPS", "port": 5001, "url": "https://10.20.0.20:5001", "status": "Running"})
@@ -186,7 +192,12 @@ def seed(api: Api) -> None:
         return g
     plex = vm("plex", r730, 100, 4, 8, 64, "10.20.0.100", os="Ubuntu 24.04")
     vm("home-assistant", r730, 101, 2, 4, 32, "10.20.0.101", os="Home Assistant OS")
-    vm("docker", dl380, 110, 6, 16, 128, "10.20.0.110", os="Debian 13")
+    docker = vm("docker", dl380, 110, 6, 16, 128, "10.20.0.110", os="Debian 13")
+    # Docker containers on the docker VM, as the services (ports) they publish.
+    for name, port, url in (("Portainer", 9443, "https://10.20.0.110:9443"), ("Nextcloud", 8080, "http://10.20.0.110:8080"),
+                            ("Uptime Kuma", 3001, "http://10.20.0.110:3001")):
+        P("/services", {"device_id": docker["id"], "name": name, "protocol": "HTTPS" if url.startswith("https") else "HTTP",
+                        "port": port, "url": url, "status": "Running", "notes": "Docker container"})
     vm("unifi-controller", dl380, 120, 1, 2, 16, "10.20.0.120", kind="Container", os="Debian 13")
     vm("windows-test", dl380, 130, 4, 8, 80, "10.20.0.130", status="Standby", os="Windows 11")
     P("/services", {"device_id": plex["id"], "name": "Plex", "protocol": "HTTP", "port": 32400, "url": "http://10.20.0.100:32400/web", "status": "Running"})
@@ -247,13 +258,33 @@ def seed_status(db_path: Path) -> None:
                          "VALUES (?,?,?,?,?,?,?)", (did, addr, state, latency.get(addr, 0.9) if state == "up" else None,
                                                     ("port 8006" if addr.startswith("10.20.0.1") else "port 443") if state == "up" else None,
                                                     ts(minutes=1), ts(**ago)))
-    # Services: all answering, except Pi-hole, which stopped 20 minutes ago.
-    for r in conn.execute("SELECT id, device_id, name FROM services").fetchall():
+    # Services: all answering, except Pi-hole, which stopped 20 minutes ago. DSM's certificate runs out
+    # in 9 days, and Plex on pve1 had two short outages this week.
+    soon = (now + timedelta(days=9)).strftime("%Y-%m-%d")
+    later = (now + timedelta(days=300)).strftime("%Y-%m-%d")
+    svc_history = {"Plex": [("up", {"days": 9}), ("down", {"days": 4, "hours": 2}), ("up", {"days": 4, "hours": 1, "minutes": 40}),
+                            ("down", {"days": 1, "hours": 5}), ("up", {"days": 1, "hours": 4, "minutes": 52})],
+                   "Pi-hole": [("up", {"days": 9}), ("down", {"minutes": 20})],
+                   "Nextcloud": [("up", {"days": 9}), ("down", {"days": 2, "hours": 9}), ("up", {"days": 2, "hours": 7, "minutes": 15})]}
+    for r in conn.execute("SELECT id, device_id, name, url FROM services").fetchall():
         bad = r["name"] == "Pi-hole"
-        conn.execute("INSERT OR REPLACE INTO service_status (service_id, device_id, state, code, latency_ms, detail, checked_at, changed_at) "
-                     "VALUES (?,?,?,?,?,?,?,?)", (r["id"], r["device_id"], "down" if bad else "up", None if bad else 200,
-                                                  None if bad else 12.0, "connection refused" if bad else "HTTP 200",
-                                                  ts(minutes=1), ts(minutes=20) if bad else ts(days=3)))
+        https = (r["url"] or "").startswith("https://")
+        conn.execute("INSERT OR REPLACE INTO service_status (service_id, device_id, state, code, latency_ms, detail, checked_at, changed_at, "
+                     "cert_expires) VALUES (?,?,?,?,?,?,?,?,?)", (r["id"], r["device_id"], "down" if bad else "up", None if bad else 200,
+                                                                  None if bad else 12.0, "connection refused" if bad else "HTTP 200",
+                                                                  ts(minutes=1), ts(minutes=20) if bad else ts(days=3),
+                                                                  (soon if r["name"] == "DSM" else later) if https else None))
+        for state, ago in svc_history.get(r["name"], [("up", {"days": 9})]):
+            conn.execute("INSERT INTO service_events (service_id, state, at) VALUES (?,?,?)", (r["id"], state, ts(**ago)))
+    # The new-device watch, on the home LAN only (not the guest Wi-Fi), found two things it doesn't know.
+    lan = conn.execute("SELECT id FROM networks WHERE name = 'Home LAN'").fetchone()["id"]
+    db_meta = lambda k, v: conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (k, v))
+    db_meta("netwatch", json.dumps({"enabled": True, "networks": [lan], "interval": 30, "alert": True,
+                                    "baseline_at": ts(days=5), "last_scan": ts(minutes=8), "last_error": None}))
+    for ip, mac, name, ago in (("192.168.10.123", "AA:BB:CC:10:00:23", "Sams-iPhone", {"hours": 3}),
+                               ("192.168.10.131", "AA:BB:CC:10:00:31", None, {"minutes": 38})):
+        conn.execute("INSERT INTO net_seen (key, ip, mac, hostname, network_id, status, first_seen, last_seen) VALUES (?,?,?,?,?,?,?,?)",
+                     (mac, ip, mac, name, lan, "new", ts(**ago), ts(minutes=8)))
     conn.commit()
     conn.close()
 

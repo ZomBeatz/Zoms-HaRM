@@ -3,7 +3,7 @@ import { api, loadLookups } from '../api/client';
 import { LOOKUPS, type EntityName } from '../api/types';
 import { S, rerender } from './state';
 import { locDescendants, rackById, rackHasUnits, rackInLocation } from './lookups';
-import { isVirtual, slotKindOf, type Row } from './util';
+import { FMT, isVirtual, slotKindOf, type Row } from './util';
 import { confirmBox, toast } from '../ui/overlay';
 import { MenuButton, Small } from '../ui/bits';
 import { formDialog, type Field, type FormCtl } from '../ui/form';
@@ -72,7 +72,10 @@ export const FORMS: Record<string, (rec: Row) => Field[]> = {
     { k: 'height_u', label: 'Height (U)', type: 'number', min: 1, help: 'Only for racks/cabinets. Leave blank for shelves, bins and piles.' },
     { k: 'numbering_desc', label: 'Number U1 from the top', type: 'checkbox', showIf: v => !!v.height_u },
     { k: 'width', label: 'Width', ph: '19"' },
-    { k: 'depth_mm', label: 'Depth (mm)', type: 'number', min: 0 },
+    FMT.length === 'in'  // stored in mm; shown in inches when chosen in Settings > Appearance
+      ? { k: 'depth_mm', label: 'Depth (in)', type: 'number', min: 0, step: '0.1',
+        convert: [v => String(+(Number(v) / 25.4).toFixed(1)), t => Math.round(Number(t) * 25.4)] }
+      : { k: 'depth_mm', label: 'Depth (mm)', type: 'number', min: 0 },
     { k: 'power_budget_w', label: 'Power available (W)', type: 'number', min: 0,
       help: 'The circuit’s limit for the whole rack. A 15 A, 120 V circuit is 1,440 W at the safe 80%; a 16 A, 230 V one is about 2,900 W.' },
     { k: 'manufacturer', label: 'Manufacturer' },

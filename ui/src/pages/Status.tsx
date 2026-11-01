@@ -2,6 +2,7 @@
 import { useEffect } from 'react';
 import { api, GET, loadLookups } from '../api/client';
 import { S } from '../lib/state';
+import { alertChime, look } from '../lib/look';
 import { locPath } from '../lib/lookups';
 import { clock, fmtMs, forHowLong, nz, prefGet, prefSet, timeAgo, utcDate, type Row } from '../lib/util';
 import { anyModalOpen, toast } from '../ui/overlay';
@@ -99,15 +100,18 @@ export default function Status() {
     const [d, nw] = await Promise.all([GET('/status'), GET('/netwatch').catch(() => ({ pending: [] }))]);
     // Tell about changes since the last look (while the page stays open).
     if (S.statusPrev) {
+      let wentDown = false;
       for (const x of d.devices) {
         const was = S.statusPrev.get(x.id);
+        if (was === 'up' && x.state === 'down') wentDown = true;
         if (was === 'up' && x.state === 'down') toast(`${x.name} is offline`, 'bad', { label: 'Open', onClick: () => { location.hash = `#/devices/${x.id}`; } });
         if (was === 'down' && x.state === 'up') toast(`${x.name} is back online`);
         for (const sv of x.services || []) {
           const before = S.statusPrevSvc?.get(sv.id);
-          if (before === 'up' && sv.state === 'down') toast(`${sv.name} on ${x.name} isn’t answering`, 'bad');
+          if (before === 'up' && sv.state === 'down') { wentDown = true; toast(`${sv.name} on ${x.name} isn’t answering`, 'bad'); }
         }
       }
+      if (wentDown && look().sound) alertChime();
     }
     S.statusPrev = new Map(d.devices.map((x: Row) => [x.id, x.state]));
     S.statusPrevSvc = new Map(d.devices.flatMap((x: Row) => (x.services || []).map((sv: Row) => [sv.id, sv.state])));

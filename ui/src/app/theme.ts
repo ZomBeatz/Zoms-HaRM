@@ -1,5 +1,6 @@
 /* Themes and light/dark, remembered per device (phone and computer can differ). */
 import { asset, deviceWord, prefGet } from '../lib/util';
+import { calm } from '../lib/look';
 
 export const THEMES: Record<string, { name: string; blurb: string; icon: string; anim?: string; hidden?: boolean; swatches: Record<string, string[]> }> = {
   zombeatz: { name: 'ZomBeatz', blurb: 'Brand blue with orange highlights. The default.', icon: 'icon.svg',
@@ -13,7 +14,6 @@ export const MODES: [string, string][] = [['auto', `Match my ${deviceWord()}`], 
 /* data-product is "harm" for ZomBeatz, "harm-<name>" for the others. */
 export const themeName = () => { const t = (document.documentElement.dataset.product || '').replace(/^harm-?/, ''); return THEMES[t] ? t : 'zombeatz'; };
 /* The sidebar logo may be animated (Coolant); tab icons and theme previews stay still. */
-const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 export const themeIcon = () => { const t = THEMES[themeName()]; return asset(t.anim && !calm() ? t.anim : t.icon); };
 export function themePrefs() {
   try { return { theme: localStorage.getItem('harm-theme') || 'zombeatz', mode: localStorage.getItem('harm-mode') || 'auto' }; }

@@ -4,7 +4,27 @@ export type Row = Record<string, any>;
 
 export const nz = (...xs: unknown[]) => xs.filter(x => x != null && x !== '').join(' ');
 export const plural = (n: number, one: string, many = one + 's') => `${n} ${n === 1 ? one : many}`;
-export const money = (v: unknown) => v == null || v === '' ? '' : Number(v).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+/* How numbers and dates read: currency is set for every device (Settings), the rest per device (lib/look.ts). */
+export const FMT = { currency: 'USD', dates: 'iso' as 'iso' | 'local' | 'dmy' | 'mdy', clock: 'auto' as 'auto' | '12' | '24', length: 'mm' as 'mm' | 'in' };
+export function money(v: unknown) {
+  if (v == null || v === '') return '';
+  try { return Number(v).toLocaleString(undefined, { style: 'currency', currency: FMT.currency }); }
+  catch { return `${FMT.currency} ${Number(v).toFixed(2)}`; }
+}
+/* A calendar date ("2026-11-20", or the start of a timestamp) in the chosen style. */
+export function fmtDay(v: unknown) {
+  const m = /^(\d{4})-(\d\d)-(\d\d)/.exec(String(v ?? ''));
+  if (!m) return v == null ? '' : String(v);
+  const [, y, mo, d] = m;
+  if (FMT.dates === 'dmy') return `${d}/${mo}/${y}`;
+  if (FMT.dates === 'mdy') return `${mo}/${d}/${y}`;
+  if (FMT.dates === 'local') return new Date(+y, +mo - 1, +d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  return `${y}-${mo}-${d}`;
+}
+const pad = (n: number) => String(n).padStart(2, '0');
+export const fmtLocalDay = (d = new Date()) => fmtDay(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+/* Millimetres in the chosen unit: "740 mm" or "29.1 in". */
+export const fmtLen = (mm: unknown) => mm == null || mm === '' ? '' : FMT.length === 'in' ? `${+(Number(mm) / 25.4).toFixed(1)} in` : `${mm} mm`;
 export const today = () => new Date().toISOString().slice(0, 10);
 
 export function prefGet(k: string): string | null { try { return localStorage.getItem(k); } catch { return null; } }
@@ -22,7 +42,7 @@ export const STORAGE_CATS = /^(HDD|SSD|NVMe SSD|USB \/ Flash)$/;
 export const fmtMs = (ms: number | null | undefined) => ms == null ? '' : ms < 1 ? 'under 1 ms' : `${Math.round(ms)} ms`;
 /* The server's timestamps are UTC without a zone ("2026-10-31 14:30:00"). */
 export const utcDate = (ts: string) => new Date(String(ts).replace(' ', 'T') + 'Z');
-export const clock = (ts: string) => utcDate(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+export const clock = (ts: string) => utcDate(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: FMT.clock === 'auto' ? undefined : FMT.clock === '12' });
 
 export function timeAgo(ts: string | null | undefined, now = Date.now()) {
   if (!ts) return '';
@@ -32,7 +52,7 @@ export function timeAgo(ts: string | null | undefined, now = Date.now()) {
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   if (s < 86400 * 7) return `${Math.floor(s / 86400)}d ago`;
-  return d.toLocaleDateString();
+  return fmtLocalDay(d);
 }
 
 /* "for 5 min", "for 2 h", "for 3 days" since a UTC timestamp. */

@@ -47,6 +47,8 @@ export interface Field {
   /* Never kept in drafts. */
   secret?: boolean;
   noGenerate?: boolean;
+  /* Shown in one unit, stored in another (e.g. inches in the form, millimetres saved). */
+  convert?: [(stored: unknown) => string, (typed: string) => unknown];
 }
 
 const optList = (list: Field['options']) => (list || []).map(o => typeof o === 'string' ? { value: o, label: o } : { value: String(o.value), label: o.label });
@@ -54,6 +56,7 @@ const optList = (list: Field['options']) => (list || []).map(o => typeof o === '
 export class FormCtl {
   fields: Field[];
   vals: Vals = {};
+  private stored: Vals = {};  // values of converted fields as saved, so an untouched one saves unchanged
   showAdv = false;
   flagged: string | null = null;
   private listeners = new Set<() => void>();
@@ -63,7 +66,8 @@ export class FormCtl {
     this.fields = fields.filter(Boolean) as Field[];
     for (const f of this.inputs()) {
       const v = rec[f.k!] ?? f.default;
-      this.vals[f.k!] = f.type === 'checkbox' ? !!v : v == null ? '' : String(v);
+      if (f.convert) this.stored[f.k!] = v;
+      this.vals[f.k!] = f.type === 'checkbox' ? !!v : v == null ? '' : f.convert ? f.convert[0](v) : String(v);
     }
     // A choice that isn't on the list starts empty (or on the first choice, when one is needed).
     for (const f of this.inputs()) {
@@ -126,7 +130,7 @@ export class FormCtl {
       const k = f.k!;
       if (!(k in values)) continue;
       const v = values[k];
-      this.vals[k] = f.type === 'checkbox' ? !!v : v == null ? '' : String(v);
+      this.vals[k] = f.type === 'checkbox' ? !!v : v == null ? '' : f.convert ? f.convert[0](v) : String(v);
       this.changed(k);
     }
     this.notify();
@@ -141,7 +145,9 @@ export class FormCtl {
       const v = this.vals[k];
       if (f.type === 'checkbox') out[k] = !!v;
       else if (f.type === 'password' || f.raw) out[k] = v;
-      else out[k] = String(v).trim() === '' ? null : v;
+      else if (String(v).trim() === '') out[k] = null;
+      else if (f.convert) out[k] = this.stored[k] != null && v === f.convert[0](this.stored[k]) ? this.stored[k] : f.convert[1](String(v));
+      else out[k] = v;
     }
     return out;
   }

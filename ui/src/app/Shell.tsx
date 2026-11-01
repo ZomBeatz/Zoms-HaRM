@@ -239,7 +239,7 @@ export function Shell() {
   trackHistory();
   const top = ({ clusters: 'virtual', uptime: 'status' } as Record<string, string>)[path.split('/')[1]] || path.split('/')[1] || 'dashboard';
   useEffect(() => { document.body.classList.toggle('nav-folded', prefGet('harm-nav-folded') === '1'); }, []);
-  useEffect(() => { closeNav(); }, [hash]);
+  useEffect(() => { closeNav(); prefSet('harm-last-page', hash); }, [hash]);
   useEffect(() => { const t = setTimeout(prefetchPages, 3000); return () => clearTimeout(t); }, []);
   const { slot, before } = usePageHandover(hash);
   handover.current = before;

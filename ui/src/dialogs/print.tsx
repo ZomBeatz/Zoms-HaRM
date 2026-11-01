@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import { GET } from '../api/client';
-import { nz, prefGet, prefSet, type Row } from '../lib/util';
+import { fmtDay, fmtLocalDay, nz, prefGet, prefSet, type Row } from '../lib/util';
 import { modal, toast } from '../ui/overlay';
 import { Btn } from '../ui/bits';
 import type { Sections } from '../lib/export';
@@ -51,7 +51,7 @@ export function printSheet(bundle: Row[], sec: Sections, o: { mode?: string; tit
     <div className={'ps' + (sell ? ' sell' : '')}>
       <header className="ps-head">
         <div><h1>{o.title || (sell ? 'Hardware for sale' : 'Hardware spec sheet')}</h1>{o.subtitle ? <p>{o.subtitle}</p> : null}</div>
-        <div className="ps-meta">{new Date().toLocaleDateString()}<br />{`${bundle.length} item${bundle.length === 1 ? '' : 's'}`}</div>
+        <div className="ps-meta">{fmtLocalDay()}<br />{`${bundle.length} item${bundle.length === 1 ? '' : 's'}`}</div>
       </header>
       {bundle.map(d => {
         const v = d.device;
@@ -75,7 +75,7 @@ export function printSheet(bundle: Row[], sec: Sections, o: { mode?: string; tit
               {sec.hardware && !sell ? <Item k="OS" v={v.os} /> : null}
               {sec.network && sell ? <Item k="Networking" v={nics} /> : null}
               {sec.hardware && !sell ? <Item k="Hostname" v={v.hostname} /> : null}
-              {sec.purchase && !sell ? <Item k="Warranty until" v={v.warranty_until} /> : null}
+              {sec.purchase && !sell ? <Item k="Warranty until" v={fmtDay(v.warranty_until)} /> : null}
               {sell && o.condition ? <Item k="Condition" v={o.condition} /> : null}
             </div>
             {sec.parts && d.components.length ? <div className="ps-list"><h3>Installed parts</h3>

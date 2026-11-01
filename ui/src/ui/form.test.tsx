@@ -62,4 +62,12 @@ describe('forms', () => {
     expect(f.flagged).toBe('rack_u');
     expect(f.flag('Something else went wrong')).toBe(false);
   });
+  it('shows inches but saves millimetres, and an untouched value saves exactly as it was', () => {
+    const inches: [(v: unknown) => string, (t: string) => unknown] = [v => String(+(Number(v) / 25.4).toFixed(1)), t => Math.round(Number(t) * 25.4)];
+    const f = new FormCtl([{ k: 'depth_mm', type: 'number', convert: inches }], { depth_mm: 1070 });
+    expect(f.vals.depth_mm).toBe('42.1');
+    expect(f.values().depth_mm).toBe(1070);
+    f.input('depth_mm', '29');
+    expect(f.values().depth_mm).toBe(737);
+  });
 });

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, GET } from '../api/client';
 import { S, rerender } from '../lib/state';
 import { rackInLocation } from '../lib/lookups';
-import { type Row } from '../lib/util';
+import { FMT, type Row } from '../lib/util';
 import { confirmBox, modal, toast, type ModalCtl } from '../ui/overlay';
 import { Btn, KV, Mono, Small, Spinner } from '../ui/bits';
 import { FormCtl, FormGrid, formDialog, type Field, type Vals } from '../ui/form';
@@ -186,7 +186,10 @@ export async function partDetail(id: number) {
   await pcMeta();
   const p = await GET(`/catalog/${id}`);
   const fields: Row[] = S.pc!.spec_fields[p.category] || [];
-  const rows: [string, string][] = fields.map(f => [f.label, fmtSpec(f.type, p.specs[f.k])]);
+  // Part sizes follow the length unit chosen in Settings; fan and radiator sizes are always given in mm.
+  const inches = (f: Row) => FMT.length === 'in' && /_mm$/.test(f.k) && !/^(size|radiator)_mm$/.test(f.k);
+  const rows: [string, string][] = fields.map(f => inches(f) && p.specs[f.k] != null
+    ? [f.label.replace('(mm)', '(in)'), String(+(p.specs[f.k] / 25.4).toFixed(1))] : [f.label, fmtSpec(f.type, p.specs[f.k])]);
   let m: ModalCtl;
   const toBuild = async () => {
     const builds: Row[] = await GET('/builds');

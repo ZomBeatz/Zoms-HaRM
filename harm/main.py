@@ -33,8 +33,13 @@ STATIC = Path(__file__).resolve().parent / "static"
 # Changes whenever the frontend files change, so open tabs can offer a reload after an update.
 APP_VERSION = format(int(max((p.stat().st_mtime for p in STATIC.glob("*.*")), default=0)), "x")
 COOKIE = "harm_session"
-IDLE_SECONDS = int(os.environ.get("HARM_IDLE_MINUTES", "30")) * 60
-MAX_SESSION_SECONDS = int(os.environ.get("HARM_MAX_SESSION_HOURS", "12")) * 3600
+# Lock timing (Settings > Locking and security). Kept in memory, since every request checks it.
+_limits = {"idle": monitor.IDLE_MINUTES_DEFAULT * 60, "max": monitor.SESSION_HOURS_DEFAULT * 3600}
+
+
+def _load_limits(conn) -> None:
+    st = monitor.settings(conn)
+    _limits.update(idle=st["idle_minutes"] * 60, max=st["session_hours"] * 3600)
 MIN_PASSWORD = 10
 APP_NAME = "Zom's HaRM"
 # The demos (scripts/demo.py and the online one) use made-up addresses that could belong to real
@@ -44,11 +49,10 @@ DEMO_NO_NETWORK = "The demo doesn't reach other devices. This works in HaRM on y
 
 
 BACKUP_DIR = db.DB_PATH.parent / "backups"
-BACKUP_KEEP = int(os.environ.get("HARM_BACKUP_KEEP", "14"))
 
 
 def auto_backup() -> str | None:
-    """Daily snapshot into data/backups (secrets stay encrypted); keeps the newest BACKUP_KEEP."""
+    """Daily snapshot into data/backups (secrets stay encrypted); keeps as many as Settings says."""
     BACKUP_DIR.mkdir(mode=0o700, exist_ok=True)
     target = BACKUP_DIR / f"harm-{datetime.now():%Y%m%d}.db"
     if target.exists():
@@ -56,10 +60,11 @@ def auto_backup() -> str | None:
     conn = db.connect()
     try:
         conn.execute("VACUUM INTO ?", (str(target),))
+        keep = monitor.settings(conn)["backup_keep"]
     finally:
         conn.close()
     os.chmod(target, 0o600)
-    for old in sorted(BACKUP_DIR.glob("harm-*.db"))[:-BACKUP_KEEP]:
+    for old in sorted(BACKUP_DIR.glob("harm-*.db"))[:-keep]:
         old.unlink(missing_ok=True)
     return target.name
 
@@ -126,6 +131,11 @@ def _housekeeping(stop: threading.Event, backups: bool) -> None:
 @asynccontextmanager
 async def lifespan(_app):
     db.init()
+    conn = db.connect()
+    try:
+        _load_limits(conn)
+    finally:
+        conn.close()
     stop = threading.Event()
     threading.Thread(target=_housekeeping, args=(stop, os.environ.get("HARM_AUTO_BACKUP", "1") != "0"),
                      daemon=True).start()
@@ -182,7 +192,7 @@ _sessions_lock = threading.Lock()
 
 
 def _expired(s: dict, now: float) -> bool:
-    return now - s["seen"] > IDLE_SECONDS or now - s["created"] > MAX_SESSION_SECONDS
+    return bool(_limits["idle"] and now - s["seen"] > _limits["idle"]) or now - s["created"] > _limits["max"]
 
 
 def purge_sessions() -> None:
@@ -236,7 +246,7 @@ def _set_cookie(request: Request, response: Response, token: str) -> None:
     secure_env = os.environ.get("HARM_SECURE_COOKIE", "auto").lower()
     secure = request.url.scheme == "https" if secure_env == "auto" else secure_env in ("1", "true", "yes")
     response.set_cookie(COOKIE, token, httponly=True, samesite="strict", secure=secure,
-                        max_age=MAX_SESSION_SECONDS, path="/")
+                        max_age=_limits["max"], path="/")
 
 
 def client_ip(request: Request) -> str:
@@ -666,7 +676,7 @@ def auth_status(request: Request, conn=Depends(get_db)):
         "setup": _is_setup(conn),
         "authenticated": _lookup_session(request) is not None,
         "totp_enabled": db.get_meta(conn, "totp") is not None,
-        "idle_minutes": IDLE_SECONDS // 60,
+        "idle_minutes": _limits["idle"] // 60,
         "version": APP_VERSION,
         "release": __version__,
     }
@@ -2072,7 +2082,8 @@ def capabilities(request: Request, _s=Depends(require_session), conn=Depends(get
     return {**_tools(), "ca_cert": (db.DB_PATH.parent / "tls" / "harm-ca.crt").is_file(), "collect_sha256": sha,
             "phone_urls": _phone_urls(request),
             "backups": [{"name": b.name, "size": b.stat().st_size} for b in backups], "backup_dir": str(BACKUP_DIR),
-            "platform": "windows" if os.name == "nt" else "unix", "ai": monitor.settings(conn)["ai_enabled"]}
+            "platform": "windows" if os.name == "nt" else "unix",
+            **{k: v for k, v in monitor.settings(conn).items() if k in ("currency", "start_page")}, "ai": monitor.settings(conn)["ai_enabled"]}
 
 
 def _run_scan(path: str) -> dict:
@@ -3099,6 +3110,7 @@ async def app_settings_set(request: Request, _s=Depends(require_session), conn=D
         out = monitor.save_settings(conn, body)
     except (TypeError, ValueError) as e:
         raise HTTPException(400, str(e))
+    _load_limits(conn)
     audit(conn, request, "settings", None, None, ", ".join(f"{k} = {v}" for k, v in body.items()))
     conn.commit()
     return out

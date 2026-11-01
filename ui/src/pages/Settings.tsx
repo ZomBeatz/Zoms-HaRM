@@ -1,8 +1,9 @@
 /* Settings: how HaRM looks, locks, connects and keeps your data. */
 import { useEffect, useState } from 'react';
 import { api, GET } from '../api/client';
-import { S, useApp } from '../lib/state';
-import { deviceWord, hasKeyboard, timeAgo, type Row } from '../lib/util';
+import { S, rerender, useApp } from '../lib/state';
+import { FMT, deviceWord, hasKeyboard, money, timeAgo, type Row } from '../lib/util';
+import { alertChime, look, setLook, type Look } from '../lib/look';
 import { copy, toast } from '../ui/overlay';
 import { A, Badge, Btn, Card, KV, PageHead, Small, type Kid } from '../ui/bits';
 import { formDialog } from '../ui/form';
@@ -33,6 +34,79 @@ function AppearanceCard() {
       <p className="muted small">{`Saved on this ${deviceWord()} only, so your phone and computer can each have their own. Match my ${deviceWord()} follows its light or dark setting.`}</p>
     </div></Card>
   );
+}
+
+/* A row of choices shown as chips (like Light / Dark). */
+function Choice<T extends string>({ label, value, options, onPick, help }: { label: string; value: T; options: [T, string][]; onPick: (v: T) => void; help?: Kid }) {
+  return <div className="setting-row"><span className="setting-label">{label}</span>
+    <div className="chips">{options.map(([k, l]) => <button key={k} type="button" className={'chip' + (value === k ? ' on' : '')} onClick={() => onPick(k)}>{l}</button>)}</div>
+    {help ? <small className="muted">{help}</small> : null}</div>;
+}
+
+/* Settings > Appearance > Reading and comfort: saved on this device, like the theme. */
+function ComfortCard() {
+  const [l, setL] = useState(look);
+  const pick = (c: Partial<Look>) => { setLook(c); setL(look()); rerender(); };
+  return (
+    <Card title="Reading and comfort"><div>
+      <Choice label="Text size" value={l.text} options={[['normal', 'Normal'], ['large', 'Large'], ['larger', 'Larger']]} onPick={v => pick({ text: v })} />
+      <Choice label="Spacing" value={l.density} options={[['comfy', 'Comfortable'], ['compact', 'Compact']]} onPick={v => pick({ density: v })}
+        help="Compact fits more rows of a table on the screen." />
+      <Choice label="Dates" value={l.dates} onPick={v => pick({ dates: v })}
+        options={[['iso', '2026-11-20'], ['local', new Date(2026, 10, 20).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })],
+          ['dmy', '20/11/2026'], ['mdy', '11/20/2026']]} />
+      <Choice label="Clock" value={l.clock} options={[['auto', 'Like my ' + deviceWord()], ['12', '1:30 PM'], ['24', '13:30']]} onPick={v => pick({ clock: v })} />
+      <Choice label="Lengths" value={l.length} options={[['mm', 'Millimetres'], ['in', 'Inches']]} onPick={v => pick({ length: v })}
+        help="Rack depth and PC part sizes. Fan and radiator sizes stay in mm." />
+      <Choice label="Motion" value={l.motion} options={[['auto', 'Like my ' + deviceWord()], ['reduce', 'Less motion']]} onPick={v => { pick({ motion: v }); applyTheme(); }}
+        help="Less motion stops animated logos and fades." />
+      <label className="check"><input type="checkbox" checked={l.sound} onChange={e => { pick({ sound: e.target.checked }); if (e.target.checked) alertChime(); }} />
+        <span>Sound when something goes offline</span></label>
+      <p className="muted small">{`While the Status page is open. On phones it buzzes too. These are saved on this ${deviceWord()} only.`}</p>
+    </div></Card>
+  );
+}
+
+const CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'NZD', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'JPY', 'CNY', 'INR', 'SGD', 'HKD', 'BRL', 'MXN', 'ZAR'];
+const START_PAGES: [string, string][] = [['dashboard', 'Home'], ['status', 'Status'], ['devices', 'Devices'], ['tasks', 'Tasks & notes'], ['racks', 'Racks & storage'], ['last', 'Where I left off']];
+
+/* Settings for everyone, on every device: currency and the first page. */
+function EveryoneCard({ app, save }: { app: Row; save: (c: Row) => Promise<void> }) {
+  const name = (c: string) => { try { return new Intl.DisplayNames(undefined, { type: 'currency' }).of(c); } catch { return c; } };
+  const list = CURRENCIES.includes(app.currency) ? CURRENCIES : [app.currency, ...CURRENCIES];
+  return (
+    <Card title="On every device"><div>
+      <label className="disc-field"><span>Currency</span>
+        <select aria-label="Currency" value={app.currency} onChange={e => save({ currency: e.target.value })}>
+          {list.map(c => <option key={c} value={c}>{`${c} · ${name(c)}`}</option>)}</select>
+        <small className="muted">{`Prices and values show as ${money(1234.5)}. Amounts already saved aren’t converted.`}</small></label>
+      <label className="disc-field"><span>Start on</span>
+        <select aria-label="Start page" value={app.start_page} onChange={e => save({ start_page: e.target.value })}>
+          {START_PAGES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+        <small className="muted">The page HaRM opens on. A wall display might start on Status.</small></label>
+    </div></Card>
+  );
+}
+
+const IDLE: [number, string][] = [[5, '5 minutes'], [10, '10 minutes'], [15, '15 minutes'], [30, '30 minutes'], [60, '1 hour'], [120, '2 hours'],
+  [240, '4 hours'], [480, '8 hours'], [0, 'Only when I lock it']];
+const SESSION: [number, string][] = [[4, '4 hours'], [8, '8 hours'], [12, '12 hours'], [24, '1 day'], [72, '3 days'], [168, '1 week']];
+
+/* The settings page's filter box: hides cards that don't mention what's typed. */
+function useSettingsFilter(text: string) {
+  useEffect(() => {
+    const t = text.trim().toLowerCase();
+    const view = document.getElementById('view');
+    if (!view) return;
+    for (const card of view.querySelectorAll<HTMLElement>('.settings-groups .card')) card.hidden = !!t && !card.innerText.toLowerCase().includes(t);
+    for (const h of view.querySelectorAll<HTMLElement>('.settings-groups h2.settings-group')) {
+      const grid = h.nextElementSibling as HTMLElement | null;
+      const any = !!grid && [...grid.querySelectorAll<HTMLElement>('.card')].some(c => !c.hidden);
+      h.hidden = !!t && !any && !h.innerText.toLowerCase().includes(t);
+      if (grid) grid.hidden = h.hidden;
+      if (t && h.innerText.toLowerCase().includes(t) && grid) grid.querySelectorAll<HTMLElement>('.card').forEach(c => { c.hidden = false; });
+    }
+  });
 }
 
 function Group({ title, children }: { title: string; children: Kid }) {
@@ -71,10 +145,13 @@ function sendFeedback() {
 const ENTS = ['devices', 'components', 'racks', 'locations', 'networks', 'interfaces', 'services', 'connections', 'device_slots', 'credentials'];
 
 export default function Settings() {
+  const [find, setFind] = useState('');
+  useSettingsFilter(find);
   const q = useLoad(async () => {
     const [auth, caps, app, alerts, netwatch, backupCopy] = await Promise.all([api('GET', '/auth/status'), GET('/meta/capabilities'),
       GET('/settings/app').catch(() => ({})), GET('/alerts').catch(() => ({})), GET('/netwatch').catch(() => ({})), GET('/backup-copy').catch(() => ({}))]);
     S.auth = auth; S.caps = caps;
+    FMT.currency = caps.currency || 'USD';
     return { auth, caps, app, alerts, netwatch, backupCopy };
   });
   const installPrompt = useApp(s => s.installPrompt);
@@ -104,11 +181,22 @@ export default function Settings() {
   const netNames = (n.all_networks || []).filter((x: Row) => (n.networks || []).includes(x.id)).map((x: Row) => x.name);
   const cur = app?.status_interval ?? 5;
   return <>
-    <PageHead title="Settings" sub="How HaRM looks, locks, connects and keeps your data." />
-    <Group title="Appearance"><AppearanceCard /></Group>
+    <PageHead title="Settings" sub="How HaRM looks, locks, connects and keeps your data.">
+      <input type="search" className="settings-find" placeholder="Find a setting…" aria-label="Find a setting" value={find} onChange={e => setFind(e.target.value)} />
+    </PageHead>
+    <div className="settings-groups">
+    <Group title="Appearance"><AppearanceCard /><ComfortCard /><EveryoneCard app={app} save={saveApp} /></Group>
     <Group title="Locking and security">
       <Card title="Locking"><div>
-        <p>{`Locked after ${auth.idle_minutes} minutes without use, and whenever the HaRM server restarts. Unlocking needs your master password${auth.totp_enabled ? ' and a 2FA code' : ''}.`}</p>
+        <p>{`${app.idle_minutes ? `Locked after ${IDLE.find(([m]) => m === app.idle_minutes)?.[1] ?? `${app.idle_minutes} minutes`} without use` : 'Locked when you lock it'}, after ${SESSION.find(([h]) => h === app.session_hours)?.[1] ?? `${app.session_hours} hours`} in any case, and whenever the HaRM server restarts. Unlocking needs your master password${auth.totp_enabled ? ' and a 2FA code' : ''}.`}</p>
+        <div className="inline">
+          <label className="disc-field"><span>Lock when not used for</span>
+            <select aria-label="Lock when not used for" value={app.idle_minutes} onChange={e => saveApp({ idle_minutes: +e.target.value })}>
+              {IDLE.map(([m, l]) => <option key={m} value={m}>{l}</option>)}</select></label>
+          <label className="disc-field"><span>Sign in again after</span>
+            <select aria-label="Sign in again after" value={app.session_hours} onChange={e => saveApp({ session_hours: +e.target.value })}>
+              {SESSION.map(([h, l]) => <option key={h} value={h}>{l}</option>)}</select></label>
+        </div>
         <Btn label="🔒 Lock now" onClick={lockNow} />
       </div></Card>
       <Card title="Master password"><div>
@@ -224,7 +312,10 @@ export default function Settings() {
     </Group>
     <Group title="Data & backups">
       <Card title="Automatic backups"><div>
-        <p>HaRM saves a copy every day and keeps the last 14. Saved logins stay encrypted inside.</p>
+        <p>HaRM saves a copy every day. Saved logins stay encrypted inside.</p>
+        <label className="disc-field"><span>Keep</span>
+          <select aria-label="Backups to keep" value={app.backup_keep} onChange={e => saveApp({ backup_keep: +e.target.value })}>
+            {[7, 14, 30, 90].map(n => <option key={n} value={n}>{`The last ${n} days`}</option>)}</select></label>
         {caps.backups?.length ? <ul className="plain">{caps.backups.slice(0, 5).map((b: Row) => <li key={b.name} className="mono small">{`${b.name} · ${(b.size / 1e6).toFixed(1)} MB`}</li>)}</ul>
           : <p className="muted small">The first one is made a few seconds after the server starts.</p>}
         <p className="muted small">{`Kept on the HaRM computer in ${caps.backup_dir || 'data/backups'}. Copy that folder to another disk now and then.`}</p>
@@ -276,5 +367,6 @@ export default function Settings() {
         </div>
       </div></Card>
     </Group>
+    </div>
   </>;
 }

@@ -48,6 +48,10 @@
 - **Ctrl K** (⌘K on a Mac) searches everything, **/** filters the list on the page, **N** opens **+ New**, **?** shows the shortcuts, **[** folds the sidebar to icons, and **Esc** closes menus and search. See **Help > Keyboard shortcuts** or **Settings > Shortcuts**.
 
 **Settings**
+- **Find a setting…** at the top of Settings filters the page.
+- **Reading and comfort** (**Settings > Appearance**, kept on each device): **Text size** (Normal, Large, Larger), **Spacing** (Comfortable or Compact), how **dates** and the **clock** read, **Lengths** in millimetres or inches (rack depth and PC part sizes), **Less motion**, and a **sound** (and buzz on phones) when something goes offline while the Status page is open.
+- **On every device**: the **Currency** prices are shown in, and the page HaRM **starts on** (Home, Status, Devices, Tasks, Racks, or where you left off).
+- **Locking** is set in **Settings > Locking and security**: lock after 5 minutes to 8 hours without use, or only when you lock it, and sign in again after 4 hours to a week. **How many backups to keep** (7, 14, 30 or 90 days) is in **Data & backups**. Before, these needed a server setting.
 - **Use AI features** (**Settings > AI Assist**): untick it and every AI button disappears, from **+ New**, Spare Parts, racks, locations and Help, and HaRM refuses AI requests. Your AI settings are kept for if you turn it back on.
 - Settings are grouped: Appearance, Locking and security, Phones & tablets, Status and actions, AI Assist, Data & backups, Shortcuts and About.
 - **Settings > About** shows the version and license, links to the code and this list, and has **Send feedback**, which starts an email with your version and device filled in.

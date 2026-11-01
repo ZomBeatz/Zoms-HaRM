@@ -163,7 +163,7 @@ Don't want AI in HaRM at all? Untick **Settings > AI Assist > Use AI features**:
 
 **Export & Share:** copy devices as text for a person or an AI assistant, download CSV/JSON, or print a spec sheet or sell sheet to PDF.
 
-**Settings:** appearance (match your computer, light or dark), locking, master password, two-factor login, recovery code, phones and tablets, how often to check what's online, AI Assist, backups, keyboard shortcuts, and About with **Send feedback** and **Check for new versions**.
+**Settings:** appearance (match your computer, light or dark), text size and spacing, how dates, times and lengths read, less motion, a sound when something goes offline, currency, the page HaRM starts on, when it locks, master password, two-factor login, recovery code, phones and tablets, how often to check what's online, AI Assist, backups (and how many to keep), keyboard shortcuts, and About with **Send feedback** and **Check for new versions**. **Find a setting…** at the top filters the page.
 
 ## Backups and moving to a new PC
 
@@ -175,7 +175,7 @@ Don't want AI in HaRM at all? Untick **Settings > AI Assist > Use AI features**:
 
 It holds the database, the daily backups (`backups`), HaRM's certificates (`tls`) and its log.
 
-- HaRM **backs itself up daily** and keeps the last 14.
+- HaRM **backs itself up daily** and keeps the last 14 (or 7, 30 or 90: **Settings > Data & backups**).
 - **Settings > Data & backups > Download backup** saves a copy whenever you want one. Keep a copy on another drive or computer now and then.
 - **To move HaRM to a new computer**, install it there, press **Stop** in its control panel, and copy the whole data folder over the new one. That brings your devices, logins, certificates (so phones keep trusting it) and backups. Your master password stays the same.
 - **Used an older HaRM from a folder?** The first time the installed app opens, **Bring in data from an older HaRM…** copies that folder's data in for you.
@@ -216,7 +216,7 @@ HaRM has these steps built in too: **Help & Guide > Troubleshooting**, the **Sho
 ## Security
 
 - Logins are encrypted (AES-256-GCM) with a key that only your master password or recovery code unlocks. Nobody can read them from a copied database.
-- HaRM locks itself after 30 minutes idle. Optional two-factor login is in **Settings**.
+- HaRM locks itself after 30 minutes idle (change it in **Settings > Locking and security**). Optional two-factor login is in **Settings**.
 - Every change, sign-in, password reveal and action run is recorded in the **Audit Log**.
 - **Actions** run commands on your machines with your saved logins, so they only work while HaRM is unlocked. Their results are encrypted like your logins. HaRM never allows SSH settings that could run a program on its own computer.
 - Only install HaRM's certificate on **your own** devices. Keep `data/tls/harm-ca.key` private: anyone with that file could impersonate websites to phones that trust it.

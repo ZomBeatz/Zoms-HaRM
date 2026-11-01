@@ -1,5 +1,5 @@
 /* Hash routes (#/devices/12), in-app history for "← Back to …", and loading a page's data. */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { S, useApp } from '../lib/state';
 
 export function currentRoute() {
@@ -37,14 +37,36 @@ export function BackLink() {
   return <a className="back-link" href={prev.hash} onClick={e => { e.preventDefault(); history.back(); }}>{`← Back to ${prev.title || 'previous page'}`}</a>;
 }
 
-export function useHash() {
+export function useHash(before?: () => void) {
   const [route, setRoute] = useState(currentRoute);
+  const pre = useRef(before);
+  pre.current = before;
   useEffect(() => {
-    const on = () => setRoute(currentRoute());
+    const on = () => { pre.current?.(); setRoute(currentRoute()); };
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);
   return route;
+}
+
+/* Pages still waiting for their first data. While any are, the shell keeps showing the previous
+   page (dimmed) instead of an empty one. */
+let firstLoads = 0;
+const loadWaiters = new Set<() => void>();
+export const pageLoading = () => firstLoads > 0;
+export function whenPageLoaded(f: () => void) { loadWaiters.add(f); return () => { loadWaiters.delete(f); }; }
+function firstLoadDone() {
+  if (--firstLoads === 0) for (const f of [...loadWaiters]) f();
+}
+
+/* Shown while a page's code is still downloading; counts as waiting, like its data. */
+export function PageWaiting() {
+  useLayoutEffect(() => {
+    let open = true;
+    firstLoads++;
+    return () => { if (open) { open = false; firstLoadDone(); } };
+  }, []);
+  return null;
 }
 
 export interface Loaded<T> { data: T | undefined; error: string; reload: () => Promise<void> }
@@ -57,6 +79,8 @@ export function useLoad<T>(load: () => Promise<T>): Loaded<T> {
   fn.current = load;
   const alive = useRef(true);
   const seq = useRef(0);
+  const done = useRef(false);
+  const first = useRef(() => {});
   const reload = useCallback(async () => {
     const my = ++seq.current;
     try {
@@ -65,6 +89,15 @@ export function useLoad<T>(load: () => Promise<T>): Loaded<T> {
     } catch (e) {
       if (alive.current && my === seq.current && S.authed) setError((e as Error).message);
     }
+    if (my === seq.current) { done.current = true; first.current(); }
+  }, []);
+  useLayoutEffect(() => {
+    if (done.current) return;
+    let open = true;
+    firstLoads++;
+    const release = () => { if (open) { open = false; firstLoadDone(); } };
+    first.current = release;
+    return release;
   }, []);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => { reload(); }, [tick, reload]);

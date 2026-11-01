@@ -149,6 +149,8 @@ The **⋯** button holds the less common actions: Import specs, check if it's on
 2. Paste the reply back into HaRM and check the preview.
 3. Add. Each item gets its original price, current value, the AI's sources, and its to-dos as tasks.
 
+Don't want AI in HaRM at all? Untick **Settings > AI Assist > Use AI features**: every AI button disappears, and HaRM refuses AI requests until you tick it again.
+
 **Spare Parts:** everything on the shelf or inside devices. Install parts into devices and take them out again; quantities split automatically.
 
 **Virtual & Clusters:** track VMs and containers as devices that **run on** a host (VM ID, vCPUs, memory, disk). A host's **VMs** tab shows what's running on it and how much of its CPU and memory is claimed. Group hosts into **clusters** (Proxmox, Kubernetes, vSphere…). **Discover > Proxmox** imports a whole Proxmox cluster with all its VMs and containers.

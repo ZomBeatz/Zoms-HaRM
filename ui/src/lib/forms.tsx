@@ -7,7 +7,7 @@ import { isVirtual, slotKindOf, type Row } from './util';
 import { confirmBox, toast } from '../ui/overlay';
 import { MenuButton, Small } from '../ui/bits';
 import { formDialog, type Field, type FormCtl } from '../ui/form';
-import { libraryLookup } from '../dialogs/library';
+import { libraryLookup } from '../dialogs/later';
 import { scanLabel } from '../dialogs/scan';
 import { ACTION_TEMPLATES } from './actions';
 

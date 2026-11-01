@@ -1,7 +1,7 @@
 /* Racks & Storage: every holder, and a rack's front and rear with what's in each unit. */
 import { useState } from 'react';
 import { api, GET, loadLookups } from '../api/client';
-import { S } from '../lib/state';
+import { S, aiOn } from '../lib/state';
 import { locPath } from '../lib/lookups';
 import { badgeClass, nz, type Row } from '../lib/util';
 import { modal, toast } from '../ui/overlay';
@@ -9,7 +9,7 @@ import { A, Badge, Bar, Btn, Card, Dot, HelpLink, MenuButton, PageHead, Small, T
 import { StatusSelect } from '../ui/tables';
 import { deleteEntity, editEntity } from '../lib/forms';
 import { JournalCard } from '../lib/notes';
-import { aiAssist } from '../dialogs/ai';
+import { aiAssist } from '../dialogs/later';
 import { BackLink, Pending, goBackOr, useLoad } from '../app/router';
 import { TaskFlag } from './Devices';
 
@@ -181,7 +181,7 @@ export function Rack({ id }: { id: number }) {
   return <>
     <div className="crumbs"><BackLink /><A href="#/racks">Racks &amp; Storage</A>{' › '}{rack.name}</div>
     <PageHead title={rack.name} sub={nz(rack.kind, rack.height_u ? `· ${rack.height_u}U` : '', rack.location_id ? '· ' + locPath(rack.location_id) : '', rack.manufacturer ? '· ' + nz(rack.manufacturer, rack.model) : '')}>
-      <Btn label="🤖 AI Assist here" onClick={() => aiAssist({ rack_id: id, location_id: rack.location_id })} />
+      {aiOn() ? <Btn label="🤖 AI Assist here" onClick={() => aiAssist({ rack_id: id, location_id: rack.location_id })} /> : null}
       <Btn label="Edit" onClick={() => editEntity('racks', rack, back)} />
       <MenuButton label="⋯" items={[['🗑 Delete', () => deleteEntity('racks', rack, () => goBackOr('#/racks'), 'Devices and parts inside will stay, but lose their holder.'), 'danger-item']]} />
     </PageHead>

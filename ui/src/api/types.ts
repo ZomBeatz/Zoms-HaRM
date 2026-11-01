@@ -1,6 +1,6 @@
 /* Types for the server's replies. Records come from entities.ts (generated); the rest are the
  * shapes of the bigger pages' replies. */
-import type { Cluster, Credential, Device, Location, Network, Rack, Service } from './entities';
+import type { Action, Build, Cluster, Component, Connection, Credential, Device, DeviceSlot, Interface, Location, Network, Note, Rack, Service } from './entities';
 export * from './entities';
 
 export interface Lookups {
@@ -21,3 +21,23 @@ export interface ServiceState {
   checked_at?: string | null; cert_expires?: string | null; device_id?: number;
 }
 export interface DeviceOnline extends OnlineState { others: OnlineState[]; services?: ServiceState[] }
+
+/* Totals the server works out (drives by size, memory sticks, CPUs). */
+type Summary = Record<string, any>;
+
+/* A slot on a device's page, with what's in it and the spare parts that would fit. */
+export interface SlotUsage extends DeviceSlot {
+  bays: (number | null)[]; overflow: number; placed: Record<number, number>; used: number;
+  storage: Summary | null; drive_bay: boolean; compatible: Component[];
+}
+
+/* GET /devices/{id}/full: everything on a device's page. */
+export interface DeviceFull {
+  device: Device; rack: Rack | null; cluster: Cluster | null;
+  interfaces: Interface[]; services: Service[]; credentials: Credential[]; components: Component[];
+  storage: Summary; memory: Summary; cpus: Summary;
+  notes: Note[]; slots: SlotUsage[]; connections: Connection[]; actions: Action[];
+  builds: Pick<Build, 'id' | 'name' | 'status'>[];
+  guests: Device[]; guest_totals: { count: number; vcpus: number; ram_gb: number; disk_gb: number; running: number };
+  online: DeviceOnline; can_wake: boolean; power: Summary | null;
+}

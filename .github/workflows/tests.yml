@@ -60,3 +60,21 @@ jobs:
             echo "::error::harm/static/app/ is out of date. Run 'npm run build' in ui/ and commit harm/static/app/."
             exit 1
           fi
+
+  # Opens every page, tab, menu and dialog in a real browser on the demo data (tests/pages_test.mjs).
+  pages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - name: Every page in a browser
+        run: node tests/pages_test.mjs
+        env:
+          CHROME: google-chrome

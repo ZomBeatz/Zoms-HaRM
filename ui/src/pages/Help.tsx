@@ -1,8 +1,10 @@
 /* Help & guide: how HaRM works, section by section. The full guide is on docs.zombeatzmedia.com. */
 import { useEffect } from 'react';
-import { deviceKind, hasKeyboard, MOD } from '../lib/util';
+import { hasKeyboard, MOD } from '../lib/util';
+import { aiOn } from '../lib/state';
 import { A, Btn, PageHead, type Kid } from '../ui/bits';
-import { phoneAppHelp } from '../dialogs/phone';
+import { phoneAppHelp } from '../dialogs/later';
+import { TroubleshootingContent } from './Troubleshooting';
 
 const B = ({ children }: { children: Kid }) => <b>{children}</b>;
 const C = ({ children }: { children: Kid }) => <code>{children}</code>;
@@ -27,44 +29,6 @@ export function ShortcutsList() {
 
 /* Device-specific fixes for "can't connect" problems. Works without the server (used on the
    start-up error screen too), so it only uses what's already loaded in the page. */
-export function TroubleshootingContent() {
-  const here = location.origin;
-  const mine = deviceKind();
-  const sec = (key: string, title: string, body: Kid) => <details key={key} className="trouble" open={key === mine}>
-    <summary>{title}{key === mine ? <span className="badge info">this device</span> : null}</summary>{body}</details>;
-  return <>
-    <p>Most connection problems are about trust: phones and tablets only talk to HaRM once they trust its certificate. If HaRM opens on one device but not another, the server is fine; fix the device that fails.</p>
-    {sec('ios', 'iPhone / iPad', <>
-      <p>Symptoms: <B>“Cannot reach the HaRM server”</B>, a warning that the connection isn’t private, it works in Safari but not from the home screen, or the home-screen icon is just a letter.</p>
-      <L ordered items={[
-        <><B>Clear old HaRM data: </B>Settings &gt; Apps &gt; Safari &gt; Advanced &gt; Website Data (older versions: Settings &gt; Safari &gt; Advanced &gt; Website Data). Search <C>{location.hostname || '192.168'}</C> and swipe to delete. Remove any HaRM icon from the home screen.</>,
-        <><B>Download the certificate: </B>on the computer running HaRM, open <B>📱 Phone setup</B> in the desktop app and scan the first QR code with the Camera app, or open <C>{`${here}/harm-ca.crt`}</C> in Safari. If Safari warns, tap <B>Show Details &gt; visit this website</B>. Tap <B>Allow</B>, then Close.</>,
-        <><B>Install it: </B>Settings &gt; <B>Profile Downloaded</B> (or General &gt; VPN &amp; Device Management) &gt; Zom’s HaRM local CA &gt; <B>Install</B>.</>,
-        <><B>Trust it (the step most people miss): </B>Settings &gt; General &gt; About &gt; <B>Certificate Trust Settings</B> &gt; turn on <B>Zom’s HaRM local CA</B>.</>,
-        <><B>Close Safari completely </B>(swipe it away in the app switcher), then open <C>{here}</C>. There should be no warning.</>,
-        <><B>Add to Home Screen: </B>Share &gt; Add to Home Screen &gt; Add.</>,
-      ]} />
-      <L items={[
-        'Still a warning at step 5? The trust switch in step 4 isn’t on. Not listed there? Step 3 didn’t finish.',
-        'Worked before and stopped after HaRM was updated or its certificate re-issued? Update HaRM on the computer (older versions made certificates iPhones reject), restart it, then repeat from step 5.',
-      ]} />
-    </>)}
-    {sec('android', 'Android', <L ordered items={[
-      <>Open <B>📱 Phone setup</B> in the desktop app and scan the first QR code (or open <C>{`${here}/harm-ca.crt`}</C>). Chrome warns once: Advanced &gt; Proceed. The file downloads.</>,
-      <>Settings &gt; Security &amp; privacy &gt; More security &amp; privacy &gt; Encryption &amp; credentials &gt; <B>Install a certificate &gt; CA certificate</B> &gt; Install anyway &gt; pick harm-ca.crt. (Samsung: Settings &gt; Security and privacy &gt; More security settings &gt; Install from device storage &gt; CA certificate.)</>,
-      <>Close Chrome completely (swipe it away), reopen <C>{here}</C>. There should be a padlock and no warning.</>,
-      <>Chrome ⋮ &gt; <B>Add to Home screen &gt; Install</B>.</>,
-    ]} />)}
-    {sec('computer', 'Any device', <L items={[
-      <><B>Same network? </B>The device must be on the same Wi-Fi/network as the computer running HaRM (not guest Wi-Fi, mobile data or a VPN).</>,
-      <><B>Right address? </B>The desktop app shows the addresses under “Where to open it”. If the computer’s IP changed, use the new one and press <B>Fix certificate</B> there.</>,
-      <><B>Is HaRM running? </B>The desktop app shows ● Running. If it says Stopped, press Start; if it won’t start, open Server log at the bottom.</>,
-      <><B>Firewall: </B>Windows asks the first time HaRM starts: allow it on Private networks. On Linux, the Phone setup checklist checks the firewall and offers to open the port.</>,
-      <><B>Shared on your network? </B>In the desktop app, “Let phones and other devices connect” must be ticked (then Restart).</>,
-      <><B>Still stuck? </B>The Phone setup checklist in the desktop app watches what the device does and shows which step is missing.</>,
-    ]} />)}
-  </>;
-}
 
 const HELP: [string, string, () => Kid, { keyboard?: boolean }?][] = [
   ['start', 'Quick start', () => <L ordered items={[
@@ -193,7 +157,8 @@ const HELP: [string, string, () => Kid, { keyboard?: boolean }?][] = [
   ['export', 'Export, share and PDFs', () => <>
     <p>Open <A href="#/export">Export &amp; Share</A> (or <B>⇪ Export / PDF</B> on a device or the device list).</p>
     <L ordered items={['Pick devices: filter by location, rack, type or status, then select.', 'Choose what to include.', 'Pick an output.']} />
-    <L items={[<><B>Copy for AI / chat</B>: clean Markdown you can paste straight into a chat with a person or an AI assistant when asking for help.</>,
+    <L items={[aiOn() ? <><B>Copy for AI / chat</B>: clean Markdown you can paste straight into a chat with a person or an AI assistant when asking for help.</>
+      : <><B>Copy as Markdown</B>: clean text you can paste straight into a chat or a document.</>,
       <><B>Markdown, CSV, JSON</B> downloads for documents, spreadsheets or scripts.</>, <><B>Spec sheet (PDF)</B>: a tidy printable summary of each device.</>,
       <><B>Sell sheet (PDF)</B>: hides internal details (location, IPs, hostnames) and adds a title, condition, asking prices and a contact line.</>]} />
     <p>PDFs use the browser’s print dialog: choose “Save as PDF”. Passwords and secrets are never exported.</p>
@@ -309,7 +274,7 @@ const HELP: [string, string, () => Kid, { keyboard?: boolean }?][] = [
 ];
 
 export default function Help({ section }: { section: string | null }) {
-  const here = HELP.filter(([, , , o]) => !(o && o.keyboard) || hasKeyboard());
+  const here = HELP.filter(([id, , , o]) => (!(o && o.keyboard) || hasKeyboard()) && (id !== 'ai' || aiOn()));
   useEffect(() => {
     if (section) setTimeout(() => document.getElementById(`help-${section}`)?.scrollIntoView({ block: 'start' }), 0);
   }, [section]);

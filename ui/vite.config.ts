@@ -23,5 +23,7 @@ export default defineConfig(({ command }) => ({
     proxy: Object.fromEntries(["/api", "/static/collect", "/static/vendor", "/static/icon", "/static/theme.js", "/harm-ca.crt", "/sw.js"]
       .map(p => [p, { target: harm, changeOrigin: false, secure: false }])),
   },
+  // Pages load their code by a path relative to the file asking, so the online demo works from a sub-folder.
+  experimental: { renderBuiltUrl: (_file, { hostType }) => (hostType === "js" ? { relative: true } : undefined) },
   test: { environment: "node", include: ["src/**/*.test.{ts,tsx}"] },
 }));

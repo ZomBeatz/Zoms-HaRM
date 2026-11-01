@@ -48,6 +48,7 @@
 - **Ctrl K** (⌘K on a Mac) searches everything, **/** filters the list on the page, **N** opens **+ New**, **?** shows the shortcuts, **[** folds the sidebar to icons, and **Esc** closes menus and search. See **Help > Keyboard shortcuts** or **Settings > Shortcuts**.
 
 **Settings**
+- **Use AI features** (**Settings > AI Assist**): untick it and every AI button disappears, from **+ New**, Spare Parts, racks, locations and Help, and HaRM refuses AI requests. Your AI settings are kept for if you turn it back on.
 - Settings are grouped: Appearance, Locking and security, Phones & tablets, Status and actions, AI Assist, Data & backups, Shortcuts and About.
 - **Settings > About** shows the version and license, links to the code and this list, and has **Send feedback**, which starts an email with your version and device filled in.
 - **Copy to a second place** (**Settings > Data & backups**): each day's backup is also copied to another disk, like a NAS share or USB drive, keeping the last 7 to 90.
@@ -60,6 +61,10 @@
 **Under the hood**
 - The interface was rewritten in TypeScript and React, built with Vite: the same tools as Zomello. It looks and works the same. Mistakes like a misspelled field are now caught before a release, and the interface has its own tests.
 - HaRM still runs with Python only: the built interface ships with the code.
+- Moving between pages, the previous page stays on screen until the next one is ready, instead of going blank.
+- HaRM starts faster, especially on phones: each page's code loads when it's first needed (the first download is about a third smaller).
+- A page that can't be shown now says so, with a **Reload** button, instead of leaving the whole window blank.
+- A new test opens every page, tab, menu and dialog in a real browser with every change.
 
 ## 0.3.1
 

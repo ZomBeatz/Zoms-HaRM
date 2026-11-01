@@ -5,7 +5,7 @@ import { Overlays } from '../ui/overlay';
 import { AuthScreen } from './Auth';
 import { Shell } from './Shell';
 import { startApp } from './session';
-import { TroubleshootingContent } from '../pages/Help';
+import { TroubleshootingContent } from '../pages/Troubleshooting';
 
 function StartError({ message }: { message: string }) {
   const [help, setHelp] = useState(false);

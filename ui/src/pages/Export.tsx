@@ -1,7 +1,7 @@
 /* Export & Share: pick devices and what to include, then copy, download or print. */
 import { useState } from 'react';
 import { GET } from '../api/client';
-import { S } from '../lib/state';
+import { S, aiOn } from '../lib/state';
 import { locDescendants, locPath } from '../lib/lookups';
 import { downloadText, type Row } from '../lib/util';
 import { copy, toast } from '../ui/overlay';
@@ -65,7 +65,7 @@ export default function Export({ q: qs }: { q: URLSearchParams }) {
     });
   };
   return <>
-    <PageHead title="Export & share" sub="Pick devices and what to include. Copy it for a person or an AI assistant, download it, or make a PDF."><HelpLink s="export" /></PageHead>
+    <PageHead title="Export & share" sub={`Pick devices and what to include. Copy it for a person${aiOn() ? ' or an AI assistant' : ''}, download it, or make a PDF.`}><HelpLink s="export" /></PageHead>
     <div className="grid two">
       <Card title="1. Devices"><div>
         <div className="toolbar">
@@ -92,7 +92,7 @@ export default function Export({ q: qs }: { q: URLSearchParams }) {
     </div>
     <Card title="3. Get it"><div>
       <div className="export-actions">
-        <Btn label="📋 Copy for AI / chat (Markdown)" onClick={() => asMarkdown(md => copy(md, 'Markdown'))} cls="primary" />
+        <Btn label={aiOn() ? '📋 Copy for AI / chat (Markdown)' : '📋 Copy as Markdown'} onClick={() => asMarkdown(md => copy(md, 'Markdown'))} cls="primary" />
         <Btn label="⬇ Markdown (.md)" onClick={() => asMarkdown(md => downloadText('harm-export.md', md, 'text/markdown'))} />
         <Btn label="⬇ Spreadsheet (.csv)" onClick={async () => { const b = await getBundle(); if (b) downloadText('harm-export.csv', exportCSV(b, sec), 'text/csv'); }} />
         <Btn label="⬇ JSON" onClick={async () => { const b = await getBundle(); if (b) downloadText('harm-export.json', JSON.stringify(b, null, 2), 'application/json'); }} />

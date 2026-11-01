@@ -1,12 +1,12 @@
 /* Locations: the tree of places, and one place with what's loose in it. */
 import { GET } from '../api/client';
-import { S } from '../lib/state';
+import { S, aiOn } from '../lib/state';
 import { nz, type Row } from '../lib/util';
 import { A, Badge, Btn, Card, Dot, HelpLink, MenuButton, PageHead, Small, Table } from '../ui/bits';
 import { StatusSelect } from '../ui/tables';
 import { deleteEntity, editEntity } from '../lib/forms';
 import { JournalCard } from '../lib/notes';
-import { aiAssist } from '../dialogs/ai';
+import { aiAssist } from '../dialogs/later';
 import { BackLink, Pending, goBackOr, useLoad } from '../app/router';
 import { RackTile } from './Racks';
 
@@ -52,7 +52,7 @@ export function Location({ id }: { id: number }) {
       <HelpLink s="piles" />
       <Btn label="+ Device here" onClick={() => editEntity('devices', { location_id: id, status: 'Active' }, back)} />
       <Btn label="+ Part here" onClick={() => editEntity('components', { location_id: id, status: 'In Stock', quantity: 1 }, back)} />
-      <Btn label="🤖 AI Assist here" onClick={() => aiAssist({ location_id: id })} />
+      {aiOn() ? <Btn label="🤖 AI Assist here" onClick={() => aiAssist({ location_id: id })} /> : null}
       <MenuButton label="⋯" items={[['✎ Edit…', () => editEntity('locations', loc, back)],
         ['🗑 Delete', () => deleteEntity('locations', loc, () => goBackOr('#/locations'), 'Things inside it will keep existing without a location.'), 'danger-item']]} />
     </PageHead>

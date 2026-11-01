@@ -2065,14 +2065,14 @@ def _phone_urls(request: Request) -> list[str]:
 
 
 @app.get("/api/meta/capabilities")
-def capabilities(request: Request, _s=Depends(require_session)):
+def capabilities(request: Request, _s=Depends(require_session), conn=Depends(get_db)):
     backups = sorted(BACKUP_DIR.glob("harm-*.db"), reverse=True) if BACKUP_DIR.exists() else []
     collect_dir = STATIC / "collect"
     sha = {f.suffix[1:]: hashlib.sha256(f.read_bytes()).hexdigest() for f in collect_dir.glob("harm-collect.*")}
     return {**_tools(), "ca_cert": (db.DB_PATH.parent / "tls" / "harm-ca.crt").is_file(), "collect_sha256": sha,
             "phone_urls": _phone_urls(request),
             "backups": [{"name": b.name, "size": b.stat().st_size} for b in backups], "backup_dir": str(BACKUP_DIR),
-            "platform": "windows" if os.name == "nt" else "unix"}
+            "platform": "windows" if os.name == "nt" else "unix", "ai": monitor.settings(conn)["ai_enabled"]}
 
 
 def _run_scan(path: str) -> dict:
@@ -2145,7 +2145,13 @@ def _where_text(conn, location_id, rack_id, position) -> str:
     return " > ".join(b for b in bits if b)
 
 
-@app.post("/api/ai/prompt")
+def require_ai(_s=Depends(require_session), conn=Depends(get_db)):
+    """Settings > AI Assist can turn every AI feature off; then the AI endpoints refuse too."""
+    if not monitor.settings(conn)["ai_enabled"]:
+        raise HTTPException(403, "AI features are turned off in Settings > AI Assist.")
+
+
+@app.post("/api/ai/prompt", dependencies=[Depends(require_ai)])
 async def ai_prompt(request: Request, _s=Depends(require_session), conn=Depends(get_db)):
     body = await body_json(request)
     loc = _coerce(conn, "location_id", "fk:locations", body.get("location_id"))
@@ -2154,7 +2160,7 @@ async def ai_prompt(request: Request, _s=Depends(require_session), conn=Depends(
     return {"prompt": ai.build_prompt(str(body.get("hint") or "")[:1000], where)}
 
 
-@app.post("/api/ai/parse")
+@app.post("/api/ai/parse", dependencies=[Depends(require_ai)])
 async def ai_parse(request: Request, _s=Depends(require_session), conn=Depends(get_db)):
     body = await body_json(request)
     try:
@@ -2228,7 +2234,7 @@ async def ai_config_set(request: Request, s=Depends(require_session), conn=Depen
 AI_MAX_BYTES = 25 * 1024 * 1024
 
 
-@app.post("/api/ai/ask")
+@app.post("/api/ai/ask", dependencies=[Depends(require_ai)])
 async def ai_ask(request: Request, s=Depends(require_session), conn=Depends(get_db)):
     """Send photos to the configured AI service and return its reply, parsed for the preview."""
     size, chunks = 0, []
@@ -2264,7 +2270,7 @@ async def ai_ask(request: Request, s=Depends(require_session), conn=Depends(get_
     return out
 
 
-@app.post("/api/ai/import")
+@app.post("/api/ai/import", dependencies=[Depends(require_ai)])
 async def ai_import(request: Request, _s=Depends(require_session), conn=Depends(get_db)):
     body = await body_json(request)
     items = body.get("items") or []

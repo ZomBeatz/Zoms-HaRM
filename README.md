@@ -184,6 +184,7 @@ Working on the interface (`ui/`):
 cd ui && npm install
 npm run dev                            # http://127.0.0.1:5177 with live reload; /api goes to ./run.sh on :8077
 npm run check && npm test              # types and unit tests
+node ../tests/pages_test.mjs           # every page, tab, menu and dialog in Chromium, on demo data (about 4 minutes)
 npm run build                          # writes harm/static/app/: commit it with your change (CI checks it's current)
 python3 scripts/gen-ui-types.py        # after changing fields in harm/models.py: the interface's record types
 python3 branding/make-logos.py         # icons and wordmarks
@@ -217,7 +218,7 @@ scripts/          Installers, demo, packaging, certificates, screenshots
 web-demo/         Online demo: runs harm/ in the browser with Pyodide (built by .github/workflows/demo.yml)
 packaging/        Installers: PyInstaller, Inno Setup (Windows), nfpm and AppImage (Linux)
 .github/workflows build.yml makes the installers on a version tag (a draft release); demo.yml publishes the demo
-tests/            smoke.py and full_test.py
+tests/            smoke.py, full_test.py, unit_test.py, and pages_test.mjs (every page in a browser)
 ```
 
 </details>

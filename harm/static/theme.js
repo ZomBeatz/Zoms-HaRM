@@ -1,5 +1,5 @@
 /* Applies the saved theme before the page draws (no flash). The choice is per device.
-   data-theme = light | dark (read by the ZomBeatz tokens); data-product = harm | harm-coolant. */
+   data-theme = light | dark (read by the ZomBeatz tokens); data-product = harm, or harm-<theme> (coolant, graveyard). */
 (function () {
   var theme = 'zombeatz', mode = 'auto';  // follows the system until the person picks Light or Dark
   try {
@@ -7,7 +7,7 @@
     mode = localStorage.getItem('harm-mode') || mode;
   } catch (e) { /* storage blocked: use defaults */ }
   var r = document.documentElement;
-  r.dataset.product = theme === 'coolant' ? 'harm-coolant' : 'harm';
+  r.dataset.product = theme === 'coolant' || theme === 'graveyard' ? 'harm-' + theme : 'harm';
   r.dataset.theme = mode === 'auto'
     ? (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
     : (mode === 'light' ? 'light' : 'dark');

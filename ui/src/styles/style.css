@@ -27,6 +27,9 @@
 /* Coolant (the hidden edition) swaps only the accent and highlight, as the design system asks. */
 :root[data-product="harm-coolant"] { --zb-accent: #0e9f8c; --brand2: #0891b2; --print-accent: #0e8f7e; }
 :root[data-product="harm-coolant"][data-theme="dark"] { --zb-accent: #5ff7cf; --zb-on-accent: #04201a; --brand2: #22d3ee; }
+/* Graveyard Shift (the hidden Halloween edition): pumpkin orange and witching-hour purple. */
+:root[data-product="harm-graveyard"] { --zb-accent: #c2410c; --brand2: #7e22ce; --print-accent: #c2410c; }
+:root[data-product="harm-graveyard"][data-theme="dark"] { --zb-accent: #ff8a2a; --zb-on-accent: #241005; --brand2: #b57cf5; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -745,10 +748,30 @@ details.more-stats > summary { cursor: pointer; color: var(--muted); font-weight
   animation: coolant-flow 2.4s linear infinite;
 }
 @keyframes coolant-flow { from { background-position: 0 0; } to { background-position: 0 300%; } }
+/* Graveyard Shift easter egg: the current-page marker flickers like a candle. */
+:root[data-product="harm-graveyard"] .sidebar nav a { position: relative; }
+:root[data-product="harm-graveyard"] .sidebar nav a.active { box-shadow: none; }
+:root[data-product="harm-graveyard"] .sidebar nav a.active::before {
+  content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; border-radius: 3px;
+  background: var(--accent); box-shadow: 0 0 8px 1px var(--accent);
+  animation: candle 1.9s ease-in-out infinite;
+}
+@keyframes candle { 0%, 100% { opacity: 1; } 20% { opacity: .7; } 35% { opacity: .95; } 55% { opacity: .78; } 75% { opacity: 1; } 85% { opacity: .86; } }
+/* Halloween week: a bat flies across once; catching it unlocks Graveyard Shift. */
+.night-bat { position: fixed; z-index: 60; top: 18vh; left: -80px; width: 64px; height: 40px; padding: 0; border: 0; background: none;
+  color: #0d0912; cursor: pointer; animation: bat-fly 9s linear forwards; }
+:root[data-theme="dark"] .night-bat { color: #b57cf5; }
+.night-bat svg { width: 100%; height: 100%; animation: bat-flap .32s ease-in-out infinite alternate; }
+@keyframes bat-fly { 0% { transform: translate(0, 0); } 25% { transform: translate(28vw, -6vh); } 50% { transform: translate(55vw, 4vh); }
+  75% { transform: translate(80vw, -3vh); } 100% { transform: translate(calc(100vw + 160px), 2vh); } }
+@keyframes bat-flap { from { transform: scaleY(1); } to { transform: scaleY(.45); } }
 .brand-pop { animation: brand-pop .5s ease; }
 @keyframes brand-pop { 40% { transform: scale(1.18) rotate(-6deg); } }
 @media (prefers-reduced-motion: reduce) {
   :root[data-product="harm-coolant"] .sidebar nav a.active::before { animation: none; }
+  :root[data-product="harm-graveyard"] .sidebar nav a.active::before { animation: none; }
+  .night-bat, .night-bat svg { animation: none; }
+  .night-bat { left: auto; right: 24px; top: 76px; }
   .brand-pop { animation: none; }
 }
 @media (max-width: 480px) { .brand.big img { width: 140px; height: 140px; } .brand.big .brand-name { font-size: 28px; } }

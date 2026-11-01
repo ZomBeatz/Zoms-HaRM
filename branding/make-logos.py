@@ -11,6 +11,7 @@ THEMES = {
     # name: (server gradient top, bottom, wordmark accent light-bg, accent dark-bg)
     "zombeatz": ("#4fb0ec", "#2580c3", "#2580c3", "#4fb0ec"),
     "coolant": ("#5fe0b9", "#16967a", "#0e9f8c", "#5ff7cf"),
+    "graveyard": ("#ff9a3c", "#e2570c", "#c2410c", "#ff8a2a"),
 }
 
 # Coolant extra: the headphone cord (like the ZomBeatz mark) ends in an RJ45 network plug.
@@ -152,9 +153,75 @@ def coolant_body(animated=False):
 {CORD}"""
 
 
+# Graveyard Shift (the hidden Halloween theme): the rack is a stack of carved pumpkins whose cut-outs
+# make one jack-o'-lantern face (eyes, nose, grin), lit by a candle, under a full moon with bats.
+BAT_UP = ("M 0 -6 C 6 -14 14 -16 24 -22 C 22 -12 28 -6 36 -4 C 28 0 22 2 18 10 C 12 4 6 6 0 12 "
+          "C -6 6 -12 4 -18 10 C -22 2 -28 0 -36 -4 C -28 -6 -22 -12 -24 -22 C -14 -16 -6 -14 0 -6 Z")
+BAT_DOWN = ("M 0 -6 C 6 -8 14 -6 24 2 C 24 8 30 14 36 18 C 28 16 22 16 18 22 C 12 14 6 12 0 12 "
+            "C -6 12 -12 14 -18 22 C -22 16 -28 16 -36 18 C -30 14 -24 8 -24 2 C -14 -6 -6 -8 0 -6 Z")
+
+
+def _bat(x, y, scale, animated, dur):
+    flap = (f'<animate attributeName="d" values="{BAT_UP};{BAT_DOWN};{BAT_UP}" dur="{dur}s" repeatCount="indefinite"/>'
+            if animated else "")
+    bob = (f'<animateTransform attributeName="transform" type="translate" additive="sum" values="0 0;0 -10;0 0" '
+           f'dur="{dur * 3}s" repeatCount="indefinite"/>' if animated else "")
+    return (f'<g transform="translate({x} {y}) scale({scale})" fill="#0d0912">{bob}'
+            f'<path d="{BAT_UP}">{flap}</path>'
+            f'<ellipse cx="0" cy="2" rx="7" ry="10"/><path d="M -6 -5 L -7 -14 L -2 -8 L 2 -8 L 7 -14 L 6 -5 Z"/></g>')
+
+
+def graveyard_body(animated=False):
+    flicker = ('<animate attributeName="opacity" values="1;.72;.94;.8;1;.86;1" dur="1.9s" repeatCount="indefinite"/>'
+               if animated else "")
+    carved = ('<polygon points="420,500 470,500 445,446"/><polygon points="554,500 604,500 579,446"/>'
+              '<polygon points="490,622 534,622 512,568"/>'
+              '<path d="M 400 692 Q 512 720 624 692 L 610 742 L 580 726 L 552 744 L 512 728 L 472 744 L 444 726 L 414 742 Z"/>')
+    return f"""  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a1838"/>
+      <stop offset="1" stop-color="#0d0912"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff9a3c"/>
+      <stop offset="1" stop-color="#e2570c"/>
+    </linearGradient>
+  </defs>
+  <rect x="48" y="48" width="928" height="928" rx="208" fill="url(#bg)"/>
+  <!-- full moon, with bats -->
+  <circle cx="770" cy="222" r="112" fill="#f6e7b0" opacity=".1"/>
+  <circle cx="770" cy="222" r="78" fill="#f6e7b0"/>
+  <circle cx="742" cy="204" r="14" fill="#e3cf8e" opacity=".7"/><circle cx="792" cy="250" r="10" fill="#e3cf8e" opacity=".6"/>
+  {_bat(758, 230, 2.1, animated, 0.5)}
+  {_bat(292, 214, 1.3, animated, 0.42)}
+  <!-- headband and ear cups in witching-hour purple -->
+  <path d="M 214 600 A 298 298 0 0 1 810 600" fill="none" stroke="#0a0c10" stroke-width="64" stroke-linecap="round"/>
+  <path d="M 214 600 A 298 298 0 0 1 810 600" fill="none" stroke="#9b5de5" stroke-width="30" stroke-linecap="round"/>
+  <rect x="196" y="500" width="84" height="264" rx="30" fill="#9b5de5"/>
+  <rect x="150" y="522" width="86" height="220" rx="30" fill="#0a0c10"/>
+  <rect x="744" y="500" width="84" height="264" rx="30" fill="#9b5de5"/>
+  <rect x="788" y="522" width="86" height="220" rx="30" fill="#0a0c10"/>
+  <!-- rack posts, and the pumpkin's stem -->
+  <rect x="318" y="404" width="22" height="378" rx="11" fill="#0a0c10"/>
+  <rect x="684" y="404" width="22" height="378" rx="11" fill="#0a0c10"/>
+  <path d="M 500 424 L 504 392 Q 506 380 520 378 L 528 380 Q 518 388 518 398 L 524 424 Z" fill="#5a7d2a"/>
+  <!-- three pumpkin servers -->
+  <rect x="330" y="420" width="364" height="98" rx="30" fill="url(#blue)"/>
+  <rect x="330" y="543" width="364" height="98" rx="30" fill="url(#blue)" opacity=".92"/>
+  <rect x="330" y="666" width="364" height="98" rx="30" fill="url(#blue)" opacity=".84"/>
+  <!-- the carved face, lit from inside -->
+  <g fill="#ffd166" stroke="#ffd166" stroke-width="18" stroke-linejoin="round" opacity=".22">{carved}</g>
+  <g fill="#ffd166">{flicker}{carved}</g>
+  <!-- status light -->
+  <circle cx="646" cy="469" r="14" fill="#9b5de5"/>
+"""
+
+
 def icon_body(theme):
     if theme == "coolant":
         return coolant_body()
+    if theme == "graveyard":
+        return graveyard_body()
     top, bottom = THEMES[theme][:2]
     return ICON_BODY.format(top=top, bottom=bottom, extra="")
 
@@ -192,6 +259,9 @@ def logo(theme, dark):
 # Animated Coolant icon for the app's sidebar (SVG <animate>, which works inside <img> and strict CSP).
 open(f"{OUT}/harm-coolant-icon-animated.svg", "w").write(
     f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">\n{coolant_body(animated=True)}</svg>\n')
+
+open(f"{OUT}/harm-graveyard-icon-animated.svg", "w").write(
+    f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">\n{graveyard_body(animated=True)}</svg>\n')
 
 for theme in THEMES:
     pre = "harm" if theme == "zombeatz" else f"harm-{theme}"

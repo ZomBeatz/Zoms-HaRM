@@ -1,4 +1,5 @@
-"""Build harm/static/icons.js: the Lucide icons HaRM uses, as plain data (no build step at run time).
+"""Build harm/static/icons.js: the Lucide icons the desktop control panel uses, as plain data.
+(The web interface in ui/ uses lucide-react directly.)
 
     python3 scripts/build-icons.py [path/to/lucide-react]   # default: ../zomello/node_modules/lucide-react
 

@@ -6,6 +6,7 @@ reporting every failure instead of stopping at the first one.
 import http.cookiejar
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -691,7 +692,12 @@ Let me know if you need anything else!"""
 
     @test("app shell files")
     def _():
-        for p in ("/", "/static/app.js", "/static/style.css", "/static/theme.js", "/static/icon.svg", "/static/icon-coolant.svg",
+        code, page, _ = c.raw("GET", "/")
+        assert code == 200, code
+        # The built interface (ui/ → harm/static/app/): its script and stylesheet must be there.
+        built = re.findall(r'(?:src|href)="(/static/app/assets/[^"]+)"', page.decode())
+        assert any(b.endswith(".js") for b in built) and any(b.endswith(".css") for b in built), built
+        for p in (*built, "/static/theme.js", "/static/icon.svg", "/static/icon-coolant.svg",
                   "/static/manifest.webmanifest", "/sw.js", "/static/collect/harm-collect.sh", "/static/collect/harm-collect.ps1",
                   "/static/vendor/zxing-0.23.0.min.js", "/static/icon-192.png", "/static/apple-touch-icon.png"):
             code, _, _ = c.raw("GET", p)

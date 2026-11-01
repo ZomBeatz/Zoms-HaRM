@@ -54,6 +54,10 @@
 - Each release has a `SHA256SUMS.txt` to check your download against.
 - Bug report and feature idea forms, and `SECURITY.md` for reporting security problems privately.
 
+**Under the hood**
+- The interface was rewritten in TypeScript and React, built with Vite: the same tools as Zomello. It looks and works the same. Mistakes like a misspelled field are now caught before a release, and the interface has its own tests.
+- HaRM still runs with Python only: the built interface ships with the code.
+
 ## 0.3.1
 
 The first public release.

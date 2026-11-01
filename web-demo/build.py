@@ -27,22 +27,22 @@ WHEELS = ["pyotp==2.10.0"]
 
 
 def page(out: Path) -> None:
-    """The app's own pages, with paths made relative so the demo works in a sub-folder (/Zoms-HaRM/)."""
+    """The app's own page (the built interface in static/app/), with paths made relative so the demo
+    works in a sub-folder (/Zoms-HaRM/). The app itself reads files from static/ when window.harmDemo is set."""
     shutil.copytree(STATIC, out / "static", ignore=shutil.ignore_patterns("sw.js", "index.html", "__pycache__"))
-    html = (STATIC / "index.html").read_text()
+    html = (STATIC / "app" / "index.html").read_text()
     html = re.sub(r'\s*<link rel="manifest"[^>]*>', "", html)
     html = html.replace('"/static/', '"static/').replace('"/apple-touch-icon.png"', '"static/apple-touch-icon.png"')
     html = html.replace("<title>Zom's HaRM</title>", "<title>Zom's HaRM · Online demo</title>")
-    html = html.replace('  <script src="static/app.js" defer></script>',
+    # The demo's worker must answer /api/ before the app starts, so its script goes before the app's.
+    html = html.replace('  <script type="module"',
                         '  <link rel="stylesheet" href="demo/demo.css">\n'
                         '  <script src="demo/demo-boot.js"></script>\n'
-                        '  <script src="static/app.js" defer></script>')
+                        '  <script type="module"', 1)
     if "demo/demo-boot.js" not in html:
-        raise SystemExit("index.html changed shape: couldn't add the demo script. Update page() in web-demo/build.py.")
+        raise SystemExit("static/app/index.html changed shape: couldn't add the demo script. Update page() in web-demo/build.py.")
     html = html.replace('<div class="boot">Loading…</div>', '<div class="boot">Starting the online demo…</div>')
     (out / "index.html").write_text(html)
-    app = out / "static" / "app.js"
-    app.write_text(app.read_text().replace("'/static/", "'static/"))
 
 
 def code(out: Path) -> str:

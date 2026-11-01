@@ -780,11 +780,21 @@ Let me know if you need anything else!"""
 
     @test("settings: check interval and the opt-in update check")
     def _():
-        assert c.call("GET", "/settings/app") == {"status_interval": 5, "update_check": False}
+        assert c.call("GET", "/settings/app") == {"status_interval": 5, "update_check": False, "ai_enabled": True}
         c.call("POST", "/settings/app", {"status_interval": 7}, expect=400)
         assert c.call("POST", "/settings/app", {"status_interval": 0})["status_interval"] == 0
         assert c.call("GET", "/status")["status_interval"] == 0
         assert c.call("GET", "/update-check")["enabled"] is False
+
+    @test("settings: AI features can be turned off, and the AI endpoints then refuse")
+    def _():
+        assert c.call("GET", "/meta/capabilities")["ai"] is True
+        assert c.call("POST", "/settings/app", {"ai_enabled": False})["ai_enabled"] is False
+        assert c.call("GET", "/meta/capabilities")["ai"] is False
+        for path, body in (("/ai/prompt", {}), ("/ai/parse", {"text": "x"}), ("/ai/import", {"items": [{}]}), ("/ai/ask", {"images": []})):
+            c.call("POST", path, body, expect=403)
+        assert c.call("POST", "/settings/app", {"ai_enabled": True})["ai_enabled"] is True
+        assert "prompt" in c.call("POST", "/ai/prompt", {})
 
     hooks = []
 

@@ -1,18 +1,17 @@
 /* The frame around every page: sidebar, top bar with search and + New, the phone's tab bar. */
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Component, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { GET } from '../api/client';
-import { S, useApp } from '../lib/state';
+import { S, aiOn, useApp } from '../lib/state';
 import { MOD, hasKeyboard, prefGet, prefSet } from '../lib/util';
 import { toast, copy } from '../ui/overlay';
 import { editCredential, editEntity } from '../lib/forms';
 import { scanDialog } from '../dialogs/scan';
-import { aiAssist } from '../dialogs/ai';
-import { installApp } from '../dialogs/phone';
-import { BackLink, trackHistory, useHash } from './router';
+import { aiAssist, installApp } from '../dialogs/later';
+import { BackLink, PageWaiting, pageLoading, trackHistory, useHash, whenPageLoaded } from './router';
 import { lockNow } from './session';
 import { applyTheme, coolantUnlocked, themeIcon, themeName } from './theme';
-import { ROUTES } from './routes';
+import { ROUTES, prefetchPages } from './routes';
 
 /* Sidebar: everyday pages first, the rest folded under “More”. */
 const NAV_GROUPS: [string | null, [string, string, string][]][] = [
@@ -143,7 +142,7 @@ function QuickAdd() {
         {item('📷 New device from label', () => editEntity('devices', { status: 'Active' }, toDevice, { autoScan: true }))}
         {item('🏷 Scan a HaRM label (open device)', () => copyScan('Scan a HaRM label'))}
         {item('📝 Scan text or barcode (copy it)', () => copyScan('Scanner'))}
-        {item('🤖 AI Assist: photos → inventory', () => aiAssist())}
+        {aiOn() ? item('🤖 AI Assist: photos → inventory', () => aiAssist()) : null}
         <div className="qa-group">Add</div>
         {item('▤ Device', () => editEntity('devices', { status: 'Active' }, toDevice))}
         {item('◫ Spare part', () => editEntity('components', { status: 'In Stock', quantity: 1 }))}
@@ -174,6 +173,20 @@ function Datalists() {
   )), document.body);
 }
 
+/* A page that fails to draw (or whose code can't be downloaded, as after HaRM was updated while
+   this tab was open) shows a message instead of taking the whole app down. */
+class PageError extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    const e = this.state.error;
+    if (!e) return this.props.children;
+    const stale = /dynamically imported module|Importing a module script failed|error loading/i.test(e.message);
+    return <div className="card"><p>{stale ? 'HaRM was updated since this page was opened. Reload to get the new version.' : `This page couldn’t be shown: ${e.message}`}</p>
+      <button type="button" className="primary" onClick={() => location.reload()}>⟳ Reload</button></div>;
+  }
+}
+
 function Page({ path, q }: { path: string; q: URLSearchParams }) {
   for (const [re, render] of ROUTES) {
     const m = path.match(re);
@@ -182,8 +195,43 @@ function Page({ path, q }: { path: string; q: URLSearchParams }) {
   return <div className="empty">Page not found.</div>;
 }
 
+/* Between pages: the old page stays on screen, dimmed, until the new one has its data, so the
+   screen never goes blank. A copy of it is shown, so nothing on it can be clicked. */
+function usePageHandover(hash: string) {
+  const slot = useRef<HTMLDivElement>(null);
+  const snap = useRef<HTMLElement | null>(null);
+  const end = useRef<(() => void) | null>(null);
+  const [settled, setSettled] = useState(0);
+  const before = () => {
+    const v = document.getElementById('view');
+    snap.current = v && v.childElementCount ? v.cloneNode(true) as HTMLElement : null;
+  };
+  useLayoutEffect(() => {
+    const ghost = snap.current;
+    snap.current = null;
+    window.scrollTo(0, 0);
+    if (!ghost || !pageLoading() || !slot.current) return;
+    const view = document.getElementById('view')!;
+    ghost.removeAttribute('id');
+    ghost.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
+    ghost.className = 'view-ghost';
+    ghost.setAttribute('aria-hidden', 'true');
+    ghost.inert = true;
+    slot.current.replaceChildren(ghost);
+    view.classList.add('view-waiting');
+    const stop = whenPageLoaded(() => setSettled(n => n + 1));
+    const timer = setTimeout(() => end.current?.(), 5000);
+    end.current = () => { end.current = null; stop(); clearTimeout(timer); ghost.remove(); view.classList.remove('view-waiting'); };
+    return () => end.current?.();
+  }, [hash]);
+  // Runs in the same commit as the new page's data, so there's no empty frame in between.
+  useLayoutEffect(() => { if (!pageLoading()) end.current?.(); }, [settled]);
+  return { slot, before };
+}
+
 export function Shell() {
-  const route = useHash();
+  const handover = useRef<() => void>(() => {});
+  const route = useHash(() => handover.current());
   useApp(s => s.lkTick);
   const updateReady = useApp(s => s.updateReady);
   const { path, q, hash } = route;
@@ -191,6 +239,9 @@ export function Shell() {
   const top = ({ clusters: 'virtual', uptime: 'status' } as Record<string, string>)[path.split('/')[1]] || path.split('/')[1] || 'dashboard';
   useEffect(() => { document.body.classList.toggle('nav-folded', prefGet('harm-nav-folded') === '1'); }, []);
   useEffect(() => { closeNav(); }, [hash]);
+  useEffect(() => { const t = setTimeout(prefetchPages, 3000); return () => clearTimeout(t); }, []);
+  const { slot, before } = usePageHandover(hash);
+  handover.current = before;
   return (
     <>
       <Sidebar top={top} />
@@ -200,7 +251,8 @@ export function Shell() {
           <SearchBox q={path === '/search' ? q.get('q') || '' : ''} />
           <QuickAdd />
         </header>
-        <main id="view" key={hash}><Page path={path} q={q} /></main>
+        <div className="view-ghost-slot" ref={slot} />
+        <main id="view" key={hash}><PageError><Suspense fallback={<PageWaiting />}><Page path={path} q={q} /></Suspense></PageError></main>
       </div>
       <TabBar top={top} />
       <div className="nav-scrim" onClick={closeNav} />

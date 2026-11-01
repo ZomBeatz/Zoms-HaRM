@@ -55,4 +55,7 @@ export const useApp = create<AppState>(() => ({
 }));
 
 /* Load the current page's data again and redraw it. */
+/* Settings > AI Assist > Use AI features. Off hides every AI button, and the server refuses AI requests. */
+export const aiOn = () => S.caps?.ai !== false;
+
 export const rerender = () => useApp.setState(s => ({ tick: s.tick + 1 }));

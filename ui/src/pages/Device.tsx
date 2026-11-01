@@ -1,6 +1,7 @@
 /* One device: what it is, where it is, what's inside, how it's networked, its logins and actions. */
 import { useEffect, useState } from 'react';
 import { api, GET, loadLookups } from '../api/client';
+import type { Device, DeviceFull, SlotUsage } from '../api/types';
 import { S } from '../lib/state';
 import { locPath } from '../lib/lookups';
 import { badgeClass, clock, fmtGB, fmtMs, forHowLong, isVirtual, money, nz, prefDel, prefGet, prefSet, splitTokens, STORAGE_CATS, timeAgo, type Row } from '../lib/util';
@@ -64,7 +65,7 @@ function StorageBody({ st, legacy, raid = true }: { st: Row; legacy?: string | n
   );
 }
 
-function deviceChecklist(dev: Row, d: Row, actions: Record<string, () => void>) {
+function deviceChecklist(dev: Device, d: DeviceFull, actions: Record<string, () => void>) {
   const steps: [boolean, string, () => void, string?][] = [
     [!!dev.serial, 'Serial number / service tag', actions.edit],
     [!!(dev.location_id || dev.rack_id), 'Where it lives', actions.edit],
@@ -75,7 +76,7 @@ function deviceChecklist(dev: Row, d: Row, actions: Record<string, () => void>) 
   ];
   return steps;
 }
-function Checklist({ dev, d, actions }: { dev: Row; d: Row; actions: Record<string, () => void> }) {
+function Checklist({ dev, d, actions }: { dev: Device; d: DeviceFull; actions: Record<string, () => void> }) {
   const key = `harm-checklist-hidden:${dev.id}`;
   const [hidden, setHidden] = useState(() => !!prefGet(key));
   const steps = deviceChecklist(dev, d, actions);
@@ -136,7 +137,7 @@ function partMenu(c: Row, where: string, back: Back, sl: Row | null = null, n: n
   ));
 }
 
-function addToBay(dev: Row, sl: Row, n: number, back: Back) {
+function addToBay(dev: Device, sl: Row, n: number, back: Back) {
   const accepts = splitTokens(sl.interface).filter(Boolean);
   const empty = sl.bays.filter((b: unknown) => b == null).length;
   const isDrive = sl.drive_bay;
@@ -175,12 +176,12 @@ function SparesTable({ rows, onInstall }: { rows: Row[]; onInstall: (c: Row) => 
   ]} />;
 }
 
-function sparesFor(sl: Row, dev: Row, back: Back) {
+function sparesFor(sl: Row, dev: Device, back: Back) {
   modal(`Spares that fit ${sl.label || sl.interface}`, m => <SparesTable rows={sl.compatible} onInstall={c => { m.close(true); installDialog(c, dev.id, back); }} />, { wide: true });
 }
 
-function BayGroups({ dev, d, slots, back }: { dev: Row; d: Row; slots: Row[]; back: Back }) {
-  const compsById = Object.fromEntries(d.components.map((c: Row) => [c.id, c]));
+function BayGroups({ dev, d, slots, back }: { dev: Device; d: DeviceFull; slots: SlotUsage[]; back: Back }) {
+  const compsById = Object.fromEntries(d.components.map((c) => [c.id, c]));
   return <>{slots.map(sl => {
     const st = sl.storage;
     const used = sl.bays.filter(Boolean).length;
@@ -192,7 +193,7 @@ function BayGroups({ dev, d, slots, back }: { dev: Row; d: Row; slots: Row[]; ba
             {sl.array_name ? <div><span className="badge info">{sl.array_name}</span></div> : null}
             {sl.notes ? <div className="muted small">{sl.notes}</div> : null}</div>
           <div className="row-actions">
-            {sl.compatible.length && used < sl.total ? <Small label={`${sl.compatible.length} spare${sl.compatible.length > 1 ? 's' : ''} fit`} onClick={() => sparesFor(sl, dev, back)} cls="info" /> : null}
+            {sl.compatible.length && used < (sl.total ?? 0) ? <Small label={`${sl.compatible.length} spare${sl.compatible.length > 1 ? 's' : ''} fit`} onClick={() => sparesFor(sl, dev, back)} cls="info" /> : null}
             <Small label="Edit" onClick={() => editEntity('device_slots', sl, back)} />
             <Small label="Delete" onClick={() => deleteEntity('device_slots', sl, back, 'Drives in it stay installed in the device.')} cls="ghost-danger" />
           </div>
@@ -204,11 +205,11 @@ function BayGroups({ dev, d, slots, back }: { dev: Row; d: Row; slots: Row[]; ba
   })}</>;
 }
 
-function CpuCard({ dev, d, back }: { dev: Row; d: Row; back: Back }) {
+function CpuCard({ dev, d, back }: { dev: Device; d: DeviceFull; back: Back }) {
   const c = d.cpus;
-  const sockets = d.slots.filter((s: Row) => /cpu|socket|lga|am\d|sp\d|c32|g34|str/i.test(`${s.interface} ${s.label || ''}`) && !/ddr|dimm|pcie|m\.2|sas|sata/i.test(s.interface));
+  const sockets = d.slots.filter((s) => /cpu|socket|lga|am\d|sp\d|c32|g34|str/i.test(`${s.interface} ${s.label || ''}`) && !/ddr|dimm|pcie|m\.2|sas|sata/i.test(s.interface));
   const sockTotal = sockets.reduce((a: number, s: Row) => a + s.total, 0);
-  const comp = (id: number) => d.components.find((k: Row) => k.id === id);
+  const comp = (id: number) => d.components.find((k) => k.id === id)!;  // CPU lines come from these parts
   return (
     <Card title="Processors" actions={<Small label="+ Add CPU" onClick={() => pickCPU(dev, back)} />}>
       {c.items.length ? <div>
@@ -228,10 +229,10 @@ function CpuCard({ dev, d, back }: { dev: Row; d: Row; back: Back }) {
   );
 }
 
-function MemoryCard({ dev, d, back }: { dev: Row; d: Row; back: Back }) {
+function MemoryCard({ dev, d, back }: { dev: Device; d: DeviceFull; back: Back }) {
   const mem = d.memory;
-  const memSlots = d.slots.filter((s: Row) => /ddr|dimm/i.test(s.interface));
-  const compsById = Object.fromEntries(d.components.map((c: Row) => [c.id, c]));
+  const memSlots = d.slots.filter((s) => /ddr|dimm/i.test(s.interface));
+  const compsById = Object.fromEntries(d.components.map((c) => [c.id, c]));
   return (
     <Card title="Memory" actions={<>
       <Small label="+ Add memory" onClick={() => editEntity('components', { device_id: dev.id, status: 'Installed', category: 'RAM', quantity: 1 }, back)} />
@@ -255,10 +256,10 @@ function MemoryCard({ dev, d, back }: { dev: Row; d: Row; back: Back }) {
   );
 }
 
-function StorageCard({ dev, d, back }: { dev: Row; d: Row; back: Back }) {
-  const bays = d.slots.filter((s: Row) => s.drive_bay);
+function StorageCard({ dev, d, back }: { dev: Device; d: DeviceFull; back: Back }) {
+  const bays = d.slots.filter((s) => s.drive_bay);
   const inBays = new Set(bays.flatMap((s: Row) => s.bays.filter(Boolean)));
-  const loose = d.components.filter((c: Row) => STORAGE_CATS.test(c.category) && !inBays.has(c.id));
+  const loose = d.components.filter((c) => STORAGE_CATS.test(c.category) && !inBays.has(c.id));
   return (
     <Card title="Storage" actions={<>
       <Small label="+ Drive bays" onClick={() => editEntity('device_slots', { device_id: dev.id, total: 4, _kind: 'Drive bays', interface: 'SAS/SATA', form_factor: '3.5"' }, back)} />
@@ -290,7 +291,7 @@ function DevicePowerCard({ p }: { p: Row | null }) {
 }
 
 /* VMs and containers on a host, with how much of the host they claim. */
-function GuestsCard({ dev, d, back }: { dev: Row; d: Row; back: Back }) {
+function GuestsCard({ dev, d, back }: { dev: Device; d: DeviceFull; back: Back }) {
   const t = d.guest_totals;
   const threads = d.cpus.threads || d.cpus.cores || 0;
   const ramGb = d.memory.total_gb || 0;
@@ -344,7 +345,7 @@ function IpFact({ ips, main, isMgmt, setPrimary }: { ips: Row[]; main: Row; isMg
 const Fact = ({ ico, title, children }: { ico: string; title?: string; children: Kid }) => <span className="fact" title={title}><span>{ico}</span>{children}</span>;
 
 export default function Device({ id, q: qs }: { id: number; q: URLSearchParams }) {
-  const q = useLoad(() => GET(`/devices/${id}/full`));
+  const q = useLoad(() => GET<DeviceFull>(`/devices/${id}/full`));
   const [tabReq, setTabReq] = useState({ t: qs.get('tab'), n: 0 });
   const setTab = (t: string) => setTabReq(r => ({ t, n: r.n + 1 }));
   // Links from search open the item itself: #/devices/5?tab=network&edit=interfaces-12, ?open=<login id>
@@ -352,9 +353,9 @@ export default function Device({ id, q: qs }: { id: number; q: URLSearchParams }
     const d = q.data;
     if (!d || !(qs.get('edit') || qs.get('open'))) return;
     const [ent, rid] = (qs.get('edit') || '').split('-');
-    const rec = ent === 'interfaces' ? d.interfaces.find((r: Row) => String(r.id) === rid)
-      : ent === 'services' ? d.services.find((r: Row) => String(r.id) === rid) : null;
-    const cred = qs.get('open') ? d.credentials.find((c: Row) => String(c.id) === qs.get('open')) : null;
+    const rec = ent === 'interfaces' ? d.interfaces.find((r) => String(r.id) === rid)
+      : ent === 'services' ? d.services.find((r) => String(r.id) === rid) : null;
+    const cred = qs.get('open') ? d.credentials.find((c) => String(c.id) === qs.get('open')) : null;
     cleanHash(`#/devices/${id}`);
     qs.delete('edit'); qs.delete('open');
     if (rec) editEntity(ent, rec, q.reload);
@@ -376,20 +377,20 @@ export default function Device({ id, q: qs }: { id: number; q: URLSearchParams }
     try { await api('PUT', `/devices/${id}`, { connected: !dev.connected }); await loadLookups(); back(); } catch (e) { toast((e as Error).message, 'bad'); }
   };
   const clone = () => {
-    const copyRec = { ...dev };
+    const copyRec: Row = { ...dev };
     for (const k of ['id', 'serial', 'asset_tag', 'rack_u', 'hostname', 'created_at', 'updated_at']) delete copyRec[k];
     copyRec.name = dev.name.replace(/#(\d+)$/, (_m: string, n: string) => `#${+n + 1}`);
     if (copyRec.name === dev.name) copyRec.name += ' (copy)';
     editEntity('devices', copyRec, r => { location.hash = `#/devices/${r.id}`; });
   };
   const rackInfo = dev.rack_id ? <span><A href={`#/racks/${dev.rack_id}`}>{dev.rack_name}</A>
-    {dev.rack_u ? `, U${dev.rack_u}${dev.u_height > 1 ? ' to U' + (dev.rack_u + dev.u_height - 1) : ''}, ${dev.rack_face}${dev.full_depth ? ', full depth' : ''}` : ' (no U position)'}</span> : '';
+    {dev.rack_u ? `, U${dev.rack_u}${(dev.u_height ?? 1) > 1 ? ' to U' + (dev.rack_u + (dev.u_height ?? 1) - 1) : ''}, ${dev.rack_face}${dev.full_depth ? ', full depth' : ''}` : ' (no U position)'}</span> : '';
 
   const isCpuSlot = (sl: Row) => !/ddr|dimm|pcie|m\.2|sas|sata|u\.2|ocp|sfp|mezz/i.test(sl.interface) && /lga|am\d|sp\d|c32|g34|str|socket|fm\d/i.test(`${sl.interface} ${sl.label || ''}`);
-  const otherSlots = d.slots.filter((sl: Row) => !sl.drive_bay && !/ddr|dimm/i.test(sl.interface) && !isCpuSlot(sl));
+  const otherSlots = d.slots.filter((sl) => !sl.drive_bay && !/ddr|dimm/i.test(sl.interface) && !isCpuSlot(sl));
 
   // The device's main address: the one marked primary, else the first that isn't a management port (iDRAC/iLO/IPMI).
-  const ips = d.interfaces.filter((i: Row) => i.ip);
+  const ips = d.interfaces.filter((i) => i.ip);
   const isMgmt = (i: Row) => i.kind === 'IPMI / BMC' || /idrac|ilo|ipmi|bmc|mgmt|management/i.test(i.name || '');
   const mainIface = ips.find((i: Row) => i.is_primary) || ips.find((i: Row) => !isMgmt(i)) || ips[0];
   const setPrimary = async (i: Row) => { try { await api('PUT', `/interfaces/${i.id}`, { is_primary: true }); toast(`${i.ip} is now the main address`); back(); } catch (e) { toast((e as Error).message, 'bad'); } };
@@ -444,7 +445,7 @@ export default function Device({ id, q: qs }: { id: number; q: URLSearchParams }
             ...(virtual ? [['Runs on', dev.host_id ? <A href={`#/devices/${dev.host_id}`}>{dev.host_name || 'host'}</A> : 'Not set'], ['VM / container ID', dev.vm_id],
               ['vCPUs', dev.vcpus], ['Memory', dev.vm_ram_gb != null ? `${dev.vm_ram_gb} GB` : ''], ['Disk', dev.vm_disk_gb != null ? `${dev.vm_disk_gb} GB` : '']] as [Kid, Kid][] : []),
             ['Cluster', dev.cluster_id ? <A href={`#/clusters/${dev.cluster_id}`}>{dev.cluster_name || 'cluster'}</A> : ''],
-            ['Serial / service tag', dev.serial ? <span className="inline"><span className="mono">{dev.serial}</span><Small label="Copy" onClick={() => copy(dev.serial, 'Serial')} /></span> : ''],
+            ['Serial / service tag', dev.serial ? <span className="inline"><span className="mono">{dev.serial}</span><Small label="Copy" onClick={() => copy(dev.serial ?? '', 'Serial')} /></span> : ''],
             ['Hostname', dev.hostname ? <span className="mono">{dev.hostname}</span> : ''],
             ['OS / firmware', dev.os],
             ['CPU', d.cpus.items.length ? `${d.cpus.items.map((x: Row) => (x.qty > 1 ? x.qty + '× ' : '') + x.name).join(', ')} · ${d.cpus.cores} cores / ${d.cpus.threads} threads` : dev.cpu],
@@ -455,7 +456,7 @@ export default function Device({ id, q: qs }: { id: number; q: URLSearchParams }
             ['Plugged into', dev.powered_by_id ? <A href={`#/devices/${dev.powered_by_id}`}>{powerName}</A> : ''],
             ['Asset tag', dev.asset_tag],
             ['Tags', dev.tags ? <span>{dev.tags.split(',').map((t: string) => t.trim()).filter(Boolean).map((t: string) => <span key={t} className="tag">{t}</span>)}</span> : ''],
-            ['PC build', d.builds.length ? <span>{d.builds.map((b: Row) => <A key={b.id} href={`#/builds/${b.id}`}>{b.name}</A>)}</span> : ''],
+            ['PC build', d.builds.length ? <span>{d.builds.map((b) => <A key={b.id} href={`#/builds/${b.id}`}>{b.name}</A>)}</span> : ''],
           ]} /></Card>
           <Card title="Location & purchase"><KV pairs={[
             ['Location', dev.location_id ? <A href={`#/locations/${dev.location_id}`}>{locPath(dev.location_id)}</A> : ''],
@@ -512,7 +513,7 @@ export default function Device({ id, q: qs }: { id: number; q: URLSearchParams }
             <ActionExamples preset={{ device_id: id }} after={back} /></div>}</Card>
         <Card title="Online" actions={<><Small label="⟳ Check now" onClick={check} />{d.can_wake ? <Small label="⏻ Wake" onClick={() => wakeDevice(id, dev.name)} /> : null}</>}>
           {on.address ? <div>
-            <Table rows={[{ ...on, label: 'main', id: 'main' }, ...on.others.map((o: Row, i: number) => ({ ...o, id: 'o' + i }))]} cols={[
+            <Table rows={[{ ...on, label: 'main', id: 'main' }, ...on.others.map((o, i) => ({ ...o, id: 'o' + i }))]} cols={[
               { label: 'Address', get: r => <span><span className="mono">{r.address}</span>{r.label ? <span className="muted small">{` ${r.label}`}</span> : null}</span> },
               { label: 'State', get: r => <span title={onlineTitle(r as any)}><StateBadge state={r.state} /></span> },
               { label: 'Answer', get: r => r.state === 'up' ? nz(fmtMs(r.latency_ms), r.method ? `on ${r.method}` : '') : r.state === 'down' && r.since ? `none since ${clock(r.since)}` : '' },

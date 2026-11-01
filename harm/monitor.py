@@ -62,7 +62,8 @@ def settings(conn) -> dict:
     except ValueError:
         conf = {}
     return {"status_interval": int(conf.get("status_interval", DEFAULT_INTERVAL)),
-            "update_check": bool(conf.get("update_check", False))}
+            "update_check": bool(conf.get("update_check", False)),
+            "ai_enabled": bool(conf.get("ai_enabled", True))}
 
 
 def save_settings(conn, changes: dict) -> dict:
@@ -74,6 +75,8 @@ def save_settings(conn, changes: dict) -> dict:
         cur["status_interval"] = v
     if "update_check" in changes:
         cur["update_check"] = bool(changes["update_check"])
+    if "ai_enabled" in changes:
+        cur["ai_enabled"] = bool(changes["ai_enabled"])
     db.set_meta(conn, "app_settings", json.dumps(cur))
     return cur
 

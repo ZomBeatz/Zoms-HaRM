@@ -1,13 +1,13 @@
 /* Spare Parts: drives, memory, cards and cables, on the shelf or inside a device. */
 import { useEffect, useState } from 'react';
 import { GET, openDownload } from '../api/client';
-import { S } from '../lib/state';
+import { S, aiOn } from '../lib/state';
 import { fmtGB, nz, parseSizeGB, STORAGE_CATS, type Row } from '../lib/util';
 import { Badge, Btn, HelpLink, MenuButton, PageHead, Small, Table } from '../ui/bits';
 import { CompWhere } from '../ui/tables';
 import { deleteEntity, editEntity } from '../lib/forms';
 import { installDialog, uninstallDialog } from '../dialogs/parts';
-import { aiAssist } from '../dialogs/ai';
+import { aiAssist } from '../dialogs/later';
 import { Pending, cleanHash, useLoad } from '../app/router';
 
 /* "Drives here: 12 × 4 TB HDD, 6 × 1 TB HDD = 54 TB" for the parts shown. */
@@ -55,7 +55,7 @@ export default function Components({ q: qs }: { q: URLSearchParams }) {
   return <>
     <PageHead title="Spare Parts" sub="Drives, memory, cards, cables: everything on the shelf or inside a device.">
       <HelpLink s="parts" />
-      <Btn label="🤖 AI Assist" onClick={() => aiAssist()} />
+      {aiOn() ? <Btn label="🤖 AI Assist" onClick={() => aiAssist()} /> : null}
       <MenuButton label="⋯" items={[['⇩ Export CSV', () => openDownload('/api/export/components.csv')]]} />
       <Btn label="+ Add part" onClick={() => editEntity('components', { status: 'In Stock', quantity: 1 })} cls="primary" />
     </PageHead>

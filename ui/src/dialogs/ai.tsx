@@ -2,7 +2,7 @@
  * prices the hardware, and its reply comes back here for a preview before anything is saved. */
 import { useEffect, useRef, useState } from 'react';
 import { api, GET, loadLookups, UNREACHABLE } from '../api/client';
-import { S, rerender } from '../lib/state';
+import { S, aiOn, rerender } from '../lib/state';
 import { locDescendants, locPath } from '../lib/lookups';
 import { money, type Row } from '../lib/util';
 import { modal, toast } from '../ui/overlay';
@@ -11,6 +11,7 @@ import { photoToCanvas, scanDialog } from './scan';
 import { showAuth } from '../app/session';
 
 export async function aiAssist(preset: Row = {}) {
+  if (!aiOn()) { toast('AI features are turned off in Settings > AI Assist.', 'bad'); return; }
   try {
     const cfg = await GET('/ai/config');
     const p = cfg.providers[cfg.provider];
@@ -222,8 +223,8 @@ export function AiSettingsCard() {
   useEffect(() => {
     GET('/ai/config').then(c => { setCfg(c); setProv(c.provider); setModel(c.model); setBase(c.base_url); setWeb(!!c.web); }).catch(e => setErr(e.message));
   }, []);
-  if (err) return <Card title="AI Assist"><div className="form-error">{err}</div></Card>;
-  if (!cfg) return <Card title="AI Assist"><div className="muted">Loading…</div></Card>;
+  if (err) return <Card title="AI service"><div className="form-error">{err}</div></Card>;
+  if (!cfg) return <Card title="AI service"><div className="muted">Loading…</div></Card>;
   const P = cfg.providers;
   const p = P[prov];
   const save = async (extra: Row = {}) => {
@@ -237,7 +238,7 @@ export function AiSettingsCard() {
   const row = (label: string, el: React.ReactNode, help?: string, hidden = false) =>
     <label className="disc-field" hidden={!p || hidden}><span>{label}</span>{el}{help ? <small className="muted">{help}</small> : null}</label>;
   return (
-    <Card title="AI Assist">
+    <Card title="AI service">
       <p className="muted">Lets 🤖 AI Assist send your photos straight to an AI service and fill in the results. Without one, you can still copy the prompt into any AI app.</p>
       <label className="disc-field"><span>AI service</span>
         <select id="ai-provider" value={prov} onChange={e => setProv(e.target.value)}>

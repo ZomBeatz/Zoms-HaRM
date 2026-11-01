@@ -204,7 +204,24 @@ export default function Settings() {
         <a className="button" href="#/actions">⚡ Actions</a>
       </div></Card>
     </Group>
-    <Group title="AI Assist"><AiSettingsCard /></Group>
+    <Group title="AI Assist">
+      <Card title="AI features"><div>
+        <p>{app.ai_enabled
+          ? 'On: 🤖 AI Assist turns photos of your hardware into inventory, with any AI app or a service you pick below.'
+          : 'Off: HaRM shows no AI buttons, and the server refuses AI requests. Your saved AI settings are kept for if you turn it back on.'}</p>
+        <label className="check"><input type="checkbox" checked={app.ai_enabled !== false} onChange={async e => {
+          const on = e.target.checked;
+          try {
+            await api('POST', '/settings/app', { ai_enabled: on });
+            S.caps.ai = on;
+            useApp.setState(st => ({ lkTick: st.lkTick + 1 }));
+            toast(on ? 'AI features are on' : 'AI features are off');
+            back();
+          } catch (x) { toast((x as Error).message, 'bad'); }
+        }} /><span>Use AI features</span></label>
+      </div></Card>
+      {app.ai_enabled !== false ? <AiSettingsCard /> : null}
+    </Group>
     <Group title="Data & backups">
       <Card title="Automatic backups"><div>
         <p>HaRM saves a copy every day and keeps the last 14. Saved logins stay encrypted inside.</p>

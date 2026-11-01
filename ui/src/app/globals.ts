@@ -7,9 +7,7 @@ import { checkVersion, showAuth } from './session';
 import { applyTheme, themePrefs } from './theme';
 import { editCredential, editEntity } from '../lib/forms';
 import { ACTION_TEMPLATES, editAction } from '../lib/actions';
-import { editAlerts, editNetwatch } from '../dialogs/watch';
-import { aiAssist } from '../dialogs/ai';
-import { phoneAppHelp } from '../dialogs/phone';
+import { aiAssist, editAlerts, editNetwatch, phoneAppHelp } from '../dialogs/later';
 import { scanDialog } from '../dialogs/scan';
 
 export function toggleNavFold() {

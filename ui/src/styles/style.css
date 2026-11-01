@@ -903,3 +903,10 @@ body.wall .st-name { font-size: 16px; }
 .bar-fill.over { background: var(--bad); }
 .power-supply { margin-top: 10px; }
 .bar-fill.good { background: color-mix(in srgb, var(--ok) 75%, transparent); }
+
+/* ---------------------------------------------------------------- between pages */
+.main { position: relative; }
+.view-ghost-slot:empty { display: none; }
+.view-ghost { position: absolute; left: 0; right: 0; padding: 22px 24px 60px; max-width: 1500px; opacity: .55; pointer-events: none; transition: opacity .2s; }
+#view.view-waiting { visibility: hidden; }
+@media (max-width: 700px) { .view-ghost { padding: 14px 14px 80px; } }

@@ -1,25 +1,45 @@
 /* Which page each address opens. */
-import { useEffect, type ReactNode } from 'react';
+import { lazy, useEffect, type ComponentType, type ReactNode } from 'react';
 import { editEntity } from '../lib/forms';
 import Dashboard from '../pages/Dashboard';
-import Status from '../pages/Status';
-import Uptime from '../pages/Uptime';
-import Actions from '../pages/Actions';
-import Devices from '../pages/Devices';
-import Device from '../pages/Device';
-import { Racks, Rack } from '../pages/Racks';
-import Components from '../pages/Components';
-import { Connections, Audit, Vault, Search } from '../pages/Lists';
-import { Locations, Location } from '../pages/Locations';
-import { Networks, Network } from '../pages/Networks';
-import Discover from '../pages/Discover';
-import { Virtual, Cluster } from '../pages/Virtual';
-import Setup from '../pages/Setup';
-import { Builds, Build, Library } from '../pages/Builder';
-import Export from '../pages/Export';
-import Tasks from '../pages/Tasks';
-import Help from '../pages/Help';
-import Settings from '../pages/Settings';
+
+/* Every page but Home loads the first time it's opened, or quietly a few seconds after HaRM starts
+   (prefetchPages), so going to a page later only waits for its data. */
+const loaders: (() => Promise<unknown>)[] = [];
+const page = <T,>(load: () => Promise<T>, pick: (m: T) => ComponentType<any>) => {
+  loaders.push(load);
+  return lazy(() => load().then(m => ({ default: pick(m) })));
+};
+export function prefetchPages() {
+  for (const load of loaders) load().catch(() => { /* fetched again when opened */ });
+}
+const Status = page(() => import('../pages/Status'), m => m.default);
+const Uptime = page(() => import('../pages/Uptime'), m => m.default);
+const Actions = page(() => import('../pages/Actions'), m => m.default);
+const Devices = page(() => import('../pages/Devices'), m => m.default);
+const Device = page(() => import('../pages/Device'), m => m.default);
+const Racks = page(() => import('../pages/Racks'), m => m.Racks);
+const Rack = page(() => import('../pages/Racks'), m => m.Rack);
+const Components = page(() => import('../pages/Components'), m => m.default);
+const Connections = page(() => import('../pages/Lists'), m => m.Connections);
+const Audit = page(() => import('../pages/Lists'), m => m.Audit);
+const Vault = page(() => import('../pages/Lists'), m => m.Vault);
+const Search = page(() => import('../pages/Lists'), m => m.Search);
+const Locations = page(() => import('../pages/Locations'), m => m.Locations);
+const Location = page(() => import('../pages/Locations'), m => m.Location);
+const Networks = page(() => import('../pages/Networks'), m => m.Networks);
+const Network = page(() => import('../pages/Networks'), m => m.Network);
+const Discover = page(() => import('../pages/Discover'), m => m.default);
+const Virtual = page(() => import('../pages/Virtual'), m => m.Virtual);
+const Cluster = page(() => import('../pages/Virtual'), m => m.Cluster);
+const Setup = page(() => import('../pages/Setup'), m => m.default);
+const Builds = page(() => import('../pages/Builder'), m => m.Builds);
+const Build = page(() => import('../pages/Builder'), m => m.Build);
+const Library = page(() => import('../pages/Builder'), m => m.Library);
+const Export = page(() => import('../pages/Export'), m => m.default);
+const Tasks = page(() => import('../pages/Tasks'), m => m.default);
+const Help = page(() => import('../pages/Help'), m => m.default);
+const Settings = page(() => import('../pages/Settings'), m => m.default);
 
 type Render = (m: RegExpMatchArray, q: URLSearchParams) => ReactNode;
 

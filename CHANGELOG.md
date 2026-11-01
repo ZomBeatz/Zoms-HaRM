@@ -47,7 +47,14 @@
 **Keyboard**
 - **Ctrl K** (⌘K on a Mac) searches everything, **/** filters the list on the page, **N** opens **+ New**, **?** shows the shortcuts, **[** folds the sidebar to icons, and **Esc** closes menus and search. See **Help > Keyboard shortcuts** or **Settings > Shortcuts**.
 
+**Cleaning up parts**
+- **Delete** on any part of a device removes it outright (added by mistake, by hand or by a scan), with **Undo**. It doesn't go to Spare Parts. **Remove** is now **To spares**, with **Delete it instead** in it.
+- **Import specs** can **Replace with this scan**: parts the new scan didn't find are deleted, and only the kinds of parts it read. **Undo** (in the message, or **⋯ > Undo last import**) puts everything back as it was.
+- Deleting a device with parts inside asks whether they go to **Spare Parts** or are deleted with it.
+
 **Settings**
+- **Name of this HaRM**, where **new parts and devices start**, a **High contrast** option, **notes oldest first** and **finished tasks tucked away**, a shorter **menu** (untick pages you don't use), and a **Wall display** mode that opens on Status full screen and doesn't lock itself.
+- **Export & share** remembers what you include, the title and the sell sheet's lines on each device.
 - **Find a setting…** at the top of Settings filters the page.
 - **Reading and comfort** (**Settings > Appearance**, kept on each device): **Text size** (Normal, Large, Larger), **Spacing** (Comfortable or Compact), how **dates** and the **clock** read, **Lengths** in millimetres or inches (rack depth and PC part sizes), **Less motion**, and a **sound** (and buzz on phones) when something goes offline while the Status page is open.
 - **On every device**: the **Currency** prices are shown in, and the page HaRM **starts on** (Home, Status, Devices, Tasks, Racks, or where you left off).

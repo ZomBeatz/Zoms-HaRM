@@ -68,6 +68,10 @@ CHOICES = {
 }
 
 
+# Where new parts and devices start (Settings > On every device > New items start in).
+NEW_ITEM_DEFAULTS = ("part_location_id", "part_rack_id", "device_location_id", "device_rack_id")
+
+
 def settings(conn) -> dict:
     try:
         conf = json.loads(db.get_meta(conn, "app_settings") or "{}")
@@ -80,7 +84,9 @@ def settings(conn) -> dict:
             "idle_minutes": int(conf.get("idle_minutes", IDLE_MINUTES_DEFAULT)),
             "session_hours": int(conf.get("session_hours", SESSION_HOURS_DEFAULT)),
             "backup_keep": int(conf.get("backup_keep", BACKUP_KEEP_DEFAULT)),
-            "start_page": str(conf.get("start_page") or "dashboard")}
+            "start_page": str(conf.get("start_page") or "dashboard"),
+            "site_name": str(conf.get("site_name") or ""),
+            **{k: conf.get(k) for k in NEW_ITEM_DEFAULTS}}
 
 
 def save_settings(conn, changes: dict) -> dict:
@@ -99,6 +105,12 @@ def save_settings(conn, changes: dict) -> dict:
         if not re.fullmatch(r"[A-Z]{3}", v):
             raise ValueError("Currency: a three-letter code like USD, EUR or GBP")
         cur["currency"] = v
+    if "site_name" in changes:
+        cur["site_name"] = " ".join(str(changes["site_name"] or "").split())[:40]
+    for k in NEW_ITEM_DEFAULTS:
+        if k in changes:
+            v = changes[k]
+            cur[k] = int(v) if v not in (None, "", 0, "0") else None
     for k, ok in CHOICES.items():
         if k in changes:
             v = changes[k] if k == "start_page" else int(changes[k])

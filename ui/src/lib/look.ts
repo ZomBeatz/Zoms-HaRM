@@ -11,8 +11,16 @@ export interface Look {
   length: typeof FMT.length;
   motion: 'auto' | 'reduce';
   sound: boolean;
+  contrast: 'normal' | 'high';
+  /* A screen on the wall: opens on Status, full window, never locks itself (see Settings). */
+  wall: boolean;
+  /* Sidebar pages left out of the menu on this device (still reachable by search and links). */
+  hideNav: string[];
+  notesOrder: 'newest' | 'oldest';
+  hideDone: boolean;
 }
-const DEFAULTS: Look = { text: 'normal', density: 'comfy', dates: 'iso', clock: 'auto', length: 'mm', motion: 'auto', sound: false };
+const DEFAULTS: Look = { text: 'normal', density: 'comfy', dates: 'iso', clock: 'auto', length: 'mm', motion: 'auto', sound: false,
+  contrast: 'normal', wall: false, hideNav: [], notesOrder: 'newest', hideDone: false };
 
 export function look(): Look {
   try { return { ...DEFAULTS, ...JSON.parse(prefGet('harm-look') || '{}') }; } catch { return { ...DEFAULTS }; }
@@ -23,6 +31,7 @@ export function applyLook(l = look()) {
   r.dataset.text = l.text;
   r.dataset.density = l.density;
   r.dataset.motion = l.motion;
+  r.dataset.contrast = l.contrast;
   Object.assign(FMT, { dates: l.dates, clock: l.clock, length: l.length });
 }
 

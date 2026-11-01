@@ -677,6 +677,7 @@ def auth_status(request: Request, conn=Depends(get_db)):
         "authenticated": _lookup_session(request) is not None,
         "totp_enabled": db.get_meta(conn, "totp") is not None,
         "idle_minutes": _limits["idle"] // 60,
+        "site_name": monitor.settings(conn)["site_name"],  # shown on the lock screen, to tell HaRMs apart
         "version": APP_VERSION,
         "release": __version__,
     }
@@ -2083,7 +2084,8 @@ def capabilities(request: Request, _s=Depends(require_session), conn=Depends(get
             "phone_urls": _phone_urls(request),
             "backups": [{"name": b.name, "size": b.stat().st_size} for b in backups], "backup_dir": str(BACKUP_DIR),
             "platform": "windows" if os.name == "nt" else "unix",
-            **{k: v for k, v in monitor.settings(conn).items() if k in ("currency", "start_page")}, "ai": monitor.settings(conn)["ai_enabled"]}
+            **{k: v for k, v in monitor.settings(conn).items() if k in ("currency", "start_page", *monitor.NEW_ITEM_DEFAULTS)},
+            "ai": monitor.settings(conn)["ai_enabled"]}
 
 
 def _run_scan(path: str) -> dict:
@@ -3306,7 +3308,10 @@ def delete_entity(entity: str, rid: int, request: Request, _s=Depends(require_se
     row = fetch_one(conn, entity, rid)
     if entity == "racks":
         conn.execute("UPDATE devices SET rack_u = NULL WHERE rack_id = ?", (rid,))
-    if entity == "devices":
+    if entity == "devices" and request.query_params.get("parts") == "delete":
+        # Deleted with it (they were added by mistake, or the device is gone for good).
+        conn.execute("DELETE FROM components WHERE device_id = ?", (rid,))
+    elif entity == "devices":
         # Parts inside a deleted device go back to stock where the device was.
         conn.execute("UPDATE components SET status = 'In Stock', location_id = ?, rack_id = ?, slot_id = NULL, "
                      "bay = NULL WHERE device_id = ?", (row["location_id"], row["rack_id"], rid))

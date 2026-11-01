@@ -151,7 +151,7 @@ The **⋯** button holds the less common actions: Import specs, check if it's on
 
 Don't want AI in HaRM at all? Untick **Settings > AI Assist > Use AI features**: every AI button disappears, and HaRM refuses AI requests until you tick it again.
 
-**Spare Parts:** everything on the shelf or inside devices. Install parts into devices and take them out again; quantities split automatically.
+**Spare Parts:** everything on the shelf or inside devices. Install parts into devices and take them out again (**To spares**); quantities split automatically. A part added by mistake, by hand or by a scan, has **Delete** (with **Undo**), so it doesn't land in Spare Parts. Re-running **Import specs** can **Replace with this scan**, and every import can be undone.
 
 **Virtual & Clusters:** track VMs and containers as devices that **run on** a host (VM ID, vCPUs, memory, disk). A host's **VMs** tab shows what's running on it and how much of its CPU and memory is claimed. Group hosts into **clusters** (Proxmox, Kubernetes, vSphere…). **Discover > Proxmox** imports a whole Proxmox cluster with all its VMs and containers.
 
@@ -163,7 +163,7 @@ Don't want AI in HaRM at all? Untick **Settings > AI Assist > Use AI features**:
 
 **Export & Share:** copy devices as text for a person or an AI assistant, download CSV/JSON, or print a spec sheet or sell sheet to PDF.
 
-**Settings:** appearance (match your computer, light or dark), text size and spacing, how dates, times and lengths read, less motion, a sound when something goes offline, currency, the page HaRM starts on, when it locks, master password, two-factor login, recovery code, phones and tablets, how often to check what's online, AI Assist, backups (and how many to keep), keyboard shortcuts, and About with **Send feedback** and **Check for new versions**. **Find a setting…** at the top filters the page.
+**Settings:** appearance (match your computer, light or dark), text size and spacing, how dates, times and lengths read, less motion, high contrast, notes order, a sound when something goes offline, a shorter menu, a wall display mode, currency, the page HaRM starts on, a name for this HaRM, where new items start, when it locks, master password, two-factor login, recovery code, phones and tablets, how often to check what's online, AI Assist, backups (and how many to keep), keyboard shortcuts, and About with **Send feedback** and **Check for new versions**. **Find a setting…** at the top filters the page.
 
 ## Backups and moving to a new PC
 

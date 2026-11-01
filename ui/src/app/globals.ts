@@ -5,7 +5,7 @@ import { prefSet } from '../lib/util';
 import { anyModalOpen, toast } from '../ui/overlay';
 import { checkVersion, showAuth } from './session';
 import { onKeyForBoo } from './halloween';
-import { applyLook } from '../lib/look';
+import { applyLook, look } from '../lib/look';
 import { applyTheme, themePrefs } from './theme';
 import { editCredential, editEntity } from '../lib/forms';
 import { ACTION_TEMPLATES, editAction } from '../lib/actions';
@@ -32,7 +32,7 @@ export function installGlobals() {
     addEventListener(ev, () => { S.lastActivity = Date.now(); }, { passive: true });
   }
   setInterval(async () => {
-    if (!S.authed || !S.auth) return;
+    if (!S.authed || !S.auth || look().wall) return;  // a wall display never locks itself
     const idleMs = S.auth.idle_minutes * 60000;  // 0: only when locked by hand (Settings > Locking)
     const now = Date.now();
     if (idleMs && now - S.lastActivity > idleMs) {
@@ -50,7 +50,7 @@ export function installGlobals() {
   }
   addEventListener('beforeinstallprompt', e => { e.preventDefault(); useApp.setState({ installPrompt: e as BeforeInstallPromptEvent }); });
   addEventListener('appinstalled', () => { useApp.setState({ installPrompt: null }); toast('HaRM installed as an app'); });
-  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) document.body.classList.remove('wall'); });
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && !look().wall) document.body.classList.remove('wall'); });
 
   /* The same keys as every ZomBeatz product. Ctrl +/−/0 is the browser's own zoom. */
   addEventListener('keydown', e => {

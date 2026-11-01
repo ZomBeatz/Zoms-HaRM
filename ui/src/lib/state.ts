@@ -6,7 +6,7 @@ import type { Lookups } from '../api/types';
 
 export interface AuthStatus {
   setup: boolean; authenticated: boolean; totp_enabled: boolean; idle_minutes: number;
-  version?: string; release?: string; [k: string]: unknown;
+  version?: string; release?: string; site_name?: string; [k: string]: unknown;
 }
 
 export const S = {
@@ -31,6 +31,7 @@ export const S = {
   pc: null as Row | null,
   aiConf: null as Row | null,
   ai: null as Row | null,
+  lastImport: {} as Record<number, import('../dialogs/import').ImportUndo>,
   statusPrev: null as Map<number, string> | null,
   statusPrevSvc: null as Map<number, string> | null,
   brandClicks: [] as number[],

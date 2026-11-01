@@ -2,6 +2,7 @@
 import { api, GET, loadLookups } from '../api/client';
 import { S, useApp } from '../lib/state';
 import { FMT, prefGet } from '../lib/util';
+import { look } from '../lib/look';
 import { closeAllModals, toast } from '../ui/overlay';
 
 export function showAuth(msg = '') {
@@ -36,7 +37,7 @@ export async function startApp() {
 /* Opening HaRM without a page in the address goes to the start page from Settings. */
 function openStartPage() {
   if (location.hash && location.hash !== '#/' && location.hash !== '#') return;
-  const start = S.caps.start_page || 'dashboard';
+  const start = look().wall ? 'status' : S.caps.start_page || 'dashboard';
   const to = start === 'last' ? prefGet('harm-last-page') : `#/${start}`;
   if (to && to !== '#/dashboard' && to.startsWith('#/')) history.replaceState(null, '', to);
 }

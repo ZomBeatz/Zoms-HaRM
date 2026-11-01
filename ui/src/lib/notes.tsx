@@ -2,6 +2,7 @@
 import { useRef, useState } from 'react';
 import { api } from '../api/client';
 import { S } from './state';
+import { look } from './look';
 import { timeAgo, type Row } from './util';
 import { confirmBox, toast } from '../ui/overlay';
 import { A, MenuButton, Small } from '../ui/bits';
@@ -63,8 +64,13 @@ export function JournalCard({ entity, entityId, notes, after, title = 'Notes & t
     catch (e) { toast((e as Error).message, 'bad'); }
     setBusy(false);
   };
+  // Settings > Appearance > Notes: oldest first, and finished tasks out of the way, if chosen.
+  const { notesOrder, hideDone } = look();
+  const [seeDone, setSeeDone] = useState(false);
   const open = notes.filter(isOpenTask);
-  const rest = notes.filter(n => !open.includes(n));
+  const finished = notes.filter(n => n.done);
+  const sorted = notesOrder === 'oldest' ? [...notes].reverse() : notes;
+  const rest = sorted.filter(n => !open.includes(n) && (!hideDone || seeDone || !n.done));
   return (
     <section className="card journal">
       <div className="card-head"><h3>{title + (open.length ? ` · ${open.length} open` : '')}</h3></div>
@@ -83,6 +89,7 @@ export function JournalCard({ entity, entityId, notes, after, title = 'Notes & t
       {rest.length ? <ul className="plain notes-list">{rest.slice(0, showAll ? 999 : 6).map(n => <NoteItem key={n.id} n={n} after={after} />)}</ul>
         : (open.length ? null : <div className="empty">Nothing yet. Jot down what you did, what’s broken, or what to do next.</div>)}
       {rest.length > 6 && !showAll ? <Small label={`Show all ${rest.length}`} onClick={() => { S.showAllNotes = `${entity}:${entityId}`; setShowAll(true); }} /> : null}
+      {hideDone && finished.length && !seeDone ? <Small label={`Show ${finished.length} finished`} onClick={() => setSeeDone(true)} /> : null}
     </section>
   );
 }

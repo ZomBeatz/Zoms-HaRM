@@ -53,6 +53,8 @@ export function PageHead({ title, sub, children }: { title: Kid; sub?: Kid; chil
   const text = nodeText(Array.isArray(kids) ? kids[0] : title).trim();
   useEffect(() => {
     S.pageTitle = text;
+    // The browser tab names the page, and which HaRM it is when it has a name (Settings).
+    document.title = [text, S.auth?.site_name || "Zom's HaRM", window.harmDemo ? 'Online demo' : ''].filter(Boolean).join(' · ');
     const cur = S.hist[S.hist.length - 1];
     if (cur && cur.hash === (location.hash || '#/dashboard')) cur.title = text;
   }, [text]);

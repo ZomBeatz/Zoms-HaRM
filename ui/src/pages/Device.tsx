@@ -5,7 +5,7 @@ import type { Device, DeviceFull, SlotUsage } from '../api/types';
 import { S } from '../lib/state';
 import { locPath } from '../lib/lookups';
 import { badgeClass, clock, fmtDay, fmtGB, fmtMs, forHowLong, isVirtual, money, nz, prefDel, prefGet, prefSet, splitTokens, STORAGE_CATS, timeAgo, type Row } from '../lib/util';
-import { copy, modal, toast, type ModalCtl } from '../ui/overlay';
+import { choose, copy, modal, toast, type ModalCtl } from '../ui/overlay';
 import { A, Badge, Bar, Btn, Card, Dot, ExtLink, KV, MenuButton, PageHead, Small, Table, Tabs, WarrantyCell, usePopMenu, type Kid } from '../ui/bits';
 import { formDialog } from '../ui/form';
 import { ConnTable, CredTable, IfaceTable, Placement, StatusSelect } from '../ui/tables';
@@ -14,8 +14,8 @@ import { JournalCard, isOpenTask } from '../lib/notes';
 import { ActionExamples, ActionsTable, editAction } from '../lib/actions';
 import { CertText, HistoryStrip, OnlinePill, ServicePill, StateBadge, checkDevice, onlineTitle, wakeDevice } from '../lib/status';
 import { revealCredential } from '../dialogs/credential';
-import { installDialog, uninstallDialog } from '../dialogs/parts';
-import { importSpecs } from '../dialogs/import';
+import { deletePart, installDialog, uninstallDialog } from '../dialogs/parts';
+import { importSpecs, undoImport } from '../dialogs/import';
 import { pickCPU } from '../dialogs/library';
 import { printLabels } from '../dialogs/print';
 import { BackLink, Pending, cleanHash, goBackOr, useLoad } from '../app/router';
@@ -124,7 +124,8 @@ function partMenu(c: Row, where: string, back: Back, sl: Row | null = null, n: n
         ['Serial', c.serial ? <span className="mono">{c.serial}</span> : ''], ['Status', <Badge status={c.status} />], ['Health', c.health],
         ['Group', c.quantity > 1 ? `One of ${c.quantity} identical drives recorded together. Actions here apply to this ${sl?.drive_bay === false ? 'slot' : 'bay'} only.` : '']]} />
       <div className="actions wrap">
-        <Btn label="Remove to spares" onClick={act(m, x => uninstallDialog(x, back))} />
+        <Btn label="To spares" onClick={act(m, x => uninstallDialog(x, back))} />
+        <Btn label="🗑 Delete" cls="ghost-danger" onClick={act(m, x => deletePart(x, back))} />
         {c.status !== 'Faulty' ? <Btn label="⚠ Mark failed" cls="ghost-danger" onClick={act(m, async x => {
           await api('PUT', `/components/${x.id}`, { status: 'Faulty' });
           await api('POST', '/notes', { entity: 'devices', entity_id: c.device_id, kind: 'issue', body: `${where}: ${c.capacity || ''} ${c.category} ${c.serial && c.quantity === 1 ? `(S/N ${c.serial}) ` : ''}marked failed. Replace it.`.replace(/\s+/g, ' ') });
@@ -219,7 +220,7 @@ function CpuCard({ dev, d, back }: { dev: Device; d: DeviceFull; back: Back }) {
             <div><b>{`${x.qty > 1 ? x.qty + ' × ' : ''}${x.name}`}</b></div>
             <div className="muted small">{[x.cores ? `${x.cores} cores / ${x.threads || x.cores} threads${x.qty > 1 ? ' each' : ''}` : 'core count unknown: edit it or pick it from the library',
               x.base_ghz ? `${x.base_ghz} GHz${x.boost_ghz ? ` (boost ${x.boost_ghz} GHz)` : ''}` : null, x.socket].filter(Boolean).join(' · ')}</div>
-            <div className="row-actions"><Small label="Edit" onClick={() => editEntity('components', comp(x.id), back)} /><Small label="Remove" onClick={() => uninstallDialog(comp(x.id), back)} /></div>
+            <div className="row-actions"><Small label="Edit" onClick={() => editEntity('components', comp(x.id), back)} /><Small label="To spares" onClick={() => uninstallDialog(comp(x.id), back)} /><Small label="Delete" cls="ghost-danger" onClick={() => deletePart(comp(x.id), back)} /></div>
           </li>
         ))}</ul>
         {sockTotal ? <p className={(c.sockets > sockTotal ? 'bad-text' : 'muted') + ' small'}>{`${c.sockets} of ${sockTotal} CPU socket${sockTotal > 1 ? 's' : ''} filled`}</p> : null}
@@ -399,8 +400,20 @@ export default function Device({ id, q: qs }: { id: number; q: URLSearchParams }
   const hwCount = d.components.reduce((n: number, c: Row) => n + (c.quantity || 1), 0);
   const virtual = isVirtual(dev);
   const showGuests = !virtual && (d.guests.length > 0 || /hypervisor|server|nas|mini pc|desktop|workstation/i.test(dev.device_type || ''));
-  const deleteDev = () => deleteEntity('devices', dev, () => goBackOr('#/devices'),
-    'Its interfaces, services, slots and cable records will be deleted. Installed parts go back to stock.');
+  // With parts inside, ask where they go: to Spare Parts (pulled for reuse), or deleted along with it.
+  const deleteDev = async () => {
+    if (!d.components.length) return deleteEntity('devices', dev, () => goBackOr('#/devices'), 'Its interfaces, services, slots and cable records will be deleted.');
+    const n = d.components.reduce((a, c) => a + (c.quantity || 1), 0);
+    const pick = await choose(`Delete "${dev.name}"?`, `Its interfaces, services, slots and cable records will be deleted. It has ${n} part${n === 1 ? '' : 's'} inside.`,
+      [['no', 'Cancel'], ['spares', 'Delete, parts to Spare Parts'], ['all', 'Delete it and its parts', 'danger']]);
+    if (pick !== 'spares' && pick !== 'all') return;
+    try {
+      await api('DELETE', `/devices/${id}${pick === 'all' ? '?parts=delete' : ''}`);
+      toast('Deleted');
+      await loadLookups();
+      goBackOr('#/devices');
+    } catch (e) { toast((e as Error).message, 'bad'); }
+  };
   const check = async () => { await checkDevice(id, dev.name); back(); };
   const powerName = dev.powered_by_id ? S.lk.devices.find(x => x.id === dev.powered_by_id)?.name || 'device' : '';
 
@@ -412,6 +425,7 @@ export default function Device({ id, q: qs }: { id: number; q: URLSearchParams }
       <Btn label="Edit" onClick={actions.edit} cls="primary" />
       <MenuButton label="⋯" items={[
         ['⇩ Import specs…', actions.importSpecs],
+        S.lastImport[id] ? ['↶ Undo last import', () => undoImport(id, back)] : null,
         ['⟳ Check if it’s online', check],
         d.can_wake ? ['⏻ Wake up (Wake-on-LAN)', () => wakeDevice(id, dev.name)] : null,
         ['⚡ New action…', () => editAction({ device_id: id }, back)],
@@ -484,7 +498,7 @@ export default function Device({ id, q: qs }: { id: number; q: URLSearchParams }
             { label: 'Serial', get: r => <span className="mono">{r.serial || ''}</span> },
             { label: 'Qty', get: r => r.quantity },
             { label: 'Health', get: r => r.health || '' },
-            { label: '', nosort: true, get: r => <div className="row-actions"><Small label="Remove" onClick={() => uninstallDialog(r, back)} /><Small label="Edit" onClick={() => editEntity('components', r, back)} /></div> },
+            { label: '', nosort: true, get: r => <div className="row-actions"><Small label="Edit" onClick={() => editEntity('components', r, back)} /><Small label="To spares" onClick={() => uninstallDialog(r, back)} /><Small label="Delete" cls="ghost-danger" onClick={() => deletePart(r, back)} /></div> },
           ]} /></Card>
         <Card title="Expansion & other slots" actions={<Small label="+ Add" onClick={() => editEntity('device_slots', { ...preset, total: 1, _kind: 'PCIe slots' }, back)} />}>
           {otherSlots.length ? <div className="slots">{otherSlots.map((sl: Row) => <OtherSlot key={sl.id} sl={sl} id={id} back={back} />)}</div>

@@ -5,6 +5,7 @@ import { prefSet } from '../lib/util';
 import { anyModalOpen, toast } from '../ui/overlay';
 import { checkVersion, showAuth } from './session';
 import { onKeyForBoo } from './halloween';
+import { applyLook } from '../lib/look';
 import { applyTheme, themePrefs } from './theme';
 import { editCredential, editEntity } from '../lib/forms';
 import { ACTION_TEMPLATES, editAction } from '../lib/actions';
@@ -18,6 +19,7 @@ export function toggleNavFold() {
 }
 
 export function installGlobals() {
+  applyLook();
   window.toast = toast;  // the online demo's welcome-back message
   // For the guide's screenshot script (zombeatz-docs/scripts/harm-screenshots.mjs) and debugging.
   window.harm = { editEntity, editCredential, editAction, ACTION_TEMPLATES, editAlerts, editNetwatch, aiAssist, phoneAppHelp, scanDialog, showAuth };
@@ -31,9 +33,9 @@ export function installGlobals() {
   }
   setInterval(async () => {
     if (!S.authed || !S.auth) return;
-    const idleMs = S.auth.idle_minutes * 60000;
+    const idleMs = S.auth.idle_minutes * 60000;  // 0: only when locked by hand (Settings > Locking)
     const now = Date.now();
-    if (now - S.lastActivity > idleMs) {
+    if (idleMs && now - S.lastActivity > idleMs) {
       try { await api('POST', '/auth/logout'); } catch { /* ignore */ }
       showAuth('Locked after inactivity.');
     } else if (now - S.lastActivity < 60000 && now - S.lastPing > 4 * 60000) {

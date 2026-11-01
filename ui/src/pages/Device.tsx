@@ -4,7 +4,7 @@ import { api, GET, loadLookups } from '../api/client';
 import type { Device, DeviceFull, SlotUsage } from '../api/types';
 import { S } from '../lib/state';
 import { locPath } from '../lib/lookups';
-import { badgeClass, clock, fmtGB, fmtMs, forHowLong, isVirtual, money, nz, prefDel, prefGet, prefSet, splitTokens, STORAGE_CATS, timeAgo, type Row } from '../lib/util';
+import { badgeClass, clock, fmtDay, fmtGB, fmtMs, forHowLong, isVirtual, money, nz, prefDel, prefGet, prefSet, splitTokens, STORAGE_CATS, timeAgo, type Row } from '../lib/util';
 import { copy, modal, toast, type ModalCtl } from '../ui/overlay';
 import { A, Badge, Bar, Btn, Card, Dot, ExtLink, KV, MenuButton, PageHead, Small, Table, Tabs, WarrantyCell, usePopMenu, type Kid } from '../ui/bits';
 import { formDialog } from '../ui/form';
@@ -462,10 +462,10 @@ export default function Device({ id, q: qs }: { id: number; q: URLSearchParams }
             ['Location', dev.location_id ? <A href={`#/locations/${dev.location_id}`}>{locPath(dev.location_id)}</A> : ''],
             ['Rack / holder', rackInfo],
             ['Spot', dev.position],
-            ['Purchased', nz(dev.purchase_date, dev.vendor ? `from ${dev.vendor}` : '')],
+            ['Purchased', nz(fmtDay(dev.purchase_date), dev.vendor ? `from ${dev.vendor}` : '')],
             ['Price', money(dev.purchase_price)],
             ['Original price', money(dev.msrp)],
-            ['Current value', dev.market_value != null ? `${money(dev.market_value)}${dev.value_checked ? ` (checked ${dev.value_checked})` : ''}` : ''],
+            ['Current value', dev.market_value != null ? `${money(dev.market_value)}${dev.value_checked ? ` (checked ${fmtDay(dev.value_checked)})` : ''}` : ''],
             ['Warranty until', <WarrantyCell d={dev.warranty_until} />],
             ['Added', dev.created_at], ['Updated', dev.updated_at],
           ]} /></Card>

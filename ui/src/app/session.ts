@@ -1,6 +1,7 @@
 /* Signing in and out, and noticing that HaRM was updated. */
 import { api, GET, loadLookups } from '../api/client';
 import { S, useApp } from '../lib/state';
+import { FMT, prefGet } from '../lib/util';
 import { closeAllModals, toast } from '../ui/overlay';
 
 export function showAuth(msg = '') {
@@ -25,9 +26,19 @@ export async function startApp() {
   checkVersion(S.auth);
   if (!S.auth!.authenticated) return showAuth();
   [S.enums, S.caps] = await Promise.all([GET('/meta/enums'), GET('/meta/capabilities').catch(() => ({}))]);
+  FMT.currency = S.caps.currency || 'USD';
   await loadLookups();
   S.authed = true;
+  openStartPage();
   useApp.setState({ screen: 'app', authMsg: '' });
+}
+
+/* Opening HaRM without a page in the address goes to the start page from Settings. */
+function openStartPage() {
+  if (location.hash && location.hash !== '#/' && location.hash !== '#') return;
+  const start = S.caps.start_page || 'dashboard';
+  const to = start === 'last' ? prefGet('harm-last-page') : `#/${start}`;
+  if (to && to !== '#/dashboard' && to.startsWith('#/')) history.replaceState(null, '', to);
 }
 
 export async function lockNow() {

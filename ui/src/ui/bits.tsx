@@ -2,7 +2,7 @@
 import { Children, isValidElement, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { S } from '../lib/state';
 import { Ic } from '../lib/icons';
-import { badgeClass, nz, prefGet, prefSet, today, type Row } from '../lib/util';
+import { badgeClass, fmtDay, nz, prefGet, prefSet, today, type Row } from '../lib/util';
 
 export type Kid = ReactNode;
 
@@ -44,7 +44,7 @@ export const HelpLink = ({ s, label = '?' }: { s: string; label?: string }) =>
 export function WarrantyCell({ d }: { d?: string | null }) {
   if (!d) return null;
   const cls = d < today() ? 'bad-text' : (d <= new Date(Date.now() + 90 * 864e5).toISOString().slice(0, 10) ? 'warn-text' : '');
-  return <span className={cls}>{d}</span>;
+  return <span className={cls}>{fmtDay(d)}</span>;
 }
 
 export function PageHead({ title, sub, children }: { title: Kid; sub?: Kid; children?: Kid }) {

@@ -1,7 +1,7 @@
 /* Showing a saved login for a minute: password, live 2FA code, and buttons that open what it's for. */
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { splitCode, totpNow, downloadText, type Row } from '../lib/util';
+import { fmtDay, splitCode, totpNow, downloadText, type Row } from '../lib/util';
 import { copy, modal, toast, type ModalCtl } from '../ui/overlay';
 import { A, ExtLink, EyeButton, KV, Small } from '../ui/bits';
 
@@ -67,7 +67,7 @@ function Reveal({ c, sec, m }: { c: Row; sec: Row; m: ModalCtl }) {
         ['2FA code', sec.totp_secret ? <span className="inline"><code className="secret big totp">{splitCode(code)}</code>
           <span className="totp-ring" role="img" aria-label={`${left} seconds left`} title={`${left} seconds left`} style={{ '--p': String(left / 30) } as React.CSSProperties} />
           <Small label="Copy" onClick={() => copy(code, '2FA code')} /></span> : ''],
-        ['Last rotated', c.last_rotated],
+        ['Last rotated', fmtDay(c.last_rotated)],
       ]} />
       {sec.secret_notes ? <><h4>Secret notes</h4><pre className="secret-notes">{sec.secret_notes}</pre></> : null}
       <p className="muted small">This window closes automatically after 60 seconds. Reveals are recorded in the audit log.</p>

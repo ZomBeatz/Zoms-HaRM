@@ -56,6 +56,18 @@ def _parse(ts: str) -> datetime:
     return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
 
 
+# Settings that apply on every device. The old environment settings still pick the defaults.
+IDLE_MINUTES_DEFAULT = int(os.environ.get("HARM_IDLE_MINUTES", "30"))
+SESSION_HOURS_DEFAULT = int(os.environ.get("HARM_MAX_SESSION_HOURS", "12"))
+BACKUP_KEEP_DEFAULT = int(os.environ.get("HARM_BACKUP_KEEP", "14"))
+CHOICES = {
+    "idle_minutes": (5, 10, 15, 30, 60, 120, 240, 480, 0),  # 0: only when locked by hand (or the session limit)
+    "session_hours": (4, 8, 12, 24, 72, 168),
+    "backup_keep": (7, 14, 30, 90),
+    "start_page": ("dashboard", "status", "devices", "tasks", "racks", "last"),
+}
+
+
 def settings(conn) -> dict:
     try:
         conf = json.loads(db.get_meta(conn, "app_settings") or "{}")
@@ -63,7 +75,12 @@ def settings(conn) -> dict:
         conf = {}
     return {"status_interval": int(conf.get("status_interval", DEFAULT_INTERVAL)),
             "update_check": bool(conf.get("update_check", False)),
-            "ai_enabled": bool(conf.get("ai_enabled", True))}
+            "ai_enabled": bool(conf.get("ai_enabled", True)),
+            "currency": str(conf.get("currency") or "USD"),
+            "idle_minutes": int(conf.get("idle_minutes", IDLE_MINUTES_DEFAULT)),
+            "session_hours": int(conf.get("session_hours", SESSION_HOURS_DEFAULT)),
+            "backup_keep": int(conf.get("backup_keep", BACKUP_KEEP_DEFAULT)),
+            "start_page": str(conf.get("start_page") or "dashboard")}
 
 
 def save_settings(conn, changes: dict) -> dict:
@@ -77,6 +94,17 @@ def save_settings(conn, changes: dict) -> dict:
         cur["update_check"] = bool(changes["update_check"])
     if "ai_enabled" in changes:
         cur["ai_enabled"] = bool(changes["ai_enabled"])
+    if "currency" in changes:
+        v = str(changes["currency"]).strip().upper()
+        if not re.fullmatch(r"[A-Z]{3}", v):
+            raise ValueError("Currency: a three-letter code like USD, EUR or GBP")
+        cur["currency"] = v
+    for k, ok in CHOICES.items():
+        if k in changes:
+            v = changes[k] if k == "start_page" else int(changes[k])
+            if v not in ok:
+                raise ValueError(f"{k}: one of {', '.join(str(x) for x in ok)}")
+            cur[k] = v
     db.set_meta(conn, "app_settings", json.dumps(cur))
     return cur
 

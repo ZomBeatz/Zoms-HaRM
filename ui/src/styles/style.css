@@ -80,11 +80,11 @@ textarea { resize: vertical; }
 
 /* ---------- layout */
 body { padding-top: var(--top-offset); }
-#app { display: flex; min-height: calc(100vh - var(--top-offset)); }
+#app { display: flex; min-height: calc((100vh - var(--top-offset)) / var(--zoom, 1)); }
 .boot { margin: auto; color: var(--muted); }
 .sidebar {
   width: 240px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--line);
-  display: flex; flex-direction: column; position: sticky; top: var(--top-offset); height: calc(100vh - var(--top-offset)); padding: 14px 10px;
+  display: flex; flex-direction: column; position: sticky; top: var(--top-offset); height: calc((100vh - var(--top-offset)) / var(--zoom, 1)); padding: 14px 10px;
 }
 .brand { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 4px 6px 18px; color: var(--text); }
 .brand:hover { text-decoration: none; }
@@ -313,7 +313,7 @@ body:has(.auth-wrap) { background: radial-gradient(1100px 700px at 50% 18%, colo
 .scan-row { display: flex; gap: 6px; }
 .scan-btn { padding: 4px 10px; font-size: 16px; flex-shrink: 0; }
 .scanner .scan-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-.scan-video { width: 100%; max-height: 50vh; background: #000; border-radius: var(--radius); object-fit: cover; margin-bottom: 8px; }
+.scan-video { width: 100%; max-height: calc(50vh / var(--zoom, 1)); background: #000; border-radius: var(--radius); object-fit: cover; margin-bottom: 8px; }
 .scan-status { min-height: 1.4em; margin: 6px 0; display: flex; align-items: center; gap: 8px; }
 .scan-results h4 { margin-top: 10px; }
 .cand { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -327,7 +327,7 @@ pre.ocr-text, pre.code { background: var(--bg); border: 1px solid var(--line); b
 
 /* ---------- misc */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
-.chip { padding: 5px 11px; border-radius: 999px; font-size: 13px; }
+.chip { padding: 5px 11px; border-radius: 999px; font-size: 13px; max-width: 100%; white-space: normal; text-align: left; }
 .chip:hover { border-color: var(--accent); color: var(--accent); }
 .card.alert { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--panel)); }
 .tip { background: color-mix(in srgb, var(--accent) 10%, var(--panel)); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); border-radius: var(--radius); padding: 10px 14px; margin: 12px 0; }
@@ -387,7 +387,7 @@ select.acq.have { color: var(--ok); }
 select.acq.need { color: var(--warn); }
 select.acq.ordered { color: var(--info); }
 ul.checks li { border: none; padding: 4px 0; }
-.pick-list { display: flex; flex-direction: column; max-height: 60vh; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+.pick-list { display: flex; flex-direction: column; max-height: calc(60vh / var(--zoom, 1)); overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius); }
 .pick-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); align-items: center; }
 .pick-row:last-child { border-bottom: none; }
 .pick-row.has-issues { opacity: .75; }
@@ -440,7 +440,7 @@ select.status-pill option { color: var(--text); background: var(--panel); }
 .raid-out { flex: 1 1 100%; }
 .scan-howto { margin: 0 0 12px; padding-left: 20px; color: var(--muted); font-size: 13px; }
 .viewfinder { position: relative; border-radius: 10px; overflow: hidden; background: #000; margin-bottom: 8px; }
-.viewfinder .scan-video { display: block; margin: 0; border-radius: 0; max-height: 55vh; }
+.viewfinder .scan-video { display: block; margin: 0; border-radius: 0; max-height: calc(55vh / var(--zoom, 1)); }
 .vf-frame { position: absolute; left: 12%; right: 12%; top: 30%; bottom: 30%; border: 3px solid rgba(255,255,255,.85); border-radius: 10px; box-shadow: 0 0 0 999px rgba(0,0,0,.35); pointer-events: none; transition: border-color .2s; }
 .viewfinder.hit .vf-frame { border-color: var(--ok); animation: vfhit .5s; }
 @keyframes vfhit { 0% { transform: scale(1.04); } 100% { transform: scale(1); } }
@@ -580,7 +580,7 @@ html.modal-open, body.modal-open { overflow: hidden; overscroll-behavior: none; 
 /* ---------- small screens */
 @media (max-width: 700px) {
   body { font-size: 15px; }
-  .sidebar { position: fixed; left: 0; top: var(--top-offset); z-index: 40; transform: translateX(-100%); transition: transform .2s; box-shadow: 0 0 40px rgba(0,0,0,.5); height: calc(100dvh - var(--top-offset)); }
+  .sidebar { position: fixed; left: 0; top: var(--top-offset); z-index: 40; transform: translateX(-100%); transition: transform .2s; box-shadow: 0 0 40px rgba(0,0,0,.5); height: calc((100dvh - var(--top-offset)) / var(--zoom, 1)); }
   body.nav-open .sidebar { transform: none; }
   body.nav-open .nav-scrim { display: block; position: fixed; inset: 0; z-index: 35; background: rgba(0,0,0,.45); }
   .sidebar nav a { padding: 11px 10px; }
@@ -604,7 +604,7 @@ html.modal-open, body.modal-open { overflow: hidden; overscroll-behavior: none; 
   .rack-pair, .rack-col, .rack-frame { width: 100%; }
   .toolbar input[type=search], .toolbar select { max-width: none; flex: 1 1 140px; }
   .modal-back { padding: 0; align-items: stretch; }
-  .modal, .modal.wide { max-width: none; min-height: 100dvh; border-radius: 0; border: none; display: flex; flex-direction: column; }
+  .modal, .modal.wide { max-width: none; min-height: calc(100dvh / var(--zoom, 1)); border-radius: 0; border: none; display: flex; flex-direction: column; }
   .modal-head { position: sticky; top: 0; z-index: 3; background: var(--panel); padding: 10px 14px; flex-wrap: wrap; gap: 6px 8px; }
   .modal-head h2 { font-size: 16px; white-space: nowrap; margin-right: auto; }
   .modal-body { padding: 14px; flex: 1; padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
@@ -730,7 +730,7 @@ details.more-stats > summary { cursor: pointer; color: var(--muted); font-weight
 .search-wrap { position: relative; flex: 1; min-width: 0; max-width: 560px; }
 .search-wrap input { width: 100%; }
 .search-pop { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 35; background: var(--panel); border: 1px solid var(--line);
-  border-radius: 10px; box-shadow: 0 14px 40px rgba(0,0,0,.35); padding: 6px; display: flex; flex-direction: column; gap: 2px; max-height: 70vh; overflow-y: auto; }
+  border-radius: 10px; box-shadow: 0 14px 40px rgba(0,0,0,.35); padding: 6px; display: flex; flex-direction: column; gap: 2px; max-height: calc(70vh / var(--zoom, 1)); overflow-y: auto; }
 .search-hit, .search-all { display: flex; gap: 10px; align-items: center; text-align: left; background: none; border: none; border-radius: 7px; padding: 8px 10px; color: var(--text); width: 100%; }
 .search-hit .badge { flex: none; min-width: 74px; text-align: center; }
 .sh-main { display: flex; flex-direction: column; min-width: 0; }
@@ -933,3 +933,25 @@ body.wall .st-name { font-size: 16px; }
 .view-ghost { position: absolute; left: 0; right: 0; padding: 22px 24px 60px; max-width: 1500px; opacity: .55; pointer-events: none; transition: opacity .2s; }
 #view.view-waiting { visibility: hidden; }
 @media (max-width: 700px) { .view-ghost { padding: 14px 14px 80px; } }
+
+/* ---------------------------------------------------------------- per-device look (Settings > Appearance) */
+/* Text size scales the whole interface, like the browser's zoom, which phones' installed apps don't have. */
+html[data-text="large"] { --zoom: 1.125; }
+html[data-text="large"] body { zoom: 1.125; }
+html[data-text="larger"] { --zoom: 1.25; }
+html[data-text="larger"] body { zoom: 1.25; }
+/* Compact: tighter tables, cards and lists, to see more rows at once. */
+html[data-density="compact"] th, html[data-density="compact"] td { padding: 4px 8px; }
+html[data-density="compact"] .card { padding: 12px; margin-bottom: 10px; }
+html[data-density="compact"] .card-head { margin-bottom: 8px; }
+html[data-density="compact"] .grid { gap: 10px; }
+html[data-density="compact"] #view { padding-top: 14px; }
+/* Less motion, on this device only (the computer's own setting is followed too). */
+html[data-motion="reduce"] *, html[data-motion="reduce"] *::before, html[data-motion="reduce"] *::after { animation: none !important; transition: none !important; }
+html[data-motion="reduce"] .spinner { animation: spin 1s linear infinite !important; }
+html[data-motion="reduce"] .night-bat { left: auto; right: 24px; top: 76px; }
+.setting-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.setting-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.setting-row .chips { margin: 0; }
+.settings-find { width: 220px; }
+@media (max-width: 700px) { .settings-find { width: 100%; } }

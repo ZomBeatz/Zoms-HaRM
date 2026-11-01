@@ -2,7 +2,7 @@
 import { api, loadLookups } from '../api/client';
 import { S, rerender } from '../lib/state';
 import { locPath } from '../lib/lookups';
-import { badgeClass as badgeCls, nz, type Row } from '../lib/util';
+import { badgeClass as badgeCls, fmtDay, nz, type Row } from '../lib/util';
 import { copy, toast } from './overlay';
 import { A, ExtLink, Mono, Small, Table } from './bits';
 import { RowActions, deleteEntity, editCredential } from '../lib/forms';
@@ -18,7 +18,7 @@ export function CredTable({ rows, after }: { rows: Row[]; after?: After }) {
     { label: 'Device', get: r => r.device_id ? <A href={`#/devices/${r.device_id}`}>{r.device_name}</A> : '' },
     { label: 'URL', get: r => <ExtLink url={r.url} /> },
     { label: '2FA', get: r => r.has_totp ? '✓' : '' },
-    { label: 'Rotated', get: r => r.last_rotated || '' },
+    { label: 'Rotated', get: r => fmtDay(r.last_rotated) },
     { label: '', nosort: true, get: r => (
       <div className="row-actions">
         <Small label="Open ↗" onClick={() => revealCredential(r)} cls="primary" />

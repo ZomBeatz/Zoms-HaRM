@@ -780,11 +780,27 @@ Let me know if you need anything else!"""
 
     @test("settings: check interval and the opt-in update check")
     def _():
-        assert c.call("GET", "/settings/app") == {"status_interval": 5, "update_check": False, "ai_enabled": True}
+        assert c.call("GET", "/settings/app") == {"status_interval": 5, "update_check": False, "ai_enabled": True, "currency": "USD",
+                                                   "idle_minutes": 30, "session_hours": 12, "backup_keep": 14, "start_page": "dashboard"}
         c.call("POST", "/settings/app", {"status_interval": 7}, expect=400)
         assert c.call("POST", "/settings/app", {"status_interval": 0})["status_interval"] == 0
         assert c.call("GET", "/status")["status_interval"] == 0
         assert c.call("GET", "/update-check")["enabled"] is False
+
+    @test("settings: currency, lock timing, backups kept and start page")
+    def _():
+        c.call("POST", "/settings/app", {"currency": "euro"}, expect=400)
+        c.call("POST", "/settings/app", {"idle_minutes": 7}, expect=400)
+        c.call("POST", "/settings/app", {"start_page": "audit"}, expect=400)
+        out = c.call("POST", "/settings/app", {"currency": "eur", "backup_keep": 30, "start_page": "status", "session_hours": 24})
+        assert (out["currency"], out["backup_keep"], out["start_page"], out["session_hours"]) == ("EUR", 30, "status", 24), out
+        caps = c.call("GET", "/meta/capabilities")
+        assert caps["currency"] == "EUR" and caps["start_page"] == "status", caps
+        # Lock timing applies straight away: never lock when idle, then back to 30 minutes.
+        assert c.call("POST", "/settings/app", {"idle_minutes": 0})["idle_minutes"] == 0
+        assert c.call("GET", "/auth/status")["idle_minutes"] == 0
+        c.call("POST", "/settings/app", {"idle_minutes": 30, "session_hours": 12, "currency": "USD", "backup_keep": 14, "start_page": "dashboard"})
+        assert c.call("GET", "/auth/status")["idle_minutes"] == 30
 
     @test("settings: AI features can be turned off, and the AI endpoints then refuse")
     def _():

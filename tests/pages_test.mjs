@@ -142,7 +142,7 @@ try {
     for (const e of errorsSince(e0)) fail(name, e);
   }
 
-  console.log("Phone width");
+  console.log("Phone width (normal and larger text)");
   await size(375, 812, true);
   for (const r of routes) {
     await ev(`location.hash = ${JSON.stringify("#" + r)};`);
@@ -155,7 +155,21 @@ try {
       if (w > 376) fail(`${r}${t ? ` (${t} tab)` : ""}`, `${w}px wide on a 375px phone`);
     }
   }
+  // Larger text (Settings > Appearance) on a phone: the main pages still fit.
+  await ev(`localStorage.setItem("harm-look", JSON.stringify({ text: "larger", density: "compact" }));`);
+  await cdp("Page.navigate", { url: `${APP}/?larger#/dashboard` });
+  await waitFor("#view h1");
+  for (const r of routes.filter((x) => !/\/\d+$/.test(x))) {
+    await ev(`location.hash = ${JSON.stringify("#" + r)};`);
+    await sleep(150);
+    await ev(settle);
+    const w = await ev(`return document.documentElement.scrollWidth`);
+    if (w > 376) fail(`${r} (larger text)`, `${w}px wide on a 375px phone`);
+  }
+  await ev(`localStorage.removeItem("harm-look");`);
   await size(1440, 900, false);
+  await cdp("Page.navigate", { url: `${APP}/?normal#/dashboard` });
+  await waitFor("#view h1");
 
   console.log("AI switch");
   const aiShown = async () => {

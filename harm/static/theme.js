@@ -12,4 +12,11 @@
     ? (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
     : (mode === 'light' ? 'light' : 'dark');
   r.dataset.modePref = mode;
+  // Text size, density and motion from Settings > Appearance (also per device).
+  try {
+    var look = JSON.parse(localStorage.getItem('harm-look') || '{}');
+    if (look.text) r.dataset.text = look.text;
+    if (look.density) r.dataset.density = look.density;
+    if (look.motion) r.dataset.motion = look.motion;
+  } catch (e) { /* defaults */ }
 })();

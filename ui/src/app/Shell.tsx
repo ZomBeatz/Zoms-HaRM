@@ -12,6 +12,7 @@ import { BackLink, PageWaiting, pageLoading, trackHistory, useHash, whenPageLoad
 import { lockNow } from './session';
 import { applyTheme, coolantUnlocked, themeIcon, themeName } from './theme';
 import { ROUTES, prefetchPages } from './routes';
+import { NightBat } from './halloween';
 
 /* Sidebar: everyday pages first, the rest folded under “More”. */
 const NAV_GROUPS: [string | null, [string, string, string][]][] = [
@@ -257,6 +258,7 @@ export function Shell() {
       <TabBar top={top} />
       <div className="nav-scrim" onClick={closeNav} />
       <Datalists />
+      <NightBat />
       {updateReady ? createPortal(<div className="update-bar">A newer version of HaRM is available. <button type="button" className="sm primary" onClick={() => location.reload()}>⟳ Reload</button></div>, document.body) : null}
     </>
   );

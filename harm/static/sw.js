@@ -1,10 +1,10 @@
 /* Zom's HaRM service worker: lets the app be installed and opens instantly.
  * Only the app shell (code, styles, icons) is cached. API responses are never
  * cached, so no inventory data or secrets are stored on the phone. */
-const SHELL = 'harm-shell-v6';
+const SHELL = 'harm-shell-v7';
 // The page loads the built interface (/static/app/assets/…, a new name for each build); those
 // files are kept the first time they load, by the fetch handler below.
-const ASSETS = ['/', '/static/theme.js', '/static/icon.svg', '/static/icon-coolant.svg', '/static/icon-coolant-anim.svg', '/static/icon-192.png', '/static/manifest.webmanifest'];
+const ASSETS = ['/', '/static/theme.js', '/static/icon.svg', '/static/icon-coolant.svg', '/static/icon-coolant-anim.svg', '/static/icon-graveyard.svg', '/static/icon-graveyard-anim.svg', '/static/icon-192.png', '/static/manifest.webmanifest'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

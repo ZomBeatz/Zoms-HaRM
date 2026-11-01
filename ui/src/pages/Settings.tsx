@@ -11,7 +11,7 @@ import { AiSettingsCard } from '../dialogs/ai';
 import { installApp, phoneAppHelp } from '../dialogs/phone';
 import { showRecoveryCode } from '../app/Auth';
 import { lockNow } from '../app/session';
-import { MODES, THEMES, applyTheme, coolantUnlocked, themePrefs } from '../app/theme';
+import { MODES, THEMES, applyTheme, themePrefs, themeUnlocked } from '../app/theme';
 import { Pending, useLoad } from '../app/router';
 import { ShortcutsList } from './Help';
 import { asset } from '../lib/util';
@@ -23,7 +23,7 @@ function AppearanceCard() {
   const scheme = document.documentElement.dataset.theme || 'dark';
   return (
     <Card title="Appearance"><div>
-      <div className="theme-picks">{Object.entries(THEMES).filter(([, t]) => !t.hidden || coolantUnlocked()).map(([k, t]) => (
+      <div className="theme-picks">{Object.entries(THEMES).filter(([k]) => themeUnlocked(k)).map(([k, t]) => (
         <button key={k} type="button" className={'theme-pick' + (p.theme === k ? ' on' : '')} onClick={() => { applyTheme(k); redraw(n => n + 1); }}>
           <img src={asset(t.icon)} alt="" /><span><b>{t.name}</b><small>{t.blurb}</small>
             <span className="swatches">{t.swatches[scheme].map(c => <i key={c} style={{ background: c }} />)}</span></span>

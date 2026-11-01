@@ -17,7 +17,14 @@ const PORT = 8199, DEBUG_PORT = 9399;
 const APP = `http://127.0.0.1:${PORT}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const problems = [];
-const fail = (where, what) => { problems.push(`${where}: ${what}`); console.log(`  ✗ ${where}: ${what}`); };
+// On GitHub each problem is also an annotation, so it shows on the run's summary page.
+const fail = (where, what) => {
+  problems.push(`${where}: ${what}`);
+  console.log(`  ✗ ${where}: ${what}`);
+  if (process.env.GITHUB_ACTIONS) console.log(`::error title=${where.replace(/[:,\n]/g, " ")}::${String(what).replace(/\n/g, " ").slice(0, 800)}`);
+};
+process.on("uncaughtException", (e) => { fail("test", e.stack || e.message); process.exit(1); });
+process.on("unhandledRejection", (e) => { fail("test", e?.stack || String(e)); process.exit(1); });
 
 function findChrome() {
   if (process.env.CHROME) return process.env.CHROME;
@@ -37,13 +44,16 @@ await new Promise((resolve, reject) => {
 });
 
 const profile = mkdtempSync(join(tmpdir(), "harm-pages-"));
+// CI machines run Chrome without its sandbox (it needs user namespaces they don't allow); it only opens the local demo.
 const chrome = spawn(findChrome(), ["--headless=new", `--remote-debugging-port=${DEBUG_PORT}`, `--user-data-dir=${profile}`,
-  "--no-first-run", "--no-default-browser-check", "about:blank"], { stdio: "ignore" });
+  "--no-first-run", "--no-default-browser-check", ...(process.env.CI ? ["--no-sandbox", "--disable-dev-shm-usage"] : []), "about:blank"],
+  { stdio: ["ignore", "ignore", process.env.CI ? "inherit" : "ignore"] });
 let target;
-for (let i = 0; i < 50 && !target; i++) {
+for (let i = 0; i < 150 && !target; i++) {
   await sleep(200);
   try { target = (await (await fetch(`http://127.0.0.1:${DEBUG_PORT}/json`)).json()).find((t) => t.type === "page"); } catch { /* not up yet */ }
 }
+if (!target) throw new Error("Chrome didn't start (no debugging page after 30 seconds).");
 const ws = new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((r) => (ws.onopen = r));
 let n = 0;
@@ -62,6 +72,13 @@ const ev = async (expr) => {
   if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description ?? r.result.exceptionDetails.text);
   return r.result?.result?.value;
 };
+// Waits for a selector after a page load (slower machines take a while), retrying while the page is still loading.
+async function waitFor(sel, ms = 20000) {
+  for (const end = Date.now() + ms; Date.now() < end; await sleep(200)) {
+    try { if (await ev(`return !!document.querySelector(${JSON.stringify(sel)})`)) return true; } catch { /* page still loading */ }
+  }
+  return false;
+}
 const size = (w, h, mobile) => cdp("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile });
 // Wait until the page has drawn and stopped changing.
 const settle = `const txt = () => document.querySelector('#view')?.innerText || ''; let prev = '', same = 0;
@@ -73,10 +90,11 @@ try {
   await cdp("Runtime.enable");
   await size(1440, 900, false);
   await cdp("Page.navigate", { url: APP });
-  await sleep(1500);
+  if (!(await waitFor("#app *"))) throw new Error("HaRM's page didn't load.");
   await ev(`await fetch("/api/auth/login", { method: "POST", headers: { "X-HaRM": "1", "Content-Type": "application/json" }, body: JSON.stringify({ password: "demo-password" }) });`);
+  await ev(`sessionStorage.setItem("harm-bat", "1");`);  // the Halloween-week bat stays away
   await cdp("Page.navigate", { url: APP + "/?pages-test" });
-  await sleep(2000);
+  if (!(await waitFor("#view h1"))) throw new Error(`Home didn't open after signing in: ${await ev("return document.body.innerText.slice(0, 300)")}`);
 
   const ids = await ev(`const get = (p) => fetch("/api" + p, { headers: { "X-HaRM": "1" } }).then((r) => r.json());
     const out = {}; for (const k of ["devices", "racks", "locations", "networks", "builds", "clusters"]) out[k] = (await get("/" + k)).map((x) => x.id); return out;`);
@@ -118,10 +136,9 @@ try {
   for (const [name, call] of dialogs) {
     const e0 = errors.length;
     await cdp("Page.navigate", { url: `${APP}/?dialog=${encodeURIComponent(name)}#/devices` });
-    await sleep(1500);
+    await waitFor("#view h1");
     await ev(`Object.keys(localStorage).filter((k) => k.startsWith('harm-draft')).forEach((k) => localStorage.removeItem(k)); ${call};`);
-    await sleep(800);
-    if (!(await ev(`return !!document.querySelector('.modal')`))) fail(name, "the dialog didn't open");
+    if (!(await waitFor(".modal", 8000))) fail(name, "the dialog didn't open");
     for (const e of errorsSince(e0)) fail(name, e);
   }
 
@@ -141,14 +158,24 @@ try {
   await size(1440, 900, false);
 
   console.log("AI switch");
-  const aiShown = () => ev(`location.hash = '#/components'; await new Promise((r) => setTimeout(r, 1200));
-    const page = [...document.querySelectorAll('#view button')].some((b) => b.textContent.includes('AI Assist'));
-    const menu = document.querySelector('.qa-menu')?.innerHTML.includes('AI Assist');
-    const server = (await fetch('/api/ai/prompt', { method: 'POST', headers: { 'X-HaRM': '1', 'Content-Type': 'application/json' }, body: '{}' })).status;
-    return { page, menu, server };`);
-  const setAi = (on) => ev(`location.hash = '#/settings'; await new Promise((r) => setTimeout(r, 1500));
-    const box = [...document.querySelectorAll('#view label.check')].find((l) => l.innerText.includes('Use AI features')).querySelector('input');
-    if (box.checked !== ${on}) box.click(); await new Promise((r) => setTimeout(r, 1200));`);
+  const aiShown = async () => {
+    await ev(`location.hash = '#/dashboard'`);
+    await waitFor("#view h1");
+    await ev(`location.hash = '#/components'`);
+    await waitFor("#view .page-actions button");
+    await ev(settle);
+    return ev(`const page = [...document.querySelectorAll('#view button')].some((b) => b.textContent.includes('AI Assist'));
+      const menu = document.querySelector('.qa-menu')?.innerHTML.includes('AI Assist');
+      const server = (await fetch('/api/ai/prompt', { method: 'POST', headers: { 'X-HaRM': '1', 'Content-Type': 'application/json' }, body: '{}' })).status;
+      return { page, menu, server };`);
+  };
+  const setAi = async (on) => {
+    await ev(`location.hash = '#/settings'`);
+    await waitFor("#view .theme-picks");
+    await ev(`const box = [...document.querySelectorAll('#view label.check')].find((l) => l.innerText.includes('Use AI features')).querySelector('input');
+      if (box.checked !== ${on}) box.click();`);
+    for (let i = 0; i < 50 && (await ev(`return (await fetch('/api/settings/app', { headers: { 'X-HaRM': '1' } }).then((r) => r.json())).ai_enabled`)) !== on; i++) await sleep(200);
+  };
   let s = await aiShown();
   if (!s.page || !s.menu || s.server !== 200) fail("AI on", JSON.stringify(s));
   await setAi(false);

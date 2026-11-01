@@ -4,6 +4,7 @@ import { S, useApp } from '../lib/state';
 import { prefSet } from '../lib/util';
 import { anyModalOpen, toast } from '../ui/overlay';
 import { checkVersion, showAuth } from './session';
+import { onKeyForBoo } from './halloween';
 import { applyTheme, themePrefs } from './theme';
 import { editCredential, editEntity } from '../lib/forms';
 import { ACTION_TEMPLATES, editAction } from '../lib/actions';
@@ -75,6 +76,8 @@ export function installGlobals() {
     } else if (e.key === '[' && matchMedia('(min-width: 701px)').matches) {
       e.preventDefault();
       toggleNavFold();
+    } else if (e.key.length === 1) {
+      onKeyForBoo(e.key);
     }
   });
 }

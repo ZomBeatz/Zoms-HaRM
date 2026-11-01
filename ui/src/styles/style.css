@@ -955,3 +955,5 @@ html[data-motion="reduce"] .night-bat { left: auto; right: 24px; top: 76px; }
 .setting-row .chips { margin: 0; }
 .settings-find { width: 220px; }
 @media (max-width: 700px) { .settings-find { width: 100%; } }
+/* On phones a button too wide for the screen wraps its label (long labels, larger text, wider fonts). */
+@media (max-width: 700px) { button, .button { white-space: normal; max-width: 100%; } }

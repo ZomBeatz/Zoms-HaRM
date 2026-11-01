@@ -15,8 +15,8 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
           cache: pip
@@ -39,8 +39,8 @@ jobs:
     needs: test
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -59,7 +59,7 @@ jobs:
             $env:PATH += ";${env:ProgramFiles(x86)}\Inno Setup 6"
           }
           iscc /DAppVersion=${{ needs.test.outputs.version }} packaging\windows\zoms-harm.iss
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: dist/Zoms-HaRM_*_x64-setup.exe
@@ -70,8 +70,8 @@ jobs:
     env:
       VERSION: ${{ needs.test.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -91,7 +91,7 @@ jobs:
           curl -sSLo appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool && sudo mv appimagetool /usr/local/bin/
           APPIMAGE_EXTRACT_AND_RUN=1 packaging/linux/make-appimage.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux
           path: |
@@ -106,8 +106,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: files
           merge-multiple: true
@@ -122,7 +122,7 @@ jobs:
           m = re.search(rf"^## {re.escape(v)}\n(.*?)(?=^## |\Z)", text, re.S | re.M)
           open("notes.md", "w", encoding="utf-8").write((m.group(1).strip() if m else f"Zom's HaRM {v}") + "\n")
           PY
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           draft: true
           name: Zom's HaRM ${{ needs.test.outputs.version }}

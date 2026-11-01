@@ -644,6 +644,7 @@ html.modal-open, body.modal-open { overflow: hidden; overscroll-behavior: none; 
 
 /* ---------------------------------------------------------------- discovery & launch */
 .disc-form { display: flex; flex-direction: column; gap: 10px; }
+.disc-form .inline-check { white-space: normal; }
 .disc-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .disc-field > span { color: var(--muted); font-weight: 600; font-size: 12px; }
 .disc-act { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }

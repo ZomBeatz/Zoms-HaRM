@@ -14,7 +14,8 @@ function iconText(kid: unknown): unknown {
 }
 
 export function withIconProps(type: unknown, props: Props): Props {
-  if (typeof type !== 'string' || NO_ICONS.has(type) || props.children == null) return props;
+  // Fragments too: <>text with 📷</> passed as a child would otherwise keep its symbols.
+  if (!(typeof type === 'string' ? !NO_ICONS.has(type) : type === Fragment) || props.children == null) return props;
   const kids = props.children;
   if (typeof kids === 'string') {
     const out = withIcons(kids);

@@ -5,7 +5,7 @@ import { prefSet } from '../lib/util';
 import { anyModalOpen, toast } from '../ui/overlay';
 import { checkVersion, showAuth } from './session';
 import { applyTheme, themePrefs } from './theme';
-import { editEntity } from '../lib/forms';
+import { editCredential, editEntity } from '../lib/forms';
 import { ACTION_TEMPLATES, editAction } from '../lib/actions';
 import { editAlerts, editNetwatch } from '../dialogs/watch';
 import { aiAssist } from '../dialogs/ai';
@@ -21,7 +21,7 @@ export function toggleNavFold() {
 export function installGlobals() {
   window.toast = toast;  // the online demo's welcome-back message
   // For the guide's screenshot script (zombeatz-docs/scripts/harm-screenshots.mjs) and debugging.
-  window.harm = { editEntity, editAction, ACTION_TEMPLATES, editAlerts, editNetwatch, aiAssist, phoneAppHelp, scanDialog, showAuth };
+  window.harm = { editEntity, editCredential, editAction, ACTION_TEMPLATES, editAlerts, editNetwatch, aiAssist, phoneAppHelp, scanDialog, showAuth };
 
   matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => {
     if (themePrefs().mode === 'auto') applyTheme();

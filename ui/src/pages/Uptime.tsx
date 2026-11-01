@@ -7,7 +7,7 @@ import { Pending, useLoad } from '../app/router';
 function PctCell({ x }: { x: Row }) {
   if (x.uptime == null) return null;
   const p = x.uptime * 100;
-  return <div className="up-bar"><Bar pct={p} cls={p < 99 ? 'over' : p < 99.9 ? 'hot' : 'good'} n={`${p >= 99.95 || p === 0 ? Math.round(p) : p.toFixed(p >= 99 ? 2 : 1)}%`} /></div>;
+  return <Bar pct={p} cls={p < 99 ? 'over' : p < 99.9 ? 'hot' : 'good'} n={`${p >= 99.95 || p === 0 ? Math.round(p) : p.toFixed(p >= 99 ? 2 : 1)}%`} />;
 }
 const kind = (x: Row) => /container/i.test(x.device_type || '') ? 'Container' : /virtual/i.test(x.device_type || '') ? 'VM' : '';
 

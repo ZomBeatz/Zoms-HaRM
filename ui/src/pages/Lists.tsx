@@ -73,8 +73,14 @@ export function Audit() {
 
 export function Search({ q: text }: { q: string }) {
   const q = useLoad(() => text ? GET<Row[]>('/search?q=' + encodeURIComponent(text)) : Promise.resolve([] as Row[]));
-  useEffect(() => { if (q.data && q.data.length === 1) location.replace(q.data[0].link); }, [q.data]);
-  if (!q.data) return <Pending q={q} />;
+  // One match opens it directly, in place of the search, so "Back to" skips the search too.
+  const only = q.data?.length === 1 ? q.data[0].link : null;
+  useEffect(() => {
+    if (!only) return;
+    if (S.hist[S.hist.length - 1]?.hash === location.hash) S.hist.pop();
+    location.replace(only);
+  }, [only]);
+  if (!q.data || only) return <Pending q={q} />;
   const rows = q.data;
   return <>
     <PageHead title={`Search: ${text}`} sub={`${rows.length} result${rows.length === 1 ? '' : 's'}`} />

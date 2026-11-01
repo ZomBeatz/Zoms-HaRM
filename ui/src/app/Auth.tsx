@@ -1,5 +1,5 @@
 /* Unlocking, creating the master password, and using the recovery code. */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { S, useApp } from '../lib/state';
 import { copy, modal } from '../ui/overlay';
@@ -15,6 +15,7 @@ function AuthForm({ fields, submitLabel, onSubmit, footer }: { fields: AuthField
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const first = useRef<HTMLInputElement>(null);
+  const id = useId();
   useEffect(() => { setTimeout(() => first.current?.focus(), 0); }, []);
   return (
     <form onSubmit={async e => {
@@ -24,8 +25,8 @@ function AuthForm({ fields, submitLabel, onSubmit, footer }: { fields: AuthField
       try { await onSubmit(vals); } catch (x) { setErr((x as Error).message); } finally { setBusy(false); }
     }}>
       {fields.map((f, i) => (
-        <div key={f.k} className="field"><label>{f.label}</label>
-          <input ref={i === 0 ? first : undefined} type={f.type || 'password'} autoComplete={f.ac || 'off'} required={!f.optional}
+        <div key={f.k} className="field"><label htmlFor={id + f.k}>{f.label}</label>
+          <input id={id + f.k} ref={i === 0 ? first : undefined} type={f.type || 'password'} autoComplete={f.ac || 'off'} required={!f.optional}
             inputMode={f.inputmode} placeholder={f.ph} value={vals[f.k] || ''} onChange={e => setVals(v => ({ ...v, [f.k]: e.target.value }))} />
         </div>
       ))}

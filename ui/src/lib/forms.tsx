@@ -341,6 +341,12 @@ export function editEntity(entity: string, rec: Row | null, after?: After, { aut
   // Drafts for new records are kept per context, so a half-typed part for one device
   // never shows up (or gets saved) when adding a part to a different device.
   const ctx = isNew ? Object.keys(rec).filter(k => k.endsWith('_id') && rec![k] != null).sort().map(k => `${k}=${rec![k]}`).join('&') : '';
+  // Settings > New items start in: where a new part or device goes when nothing else says.
+  const pre = entity === 'components' ? 'part' : entity === 'devices' ? 'device' : null;
+  if (isNew && pre && !rec.location_id && !rec.rack_id && !rec.device_id && !rec.host_id) {
+    const loc = S.caps[`${pre}_location_id`], rack = S.caps[`${pre}_rack_id`];
+    if (loc || rack) rec = { ...rec, ...(loc ? { location_id: loc } : {}), ...(rack ? { rack_id: rack } : {}) };
+  }
   const r0 = rec;
   const dlg = formDialog({
     title: (isNew ? 'Add ' : 'Edit ') + LABELS[entity].toLowerCase(),

@@ -781,7 +781,9 @@ Let me know if you need anything else!"""
     @test("settings: check interval and the opt-in update check")
     def _():
         assert c.call("GET", "/settings/app") == {"status_interval": 5, "update_check": False, "ai_enabled": True, "currency": "USD",
-                                                   "idle_minutes": 30, "session_hours": 12, "backup_keep": 14, "start_page": "dashboard"}
+                                                   "idle_minutes": 30, "session_hours": 12, "backup_keep": 14, "start_page": "dashboard",
+                                                   "site_name": "", "part_location_id": None, "part_rack_id": None,
+                                                   "device_location_id": None, "device_rack_id": None}
         c.call("POST", "/settings/app", {"status_interval": 7}, expect=400)
         assert c.call("POST", "/settings/app", {"status_interval": 0})["status_interval"] == 0
         assert c.call("GET", "/status")["status_interval"] == 0
@@ -801,6 +803,11 @@ Let me know if you need anything else!"""
         assert c.call("GET", "/auth/status")["idle_minutes"] == 0
         c.call("POST", "/settings/app", {"idle_minutes": 30, "session_hours": 12, "currency": "USD", "backup_keep": 14, "start_page": "dashboard"})
         assert c.call("GET", "/auth/status")["idle_minutes"] == 30
+        out = c.call("POST", "/settings/app", {"site_name": "  Garage   lab  ", "part_location_id": 1, "device_rack_id": ""})
+        assert out["site_name"] == "Garage lab" and out["part_location_id"] == 1 and out["device_rack_id"] is None, out
+        assert c.call("GET", "/auth/status")["site_name"] == "Garage lab"
+        assert c.call("GET", "/meta/capabilities")["part_location_id"] == 1
+        c.call("POST", "/settings/app", {"site_name": "", "part_location_id": None})
 
     @test("settings: AI features can be turned off, and the AI endpoints then refuse")
     def _():
@@ -953,6 +960,14 @@ Let me know if you need anything else!"""
         assert all(x["status"] != "Installed" or x["device_id"] != did for x in c.call("GET", "/components"))
         assert c.call("GET", f"/notes?entity=devices&entity_id={did}") == []
         assert c.call("GET", f"/devices/{did}", expect=404)
+
+    @test("deleting a device with its parts leaves nothing in Spare Parts")
+    def _():
+        dv = c.call("POST", "/devices", {"name": "Scan mistake"})
+        p1 = c.call("POST", "/components", {"category": "RAM", "model": "WRONG-1", "device_id": dv["id"], "quantity": 4})
+        c.call("DELETE", f"/devices/{dv['id']}?parts=delete")
+        assert c.call("GET", f"/components/{p1['id']}", expect=404)
+        assert not any(x.get("model") == "WRONG-1" for x in c.call("GET", "/components"))
 
     @test("deleting a rack keeps its devices")
     def _():

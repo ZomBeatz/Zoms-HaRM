@@ -18,5 +18,6 @@
     if (look.text) r.dataset.text = look.text;
     if (look.density) r.dataset.density = look.density;
     if (look.motion) r.dataset.motion = look.motion;
+    if (look.contrast) r.dataset.contrast = look.contrast;
   } catch (e) { /* defaults */ }
 })();

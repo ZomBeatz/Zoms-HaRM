@@ -13,9 +13,10 @@ import { lockNow } from './session';
 import { applyTheme, coolantUnlocked, themeIcon, themeName } from './theme';
 import { ROUTES, prefetchPages } from './routes';
 import { NightBat } from './halloween';
+import { look } from '../lib/look';
 
 /* Sidebar: everyday pages first, the rest folded under “More”. */
-const NAV_GROUPS: [string | null, [string, string, string][]][] = [
+export const NAV_GROUPS: [string | null, [string, string, string][]][] = [
   [null, [['dashboard', 'Home', '◧'], ['status', 'Status', '📶'], ['tasks', 'Tasks & Notes', '☑']]],
   ['Inventory', [['devices', 'Devices', '▤'], ['virtual', 'Virtual & Clusters', '⧉'], ['racks', 'Racks & Storage', '▥'], ['components', 'Spare Parts', '◫'], ['builds', 'PC Builder', '⚒']]],
   ['Network', [['networks', 'Networks & IPs', '⌗'], ['discover', 'Discover', '⌖'], ['actions', 'Actions', '⚡'], ['vault', 'Logins (Vault)', '🔑']]],
@@ -38,6 +39,7 @@ function Sidebar({ top }: { top: string }) {
   const img = useRef<HTMLImageElement>(null);
   const [more, setMore] = useState(() => prefGet('harm-nav-more') === '1');
   const moreActive = NAV_GROUPS[3][1].some(([k]) => k === top);
+  const hidden = look().hideNav;  // Settings > Appearance > Menu (per device)
   useEffect(() => { if (moreActive) setMore(true); }, [moreActive]);
   /* Easter egg: click the logo 5 times quickly to unlock the Coolant theme. */
   const brandClicks = () => {
@@ -57,9 +59,10 @@ function Sidebar({ top }: { top: string }) {
   return (
     <aside className="sidebar">
       <a className="brand" href="#/dashboard" onClick={brandClicks}><img ref={img} className="brand-icon" src={themeIcon()} alt="" />
-        <div><BrandName /><div className="brand-sub">Hardware &amp; Rack Manager</div></div></a>
+        <div><BrandName /><div className="brand-sub">{S.auth?.site_name || 'Hardware & Rack Manager'}</div></div></a>
       <nav onClick={e => { if ((e.target as Element).closest('a')) closeNav(); }}>
-        {NAV_GROUPS.map(([title, items]) => title !== 'More'
+        {NAV_GROUPS.map(([title, all]) => [title, all.filter(([k]) => k === 'settings' || k === top || !hidden.includes(k))] as const)
+          .filter(([, items]) => items.length).map(([title, items]) => title !== 'More'
           ? <div key={title || 'top'} className="nav-group">{title ? <div className="nav-title">{title}</div> : null}{items.map(i => <NavLink key={i[0]} item={i} top={top} />)}</div>
           : <details key="more" className="nav-group nav-more" open={more}
             onToggle={e => { const o = (e.target as HTMLDetailsElement).open; setMore(o); prefSet('harm-nav-more', o ? '1' : '0'); }}>

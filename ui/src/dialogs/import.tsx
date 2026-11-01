@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, GET, loadLookups } from '../api/client';
 import { S } from '../lib/state';
-import { asset, nz, type Row } from '../lib/util';
+import { STORAGE_CATS, asset, nz, type Row } from '../lib/util';
 import { copy, modal, toast, type ModalCtl } from '../ui/overlay';
 import { Btn, Small } from '../ui/bits';
 
@@ -101,19 +101,35 @@ function ImportPreview({ r, dev, d, m, after }: { r: Row; dev: Row; d: Row; m: M
   const haveSerials = new Set(d.components.map((c: Row) => (c.serial || '').toUpperCase()).filter(Boolean));
   const haveMacs = new Set(d.interfaces.map((i: Row) => (i.mac || '').toUpperCase()).filter(Boolean));
   const parts: Row[] = [...(r.cpus || []), ...r.memory, ...r.disks, ...r.gpus];
-  const partDup = (p: Row) => p.serial ? haveSerials.has(p.serial.toUpperCase())
-    : d.components.some((c: Row) => c.category === p.category && (c.model || '').toLowerCase() === (p.model || '').toLowerCase());
+  const same = (c: Row, p: Row) => p.serial ? (c.serial || '').toUpperCase() === p.serial.toUpperCase()
+    : c.category === p.category && (c.model || '').toLowerCase() === (p.model || '').toLowerCase();
+  const partDup = (p: Row) => p.serial ? haveSerials.has(p.serial.toUpperCase()) : d.components.some((c: Row) => same(c, p));
+  // Replace mode: parts of the kinds this scan read (CPU, memory, drives, graphics) that it didn't find.
+  const kind = (cat: string) => STORAGE_CATS.test(cat || '') ? 'drive' : cat;
+  const kinds = new Set(parts.filter(p => !p.integrated).map(p => kind(p.category)));
+  const missing: Row[] = d.components.filter((c: Row) => kinds.has(kind(c.category)) && !parts.some(p => same(c, p)));
+  const [mode, setMode] = useState<'add' | 'replace'>('add');
+  const [delOn, setDelOn] = useState<boolean[]>(() => missing.map(() => false));
+  const pickMode = (m2: 'add' | 'replace') => { setMode(m2); setDelOn(missing.map(() => m2 === 'replace')); };
   const [devOn, setDevOn] = useState<Record<string, boolean>>(() => Object.fromEntries(devRows.map(([k]) => [k, !dev[k]])));
   const [partOn, setPartOn] = useState<boolean[]>(() => parts.map(p => !partDup(p) && !p.integrated));
   const [nicOn, setNicOn] = useState<boolean[]>(() => r.nics.map((n: Row) => !haveMacs.has(n.mac.toUpperCase())));
   const [busy, setBusy] = useState(false);
   const apply = async () => {
     setBusy(true);
-    let nDev = 0, nParts = 0, nIf = 0;
+    let nDev = 0, nParts = 0, nIf = 0, nDel = 0;
+    // What this import did, so Undo can put it back exactly.
+    const undo: ImportUndo = { device: dev.id, before: {}, parts: [], interfaces: [], deleted: [] };
     try {
       const patch: Row = {};
-      for (const [k] of devRows) if (devOn[k] && dev[k] !== r.device[k]) { patch[k] = r.device[k]; nDev++; }
+      for (const [k] of devRows) if (devOn[k] && dev[k] !== r.device[k]) { patch[k] = r.device[k]; undo.before[k] = dev[k] ?? null; nDev++; }
       if (Object.keys(patch).length) await api('PUT', `/devices/${dev.id}`, patch);
+      for (const [i, c] of missing.entries()) {
+        if (!delOn[i]) continue;
+        await api('DELETE', `/components/${c.id}`);
+        undo.deleted.push(c);
+        nDel++;
+      }
       for (const [i, p] of parts.entries()) {
         if (!partOn[i]) continue;
         const body: Row = { ...p, device_id: dev.id, status: 'Installed' };
@@ -122,17 +138,19 @@ function ImportPreview({ r, dev, d, m, after }: { r: Row; dev: Row; d: Row; m: M
           const part = await api('POST', '/catalog', { category: 'cpu', name: nz(p.manufacturer, p.model), manufacturer: p.manufacturer, specs: p.custom_specs });
           body.catalog_id = part.id;
         }
-        await api('POST', '/components', body);
+        undo.parts.push((await api('POST', '/components', body)).id);
         nParts++;
       }
       for (const [i, n] of r.nics.entries()) {
         if (!nicOn[i]) continue;
-        await api('POST', '/interfaces', { ...n, device_id: dev.id });
+        undo.interfaces.push((await api('POST', '/interfaces', { ...n, device_id: dev.id })).id);
         nIf++;
       }
       await loadLookups();
       m.close(true);
-      toast(`Imported: ${nDev} field${nDev === 1 ? '' : 's'}, ${nParts} part${nParts === 1 ? '' : 's'}, ${nIf} interface${nIf === 1 ? '' : 's'}`);
+      S.lastImport[dev.id] = undo;
+      toast(`Imported: ${nDev} field${nDev === 1 ? '' : 's'}, ${nParts} part${nParts === 1 ? '' : 's'}, ${nIf} interface${nIf === 1 ? '' : 's'}${nDel ? `; ${nDel} old part${nDel === 1 ? '' : 's'} deleted` : ''}`,
+        'ok', { label: 'Undo', onClick: () => undoImport(dev.id, after) });
       after();
     } catch (e) { toast((e as Error).message, 'bad'); setBusy(false); }
   };
@@ -161,6 +179,18 @@ function ImportPreview({ r, dev, d, m, after }: { r: Row; dev: Row; d: Row; m: M
             <td className="muted small">{dup ? 'already recorded' : (p.integrated ? 'built-in graphics' : p.library_match ? '✓ found in parts library' : '')}</td></tr>;
         })}</tbody></table></div>
       </> : null}
+      {missing.length ? <>
+        <h4>On the device, but not in this scan</h4>
+        <div className="chips">{([['add', 'Add to what’s there'], ['replace', 'Replace with this scan']] as const).map(([k, l]) => (
+          <button key={k} type="button" className={'chip' + (mode === k ? ' on' : '')} onClick={() => pickMode(k)}>{l}</button>))}</div>
+        <p className="muted small">Ticked parts are deleted (they don’t go to Spare Parts). Only the kinds of parts this scan read are listed; network ports are never removed.</p>
+        <div className="table-wrap"><table className="import-table"><tbody>{missing.map((c, i) => (
+          <tr key={c.id} className={delOn[i] ? 'import-del' : ''}><td><input type="checkbox" aria-label="Delete" checked={delOn[i]} onChange={e => flip(setDelOn, i, e.target.checked)} /></td>
+            <td>{c.category}</td><td><b>{[c.manufacturer, c.model].filter(Boolean).join(' ') || 'None'}</b></td>
+            <td>{[c.capacity, c.interface, c.quantity > 1 ? `×${c.quantity}` : null].filter(Boolean).join(' · ')}</td>
+            <td className="mono small">{c.serial || ''}</td><td className="muted small">{delOn[i] ? 'will be deleted' : 'kept'}</td></tr>
+        ))}</tbody></table></div>
+      </> : null}
       {r.memory.length === 0 && r.platform === 'linux' ? <p className="muted small">No memory stick details. Run the Linux script with sudo to include them.</p> : null}
       {r.nics.length ? <>
         <h4>Network interfaces</h4>
@@ -171,7 +201,7 @@ function ImportPreview({ r, dev, d, m, after }: { r: Row; dev: Row; d: Row; m: M
             <td className="mono small">{n.mac}</td><td className="muted small">{dup ? 'already recorded' : (n.speed || '')}</td></tr>;
         })}</tbody></table></div>
       </> : null}
-      <div className="actions"><button type="button" className="primary" disabled={busy} onClick={apply}>Add the ticked items</button></div>
+      <div className="actions"><button type="button" className="primary" disabled={busy} onClick={apply}>{delOn.some(Boolean) ? 'Add and delete the ticked items' : 'Add the ticked items'}</button></div>
     </div>
   );
 }
@@ -219,6 +249,26 @@ function ImportSpecs({ dev, d, m, after }: { dev: Row; d: Row; m: ModalCtl; afte
       {result ? <ImportPreview key={JSON.stringify(result).length} r={result} dev={dev} d={d} m={m} after={after} /> : null}
     </div>
   );
+}
+
+export interface ImportUndo { device: number; before: Row; parts: number[]; interfaces: number[]; deleted: Row[] }
+const KEEP_OUT = ['id', 'created_at', 'updated_at', 'device_name', 'location_name', 'rack_name'];
+
+/* Takes back the last import on a device: removes what it added, brings back what it deleted, and
+   restores the fields it changed. Offered in the import's message and the device's ⋯ menu. */
+export async function undoImport(deviceId: number, after: () => void) {
+  const u = S.lastImport[deviceId];
+  if (!u) return;
+  delete S.lastImport[deviceId];
+  try {
+    for (const id of u.parts) await api('DELETE', `/components/${id}`).catch(() => {});
+    for (const id of u.interfaces) await api('DELETE', `/interfaces/${id}`).catch(() => {});
+    for (const c of u.deleted) await api('POST', '/components', Object.fromEntries(Object.entries(c).filter(([k]) => !KEEP_OUT.includes(k))));
+    if (Object.keys(u.before).length) await api('PUT', `/devices/${deviceId}`, u.before);
+    await loadLookups();
+    toast('Import undone');
+  } catch (e) { toast((e as Error).message, 'bad'); }
+  after();
 }
 
 export function importSpecs(dev: Row, d: Row, after: () => void) {

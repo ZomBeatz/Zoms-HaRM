@@ -30,8 +30,25 @@ export async function installDialog(comp: Row, deviceId?: number | null, after?:
   });
 }
 
+/* Fields a part can be re-created from (Undo after a delete). */
+const KEEP_OUT = ['id', 'created_at', 'updated_at', 'device_name', 'location_name', 'rack_name'];
+
+/* Deletes a part outright (added by mistake, or a scan read it wrong), with Undo in the message.
+   Nothing goes to Spare Parts. */
+export async function deletePart(comp: Row, after?: After) {
+  const name = nz(comp.manufacturer, comp.model) || comp.category;
+  try { await api('DELETE', `/components/${comp.id}`); }
+  catch (e) { toast((e as Error).message, 'bad'); return; }
+  (after || rerender)();
+  toast(`Deleted ${name}`, 'ok', { label: 'Undo', onClick: async () => {
+    const body = Object.fromEntries(Object.entries(comp).filter(([k]) => !KEEP_OUT.includes(k)));
+    try { await api('POST', '/components', body); toast(`${name} is back`); (after || rerender)(); }
+    catch (e) { toast((e as Error).message, 'bad'); }
+  } });
+}
+
 export function uninstallDialog(comp: Row, after?: After) {
-  formDialog({
+  const m = formDialog({
     title: `Remove ${nz(comp.manufacturer, comp.model) || comp.category} from ${comp.device_name}`,
     fields: [
       { k: 'status', label: 'New status', type: 'select', options: S.enums.component_statuses.filter(s => s !== 'Installed'), required: true, default: 'In Stock' },
@@ -39,8 +56,9 @@ export function uninstallDialog(comp: Row, after?: After) {
       { k: 'rack_id', label: 'Store in (holder)', type: 'fk', entity: 'racks', none: 'None (loose in the room)', scopeBy: ['location_id'], scope: rackInLocation, onChange: rackPicked },
       { k: 'position', label: 'Spot', ph: 'Bin 2' },
     ],
-    saveLabel: 'Remove',
-    submit: async v => { await api('POST', `/components/${comp.id}/uninstall`, v); toast('Removed'); },
+    extra: <p className="muted small">Added by mistake? <button type="button" className="link-btn" onClick={() => { m.m.close(true); deletePart(comp, after); }}>Delete it instead</button>, so it doesn’t go to Spare Parts.</p>,
+    saveLabel: 'Move to spares',
+    submit: async v => { await api('POST', `/components/${comp.id}/uninstall`, v); toast('Moved to spares'); },
     onDone: () => (after || rerender)(),
   });
 }

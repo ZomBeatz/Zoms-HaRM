@@ -80,7 +80,7 @@ export default function Components({ q: qs }: { q: URLSearchParams }) {
       { label: 'Where', get: r => <CompWhere r={r} /> },
       { label: 'Serial', get: r => <span className="mono small">{r.serial || ''}</span> },
       { label: '', nosort: true, get: r => <div className="row-actions">
-        {r.device_id ? <Small label="Remove" onClick={() => uninstallDialog(r)} /> : (r.quantity > 0 ? <Small label="Install" onClick={() => installDialog(r)} cls="primary" /> : null)}
+        {r.device_id ? <Small label="To spares" onClick={() => uninstallDialog(r)} /> : (r.quantity > 0 ? <Small label="Install" onClick={() => installDialog(r)} cls="primary" /> : null)}
         <Small label="Edit" onClick={() => editEntity('components', r)} />
         <Small label="Delete" onClick={() => deleteEntity('components', r)} cls="ghost-danger" />
       </div> },

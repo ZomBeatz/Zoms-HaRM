@@ -15,6 +15,8 @@ import { lockNow } from '../app/session';
 import { MODES, THEMES, applyTheme, themePrefs, themeUnlocked } from '../app/theme';
 import { Pending, useLoad } from '../app/router';
 import { ShortcutsList } from './Help';
+import { NAV_GROUPS } from '../app/Shell';
+import { locDescendants, locPath } from '../lib/lookups';
 import { asset } from '../lib/util';
 
 function AppearanceCard() {
@@ -58,11 +60,46 @@ function ComfortCard() {
       <Choice label="Clock" value={l.clock} options={[['auto', 'Like my ' + deviceWord()], ['12', '1:30 PM'], ['24', '13:30']]} onPick={v => pick({ clock: v })} />
       <Choice label="Lengths" value={l.length} options={[['mm', 'Millimetres'], ['in', 'Inches']]} onPick={v => pick({ length: v })}
         help="Rack depth and PC part sizes. Fan and radiator sizes stay in mm." />
+      <Choice label="Contrast" value={l.contrast} options={[['normal', 'Normal'], ['high', 'High']]} onPick={v => pick({ contrast: v })}
+        help="High makes lines, secondary text and the keyboard focus easier to see." />
+      <Choice label="Notes and tasks" value={l.notesOrder} options={[['newest', 'Newest first'], ['oldest', 'Oldest first']]} onPick={v => pick({ notesOrder: v })} />
+      <label className="check"><input type="checkbox" checked={l.hideDone} onChange={e => pick({ hideDone: e.target.checked })} /><span>Tuck finished tasks away</span></label>
       <Choice label="Motion" value={l.motion} options={[['auto', 'Like my ' + deviceWord()], ['reduce', 'Less motion']]} onPick={v => { pick({ motion: v }); applyTheme(); }}
         help="Less motion stops animated logos and fades." />
       <label className="check"><input type="checkbox" checked={l.sound} onChange={e => { pick({ sound: e.target.checked }); if (e.target.checked) alertChime(); }} />
         <span>Sound when something goes offline</span></label>
       <p className="muted small">{`While the Status page is open. On phones it buzzes too. These are saved on this ${deviceWord()} only.`}</p>
+    </div></Card>
+  );
+}
+
+/* Settings > Appearance > Menu: pages left out of the sidebar on this device. */
+function MenuCard() {
+  const [hide, setHide] = useState(() => look().hideNav);
+  const flip = (k: string, on: boolean) => {
+    const next = on ? hide.filter(x => x !== k) : [...hide, k];
+    setLook({ hideNav: next }); setHide(next);
+    useApp.setState(s => ({ lkTick: s.lkTick + 1 }));
+  };
+  return (
+    <Card title="Menu"><div>
+      <p className="muted small">{`Untick pages you don’t use to shorten the sidebar on this ${deviceWord()}. They still open from search and links.`}</p>
+      <div className="menu-picks">{NAV_GROUPS.flatMap(([, items]) => items).filter(([k]) => k !== 'settings').map(([k, label]) => (
+        <label key={k} className="check"><input type="checkbox" checked={!hide.includes(k)} onChange={e => flip(k, e.target.checked)} /><span>{label}</span></label>
+      ))}</div>
+    </div></Card>
+  );
+}
+
+/* Settings > Appearance > Wall display: this screen shows Status all day. */
+function WallCard({ app }: { app: Row }) {
+  const [on, setOn] = useState(() => look().wall);
+  return (
+    <Card title="Wall display"><div>
+      <p>{`Turns this ${deviceWord()} into a status screen: it opens on Status without the menu and bars, fills the screen at the first tap, and never locks itself while it’s showing.`}</p>
+      <label className="check"><input type="checkbox" checked={on} onChange={e => { setLook({ wall: e.target.checked }); setOn(e.target.checked); if (e.target.checked) location.hash = '#/status'; }} />
+        <span>Use this {deviceWord()} as a wall display</span></label>
+      <p className="muted small">{`It still has to be unlocked after the HaRM server restarts, and after “Sign in again after” (now ${SESSION.find(([h]) => h === app.session_hours)?.[1] ?? `${app.session_hours} hours`}; a week suits a wall screen). Larger text helps from across the room. Leave it with the button in the corner of the Status page.`}</p>
     </div></Card>
   );
 }
@@ -75,7 +112,7 @@ function EveryoneCard({ app, save }: { app: Row; save: (c: Row) => Promise<void>
   const name = (c: string) => { try { return new Intl.DisplayNames(undefined, { type: 'currency' }).of(c); } catch { return c; } };
   const list = CURRENCIES.includes(app.currency) ? CURRENCIES : [app.currency, ...CURRENCIES];
   return (
-    <Card title="On every device"><div>
+    <Card title="On every device"><div className="settings-fields">
       <label className="disc-field"><span>Currency</span>
         <select aria-label="Currency" value={app.currency} onChange={e => save({ currency: e.target.value })}>
           {list.map(c => <option key={c} value={c}>{`${c} · ${name(c)}`}</option>)}</select>
@@ -84,8 +121,33 @@ function EveryoneCard({ app, save }: { app: Row; save: (c: Row) => Promise<void>
         <select aria-label="Start page" value={app.start_page} onChange={e => save({ start_page: e.target.value })}>
           {START_PAGES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
         <small className="muted">The page HaRM opens on. A wall display might start on Status.</small></label>
+      <label className="disc-field"><span>Name of this HaRM</span>
+        <input aria-label="Name of this HaRM" defaultValue={app.site_name} maxLength={40} placeholder="Garage lab" onBlur={e => { if (e.target.value.trim() !== (app.site_name || '')) save({ site_name: e.target.value }); }} />
+        <small className="muted">Shown on the lock screen, in the menu and in the browser tab, to tell more than one HaRM apart.</small></label>
+      <NewItemDefaults app={app} save={save} />
     </div></Card>
   );
+}
+
+/* Where new parts and devices start when nothing else says (not when added into a device or rack). */
+function NewItemDefaults({ app, save }: { app: Row; save: (c: Row) => Promise<void> }) {
+  const row = (pre: 'part' | 'device', label: string) => {
+    const loc = app[`${pre}_location_id`] || '', rack = app[`${pre}_rack_id`] || '';
+    const racks = S.lk.racks.filter(r => !loc || (r.location_id != null && locDescendants(String(loc)).has(r.location_id)));
+    return <div className="inline">
+      <label className="disc-field"><span>{`New ${label} start in`}</span>
+        <select aria-label={`New ${label}: location`} value={loc} onChange={e => save({ [`${pre}_location_id`]: e.target.value || null, [`${pre}_rack_id`]: null })}>
+          <option value="">No room</option>{S.lk.locations.map(l => <option key={l.id} value={l.id}>{locPath(l.id)}</option>)}</select></label>
+      <label className="disc-field"><span>Holder</span>
+        <select aria-label={`New ${label}: holder`} value={rack} onChange={e => {
+          const r = S.lk.racks.find(x => String(x.id) === e.target.value);
+          save({ [`${pre}_rack_id`]: e.target.value || null, ...(r?.location_id ? { [`${pre}_location_id`]: r.location_id } : {}) });
+        }}>
+          <option value="">None</option>{racks.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
+    </div>;
+  };
+  return <>{row('part', 'parts')}{row('device', 'devices')}
+    <p className="muted small">Used when you add something from + New or a list, not when adding it into a device, rack or room.</p></>;
 }
 
 const IDLE: [number, string][] = [[5, '5 minutes'], [10, '10 minutes'], [15, '15 minutes'], [30, '30 minutes'], [60, '1 hour'], [120, '2 hours'],
@@ -185,7 +247,7 @@ export default function Settings() {
       <input type="search" className="settings-find" placeholder="Find a setting…" aria-label="Find a setting" value={find} onChange={e => setFind(e.target.value)} />
     </PageHead>
     <div className="settings-groups">
-    <Group title="Appearance"><AppearanceCard /><ComfortCard /><EveryoneCard app={app} save={saveApp} /></Group>
+    <Group title="Appearance"><AppearanceCard /><ComfortCard /><EveryoneCard app={app} save={saveApp} /><MenuCard /><WallCard app={app} /></Group>
     <Group title="Locking and security">
       <Card title="Locking"><div>
         <p>{`${app.idle_minutes ? `Locked after ${IDLE.find(([m]) => m === app.idle_minutes)?.[1] ?? `${app.idle_minutes} minutes`} without use` : 'Locked when you lock it'}, after ${SESSION.find(([h]) => h === app.session_hours)?.[1] ?? `${app.session_hours} hours`} in any case, and whenever the HaRM server restarts. Unlocking needs your master password${auth.totp_enabled ? ' and a 2FA code' : ''}.`}</p>

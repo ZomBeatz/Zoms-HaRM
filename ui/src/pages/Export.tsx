@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { GET } from '../api/client';
 import { S, aiOn } from '../lib/state';
 import { locDescendants, locPath } from '../lib/lookups';
-import { downloadText, type Row } from '../lib/util';
+import { downloadText, prefGet, prefSet, type Row } from '../lib/util';
 import { copy, toast } from '../ui/overlay';
 import { Btn, Card, HelpLink, PageHead, Small } from '../ui/bits';
 import { formDialog } from '../ui/form';
@@ -14,17 +14,21 @@ import { Pending, useLoad } from '../app/router';
 export default function Export({ q: qs }: { q: URLSearchParams }) {
   const q = useLoad(() => GET<Row[]>('/devices'));
   const F = S.filters.export = S.filters.export || {};
+  // What to include, the title and the sell sheet's lines are remembered on this device.
+  const saved: Row = (() => { try { return JSON.parse(prefGet('harm-export') || '{}'); } catch { return {}; } })();
+  const remember = (c: Row) => prefSet('harm-export', JSON.stringify({ ...saved, ...c }));
   const [picked, setPicked] = useState<Set<number>>(() => {
     const pre = (qs.get('ids') || '').split(',').filter(Boolean).map(Number);
     return new Set(pre.length ? pre : (F.picked || []));
   });
-  const [sec, setSec] = useState<Record<string, boolean>>(() => F.sec || Object.fromEntries(EXPORT_SECTIONS.map(([k, , on]) => [k, on])));
-  const [title, setTitle] = useState<string>(F.title || '');
+  const [sec, setSec] = useState<Record<string, boolean>>(() => F.sec || saved.sec || Object.fromEntries(EXPORT_SECTIONS.map(([k, , on]) => [k, on])));
+  const [title, setTitle] = useState<string>(F.title ?? saved.title ?? '');
   const [filters, setFilters] = useState({ loc: '', rack: '', type: '', status: '' });
   const [out, setOut] = useState<string | null>(null);
   if (!q.data) return <Pending q={q} />;
   const devices = q.data;
   F.sec = sec;
+  if (JSON.stringify(saved.sec) !== JSON.stringify(sec)) remember({ sec });
   const pick = (next: Set<number>) => { F.picked = [...next]; setPicked(next); };
   const matches = (d: Row) => (!filters.loc || locDescendants(filters.loc).has(d.location_id)) && (!filters.rack || String(d.rack_id) === filters.rack)
     && (!filters.type || d.device_type === filters.type) && (!filters.status || d.status === filters.status);
@@ -52,13 +56,13 @@ export default function Export({ q: qs }: { q: URLSearchParams }) {
       title: 'Sell sheet',
       fields: [
         { k: 'title', label: 'Title', default: F.title || 'Hardware for sale', wide: true },
-        { k: 'subtitle', label: 'Subtitle', ph: 'Local pickup, tested and working', wide: true },
-        { k: 'condition', label: 'Condition', ph: 'Used, fully working', chips: ['Used, fully working', 'Refurbished', 'For parts / not working'], wide: true },
+        { k: 'subtitle', label: 'Subtitle', ph: 'Local pickup, tested and working', wide: true, default: saved.subtitle },
+        { k: 'condition', label: 'Condition', ph: 'Used, fully working', default: saved.condition, chips: ['Used, fully working', 'Refurbished', 'For parts / not working'], wide: true },
         ...b.map(d => ({ k: `p_${d.device.id}`, label: `Asking price: ${d.device.name}`, ph: '$250 or OBO' })),
-        { k: 'footer', label: 'Contact line', ph: 'Contact: name, phone or email', wide: true },
+        { k: 'footer', label: 'Contact line', ph: 'Contact: name, phone or email', wide: true, default: saved.footer },
       ],
       saveLabel: 'Create PDF',
-      submit: async v => v,
+      submit: async v => { remember({ subtitle: v.subtitle, condition: v.condition, footer: v.footer }); return v; },
       onDone: v => printSheet(b, { ...sec, location: false, basics: false, logins: false, purchase: false, slots: false, connections: false },
         { mode: 'sell', title: v.title, subtitle: v.subtitle, condition: v.condition, footer: v.footer,
           prices: Object.fromEntries(b.map(d => [d.device.id, v[`p_${d.device.id}`]])) }),
@@ -86,7 +90,7 @@ export default function Export({ q: qs }: { q: URLSearchParams }) {
         <div className="export-secs">{EXPORT_SECTIONS.map(([k, label]) => (
           <label key={k} className="check"><input type="checkbox" checked={!!sec[k]} onChange={e => setSec(s => ({ ...s, [k]: e.target.checked }))} /><span>{label}</span></label>
         ))}</div>
-        <input placeholder="Title (optional)" value={title} onChange={e => { F.title = e.target.value; setTitle(e.target.value); }} />
+        <input placeholder="Title (optional)" value={title} onChange={e => { F.title = e.target.value; setTitle(e.target.value); remember({ title: e.target.value }); }} />
         <p className="muted small">Passwords and other secrets are never exported.</p>
       </div></Card>
     </div>

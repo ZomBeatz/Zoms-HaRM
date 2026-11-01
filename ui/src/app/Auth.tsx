@@ -89,7 +89,7 @@ export function AuthScreen() {
   return (
     <div className="auth-wrap"><div className="auth-card">
       <div className="brand big"><img className="brand-icon" src={themeIcon()} alt="" />
-        <div><BrandName /><div className="brand-sub">Hardware &amp; Rack Manager</div></div></div>
+        <div><BrandName /><div className="brand-sub">{S.auth?.site_name || 'Hardware & Rack Manager'}</div></div></div>
       {msg ? <div className="notice">{msg}</div> : null}
       <div id="auth-body">{body}</div>
     </div></div>

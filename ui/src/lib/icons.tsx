@@ -7,7 +7,7 @@ import {
   Download, ExternalLink, Eye, EyeOff, Flag, Globe, Hammer, HardDrive, House, Keyboard, KeyRound, Layers, Library, ListChecks,
   Lock, MapPin, Maximize, Menu, MessageSquare, Monitor, Moon, Network, NotebookPen, Package, Pencil, Pin, Play, Plug, Power,
   Printer, QrCode, Radar, RotateCw, ScrollText, Server, Settings, Share2, Shield, Smartphone, Snowflake, Square, Star, Sun,
-  SunMoon, Tag, Trash2, TriangleAlert, Video, Wrench, Zap, type LucideIcon,
+  SunMoon, Tag, Trash2, TriangleAlert, Undo2, Video, Wrench, Zap, type LucideIcon,
 } from 'lucide-react';
 
 const ICONS: Record<string, LucideIcon> = {
@@ -19,7 +19,7 @@ const ICONS: Record<string, LucideIcon> = {
   'globe': Globe, 'snowflake': Snowflake, 'qr-code': QrCode, 'wrench': Wrench, 'lock': Lock, 'pencil': Pencil, 'flag': Flag,
   'star': Star, 'chevron-down': ChevronDown, 'chevron-right': ChevronRight, 'compass': Compass, 'shield': Shield,
   'printer': Printer, 'hard-drive': HardDrive, 'video': Video, 'moon': Moon, 'sun': Sun, 'sun-moon': SunMoon,
-  'rotate-cw': RotateCw, 'boxes': Boxes, 'triangle-alert': TriangleAlert, 'play': Play, 'square': Square, 'copy': Copy,
+  'rotate-cw': RotateCw, 'undo-2': Undo2, 'boxes': Boxes, 'triangle-alert': TriangleAlert, 'play': Play, 'square': Square, 'copy': Copy,
   'message-square': MessageSquare, 'keyboard': Keyboard, 'activity': Activity, 'zap': Zap, 'power': Power,
   'maximize': Maximize, 'bell': Bell, 'chart-column': ChartColumn, 'eye': Eye, 'eye-off': EyeOff,
 };
@@ -32,7 +32,7 @@ export const ICON_FOR: Record<string, string> = {
   '📋': 'clipboard', '🏷': 'tag', '↗': 'external-link', '🔌': 'plug', '📌': 'pin', '🌐': 'globe', '❄': 'snowflake',
   '🔳': 'qr-code', '🔧': 'wrench', '🛠': 'wrench', '🔒': 'lock', '✎': 'pencil', '⚑': 'flag', '★': 'star', '☆': 'star',
   '▾': 'chevron-down', '▸': 'chevron-right', '🧭': 'compass', '🛡': 'shield', '🖨': 'printer', '📍': 'map-pin',
-  '💾': 'hard-drive', '🎥': 'video', '🌙': 'moon', '☀': 'sun', '◐': 'sun-moon', '⟳': 'rotate-cw', '🧩': 'boxes',
+  '💾': 'hard-drive', '🎥': 'video', '🌙': 'moon', '☀': 'sun', '◐': 'sun-moon', '⟳': 'rotate-cw', '↶': 'undo-2', '🧩': 'boxes',
   '⚠': 'triangle-alert', '▶': 'play', '■': 'square', '⎘': 'copy', '💬': 'message-square', '⌨': 'keyboard', '📶': 'activity',
   '⚡': 'zap', '⏻': 'power', '⛶': 'maximize', '🔔': 'bell', '📊': 'chart-column', '🎉': '',
 };

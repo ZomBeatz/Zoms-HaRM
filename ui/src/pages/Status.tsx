@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import { api, GET, loadLookups } from '../api/client';
 import { S } from '../lib/state';
-import { alertChime, look } from '../lib/look';
+import { alertChime, look, setLook } from '../lib/look';
 import { locPath } from '../lib/lookups';
 import { clock, fmtMs, forHowLong, nz, prefGet, prefSet, timeAgo, utcDate, type Row } from '../lib/util';
 import { anyModalOpen, toast } from '../ui/overlay';
@@ -129,7 +129,10 @@ export default function Status() {
       const last = q.data?.d.last_check;
       if (!last || (Date.now() - utcDate(last).getTime()) > 60000) tick();
     }, 300);
-    return () => { clearInterval(timer); clearTimeout(first); document.body.classList.remove('wall'); };
+    // Wall display (Settings): no sidebar or bars from the start; the first tap also fills the screen.
+    const goFull = () => { if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {}); };
+    if (look().wall) { document.body.classList.add('wall'); document.addEventListener('click', goFull, { once: true }); }
+    return () => { clearInterval(timer); clearTimeout(first); document.body.classList.remove('wall'); document.removeEventListener('click', goFull); };
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
   if (!q.data) return <Pending q={q} />;
   const { d, nw } = q.data;
@@ -151,7 +154,13 @@ export default function Status() {
   const every = d.status_interval ? `HaRM checks every ${d.status_interval === 1 ? 'minute' : `${d.status_interval} minutes`}, and every minute while this page is open.`
     : 'Automatic checks are off. Press Check now, or turn them on in Settings.';
   const stat = (n: number, label: string, cls: string) => <div className={`stat ${cls}`}><div className="stat-n">{n}</div><div className="stat-l">{label}</div></div>;
+  const leaveWall = () => {
+    if (look().wall) { setLook({ wall: false }); toast('Wall display is off on this device'); }
+    document.body.classList.remove('wall');
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  };
   return <>
+    <button type="button" className="wall-exit sm" onClick={leaveWall}>{look().wall ? 'Leave wall display' : 'Exit full screen'}</button>
     <PageHead title="Status" sub={d.last_check ? `Which devices are answering. Last checked ${timeAgo(d.last_check)}.` : 'Which devices are answering right now.'}>
       <select aria-label="Show" value={filter} onChange={e => { prefSet('harm-status-filter', e.target.value); reload(); }}>
         {[['all', 'All devices'], ['checked', 'Only the ones checked'], ['down', 'Only problems']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}

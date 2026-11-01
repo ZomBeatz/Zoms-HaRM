@@ -40,6 +40,9 @@
 - Plainer headings: sentence case, no capitals, and the same sizes as the other ZomBeatz apps.
 - **Rack colors mean something:** servers, network gear, storage, power, other gear and accessories each have a color, with a key under the rack saying which is which.
 - Dialog titles on phones no longer get squeezed by their buttons.
+- On phones, the UniFi and Proxmox tabs of **Discover** no longer make the page wider than the screen.
+- The unlock screen's boxes are labelled, for screen readers and password managers.
+- When a search finds just one thing and opens it, **← Back** names the page you were on before the search.
 
 **Keyboard**
 - **Ctrl K** (⌘K on a Mac) searches everything, **/** filters the list on the page, **N** opens **+ New**, **?** shows the shortcuts, **[** folds the sidebar to icons, and **Esc** closes menus and search. See **Help > Keyboard shortcuts** or **Settings > Shortcuts**.

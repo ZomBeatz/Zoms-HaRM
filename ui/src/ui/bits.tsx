@@ -48,7 +48,9 @@ export function WarrantyCell({ d }: { d?: string | null }) {
 }
 
 export function PageHead({ title, sub, children }: { title: Kid; sub?: Kid; children?: Kid }) {
-  const text = nodeText(title).trim();
+  // The page's name for "Back to …": the title's first part, without badges after it.
+  const kids = isValidElement(title) ? (title.props as Row).children : null;
+  const text = nodeText(Array.isArray(kids) ? kids[0] : title).trim();
   useEffect(() => {
     S.pageTitle = text;
     const cur = S.hist[S.hist.length - 1];

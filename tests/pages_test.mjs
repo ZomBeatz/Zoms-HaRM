@@ -159,6 +159,8 @@ try {
   await ev(`localStorage.setItem("harm-look", JSON.stringify({ text: "larger", density: "compact" }));`);
   await cdp("Page.navigate", { url: `${APP}/?larger#/dashboard` });
   await waitFor("#view h1");
+  // A wide font too, since fonts differ between machines (GitHub's have no Open Sans).
+  await ev(`const st = document.createElement("style"); st.textContent = "* { font-family: 'DejaVu Sans', Verdana, sans-serif !important; letter-spacing: .02em; }"; document.head.append(st);`);
   for (const r of routes.filter((x) => !/\/\d+$/.test(x))) {
     await ev(`location.hash = ${JSON.stringify("#" + r)};`);
     await sleep(150);

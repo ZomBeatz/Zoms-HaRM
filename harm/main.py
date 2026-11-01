@@ -3342,4 +3342,5 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+    # The interface is built from ui/ into static/app/ (npm run build) and committed with the code.
+    return FileResponse(STATIC / "app" / "index.html", headers={"Cache-Control": "no-cache"})

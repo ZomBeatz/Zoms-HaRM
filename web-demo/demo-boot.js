@@ -1,5 +1,5 @@
 // Online demo: answers the app's /api/ requests with HaRM's real server running in a worker (worker.js),
-// so nothing leaves the visitor's browser. Loaded before app.js; app.js checks window.harmDemo.
+// so nothing leaves the visitor’s browser. Loaded before the app (static/app/), which checks window.harmDemo.
 (() => {
   const version = new URL(document.currentScript.src).search;  // ?v=… from build.py
   const worker = new Worker('demo/worker.js' + version, { type: 'module' });

@@ -25,3 +25,38 @@ jobs:
         run: python tests/full_test.py
       - name: Unit tests
         run: python tests/unit_test.py
+
+  # The interface (ui/, TypeScript + React) is built into harm/static/app/ and committed, so HaRM
+  # runs with Python only. This checks the types and tests, and that the committed build is current.
+  interface:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Record types match harm/models.py
+        run: python scripts/gen-ui-types.py --check
+      - run: npm ci
+        working-directory: ui
+      - name: Types
+        run: npm run check
+        working-directory: ui
+      - name: Unit tests
+        run: npm test
+        working-directory: ui
+      - name: Build
+        run: npm run build
+        working-directory: ui
+      - name: The committed build is current
+        run: |
+          if [ -n "$(git status --porcelain harm/static/app)" ]; then
+            git status --short harm/static/app
+            echo "::error::harm/static/app/ is out of date. Run 'npm run build' in ui/ and commit harm/static/app/."
+            exit 1
+          fi

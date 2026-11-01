@@ -164,7 +164,7 @@ See [Troubleshooting](https://docs.zombeatzmedia.com/harm/troubleshooting), or e
 <details>
 <summary><b>Running from source, tests and project layout</b></summary>
 
-Python 3.10+ (FastAPI, SQLite) with a plain JavaScript front end: no build step. Releases: set the version in `harm/__init__.py`, add its section to `CHANGELOG.md`, and push a tag like `v0.3.2`. GitHub builds the installers into a draft release with those notes.
+Python 3.10+ (FastAPI, SQLite) on the server, and a TypeScript + React interface (Vite, the same tools as Zomello) in `ui/`. The interface is built into `harm/static/app/` and committed, so HaRM itself runs with Python only; you only need Node 22+ to change the interface. Releases: set the version in `harm/__init__.py`, add its section to `CHANGELOG.md`, and push a tag like `v0.3.2`. GitHub builds the installers into a draft release with those notes.
 
 ```bash
 ./install.sh --no-menu                 # .venv with the requirements
@@ -175,7 +175,17 @@ python3 scripts/demo.py                # demo data on :8099
 python3 web-demo/build.py              # the online demo in demo-site/ (GitHub publishes it on every push)
 python3 scripts/package.py             # source archives in dist/ (with Install HaRM.cmd and install.sh)
 pyinstaller packaging/zoms-harm.spec   # the frozen app the installers carry (see packaging/)
-python3 scripts/build-icons.py         # Lucide icons for the app
+python3 scripts/build-icons.py         # Lucide icons for the desktop control panel
+```
+
+Working on the interface (`ui/`):
+
+```bash
+cd ui && npm install
+npm run dev                            # http://127.0.0.1:5177 with live reload; /api goes to ./run.sh on :8077
+npm run check && npm test              # types and unit tests
+npm run build                          # writes harm/static/app/: commit it with your change (CI checks it's current)
+python3 scripts/gen-ui-types.py        # after changing fields in harm/models.py: the interface's record types
 python3 branding/make-logos.py         # icons and wordmarks
 ```
 
@@ -192,7 +202,15 @@ harm/
   ai.py, aiproviders.py   AI Assist prompt, parser and services
   pcbuild.py      Parts library (OpenDB) and build compatibility checks
   collect.py      Parser for the spec collector's output
-  static/         Front end: index.html, app.js, style.css, zb-tokens.css (ZomBeatz design tokens), icons.js (Lucide)
+  static/         Files the server sends: app/ (the built interface), icons, manifest, sw.js, theme.js, vendor/, collect/
+ui/               The interface: TypeScript + React, built with Vite into harm/static/app/
+  src/app/        The shell: sidebar, top bar, router, lock screen, keyboard shortcuts
+  src/pages/      One file per page (Devices, Device, Racks, Status…)
+  src/dialogs/    Dialogs (scanning, import specs, AI Assist, printing…)
+  src/ui/         Shared pieces: forms, tables, cards, menus, dialogs and toasts
+  src/lib/        Logic without an interface of its own, with unit tests beside it
+  src/api/        The API client and the record types (entities.ts is generated from harm/models.py)
+  src/styles/     style.css and zb-tokens.css (ZomBeatz design tokens)
 launcher/         Desktop control panel (Qt / PySide6)
 docker/, Dockerfile, docker-compose.yml   Server image
 scripts/          Installers, demo, packaging, certificates, screenshots

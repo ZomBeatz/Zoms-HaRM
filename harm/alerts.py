@@ -29,7 +29,7 @@ SECURITY = ("starttls", "ssl", "none")
 TIMEOUT = 15
 BATCH = 3  # more changes than this in one check go out as one message (a power cut, a switch dying)
 CERT_DAYS = 14  # a certificate alert this many days before it runs out
-DEFAULTS = {"enabled": False, "delay": 5, "recovery": True, "services": True, "certs": True, "enabled_at": None,
+DEFAULTS = {"enabled": False, "delay": 5, "recovery": True, "services": True, "certs": True, "machines": True, "enabled_at": None,
             "quiet_on": False, "quiet_from": "22:00", "quiet_to": "07:00",
             "ntfy_on": False, "ntfy_url": "",
             "email_on": False, "email_host": "", "email_port": 587, "email_security": "starttls",
@@ -99,7 +99,7 @@ def save(conn, body: dict) -> dict:
     for k in DEFAULTS:
         if k in body and k != "enabled_at":
             new[k] = body[k]
-    for k in ("enabled", "recovery", "services", "certs", "quiet_on", "ntfy_on", "email_on", "webhook_on"):
+    for k in ("enabled", "recovery", "services", "certs", "machines", "quiet_on", "ntfy_on", "email_on", "webhook_on"):
         new[k] = bool(new[k])
     try:
         new["delay"] = int(new["delay"])

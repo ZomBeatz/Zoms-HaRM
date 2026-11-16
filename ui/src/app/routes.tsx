@@ -16,6 +16,7 @@ export function prefetchPages() {
 const Status = page(() => import('../pages/Status'), m => m.default);
 const Uptime = page(() => import('../pages/Uptime'), m => m.default);
 const Actions = page(() => import('../pages/Actions'), m => m.default);
+const Maintenance = page(() => import('../pages/Maintenance'), m => m.default);
 const Devices = page(() => import('../pages/Devices'), m => m.default);
 const Device = page(() => import('../pages/Device'), m => m.default);
 const Racks = page(() => import('../pages/Racks'), m => m.Racks);
@@ -55,6 +56,7 @@ export const ROUTES: [RegExp, Render][] = [
   [/^\/?(dashboard)?$/, () => <Dashboard />],
   [/^\/status$/, () => <Status />],
   [/^\/actions$/, () => <Actions />],
+  [/^\/maintenance$/, () => <Maintenance />],
   [/^\/uptime$/, (_m, q) => <Uptime q={q} />],
   [/^\/devices$/, () => <Devices />],
   [/^\/devices\/(\d+)$/, (m, q) => <Device id={+m[1]} q={q} />],

@@ -335,6 +335,7 @@ export default function Settings() {
         ))}</ul> : null}
         <p className="muted small">Alerts are sent while HaRM is locked too, so their passwords are kept encrypted with a key of their own (alerts.key in HaRM’s data folder), not with your master password.</p>
       </div></Card>
+      <MaintenanceCard app={app} save={saveApp} />
       <Card title="New devices on the network"><div>
         {n.enabled ? <p><span className="badge ok">On</span>{` Watching ${netNames.join(', ')} every ${n.interval >= 60 ? `${n.interval / 60} hour${n.interval > 60 ? 's' : ''}` : `${n.interval} minutes`}.`}
           {n.last_scan ? <span className="muted small">{` Last scan ${timeAgo(n.last_scan)}.`}</span> : null}</p>
@@ -431,4 +432,29 @@ export default function Settings() {
     </Group>
     </div>
   </>;
+}
+
+/* Maintenance: the automatic log, background checks (read-only, with their own logins) and Proxmox backups. */
+function MaintenanceCard({ app, save }: { app: Row; save: (v: Row) => void }) {
+  const [m, setM] = useState<Row | null>(null);
+  useEffect(() => { GET('/maintenance').then(setM).catch(() => setM(null)); }, [app.bg_checks]);
+  const bgCount = (m?.machines || []).filter((x: Row) => x.background).length;
+  const pveBg = async (on: boolean) => {
+    try { await api('POST', '/background/proxmox', { on }); setM(await GET('/maintenance')); toast(on ? 'Proxmox is read in the background too' : 'Proxmox is no longer read in the background'); }
+    catch (e) { toast((e as Error).message, 'bad'); }
+  };
+  return <Card title="Maintenance"><div>
+    <label className="check"><input type="checkbox" checked={!!app.auto_log} onChange={e => save({ auto_log: e.target.checked })} /><span>Write what HaRM does in the device’s notes</span></label>
+    <p className="muted small">Updates, restarts, container changes, Proxmox power and snapshots, and actions each leave a “Did” note on the device, so you can see what changed before something broke.</p>
+    <label className="check"><input type="checkbox" checked={!!app.bg_checks} onChange={e => save({ bg_checks: e.target.checked })} /><span>Check machines in the background</span></label>
+    {app.bg_checks ? <div className="inline">
+      <label className="disc-field"><span>Every</span><select aria-label="Background checks every" value={app.bg_hours} onChange={e => save({ bg_hours: +e.target.value })}>
+        {[[1, 'hour'], [3, '3 hours'], [6, '6 hours'], [12, '12 hours'], [24, 'day']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+    </div> : null}
+    <p className="muted small">{`Background checks only read (health, updates, backups, containers) and can alert you. They need a login HaRM can use while locked: turn them on per machine on its Health tab (⋯ > Check it in the background). ${bgCount ? `${bgCount} machine${bgCount === 1 ? ' has' : 's have'} one.` : 'No machine has one yet.'} Those logins are encrypted with background.key in HaRM’s data folder, not your master password, so use limited accounts.`}</p>
+    <label className="disc-field"><span>Warn when a Proxmox VM’s newest backup is older than</span><select aria-label="Proxmox backup age" value={app.pve_backup_days} onChange={e => save({ pve_backup_days: +e.target.value })}>
+      {[[1, '1 day'], [2, '2 days'], [3, '3 days'], [7, 'a week'], [14, '2 weeks'], [0, 'Never warn']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+    {m?.proxmox_ready ? <label className="check"><input type="checkbox" checked={!!m.background.proxmox} onChange={e => pveBg(e.target.checked)} /><span>Also read Proxmox in the background (keeps a copy of its token the same way)</span></label> : null}
+    <p><A href="#/maintenance">Open Maintenance</A></p>
+  </div></Card>;
 }

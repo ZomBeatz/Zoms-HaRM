@@ -974,3 +974,10 @@ body.wall .wall-exit:hover { opacity: 1; }
 .menu-picks label.check { padding-top: 6px; }
 .settings-fields > .disc-field, .settings-fields > .inline { margin-bottom: 14px; }
 .settings-fields > .inline { align-items: flex-start; }
+
+/* Health and Maintenance: lists of problems, updates and backups. */
+.plain-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
+.plain-list .badge { margin-right: 4px; }
+.mt-machine { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--line); }
+.mt-machine:first-child { border-top: 0; }
+.mt-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: space-between; }

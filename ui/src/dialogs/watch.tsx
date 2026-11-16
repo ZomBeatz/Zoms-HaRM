@@ -23,6 +23,7 @@ export async function editAlerts(after?: After) {
       { k: 'recovery', wide: true, label: 'Also tell me when it’s back', type: 'checkbox' },
       { k: 'services', wide: true, label: 'Also when a service stops answering', type: 'checkbox', help: 'A web page or port on a device’s Network tab, while the device itself answers.' },
       { k: 'certs', wide: true, label: 'Also when a certificate runs out soon', type: 'checkbox', help: 'Two weeks before an https service’s certificate runs out, once.' },
+      { k: 'machines', wide: true, label: 'Also problems found by machine checks', type: 'checkbox', help: 'A disk almost full or failing, a degraded pool or array, security updates, a late backup, or a container that stopped or keeps restarting (with the last lines of its log). Once each, when a check finds it.' },
       { section: 'Quiet hours' },
       { k: 'quiet_on', wide: true, label: 'Hold alerts during quiet hours', type: 'checkbox', help: 'What happens overnight arrives as one message when quiet hours end.' },
       { k: 'quiet_from', label: 'From', type: 'time', showIf: v => v.quiet_on },

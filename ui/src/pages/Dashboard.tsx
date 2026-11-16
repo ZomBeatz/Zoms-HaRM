@@ -35,6 +35,12 @@ export default function Dashboard() {
     <span className="muted">{r.since ? ` since ${clock(r.since)}, ${forHowLong(r.since)}` : ''}</span></>));
   (d.services_down || []).forEach((r: Row) => item('📶', <>{r.name} on <A href={`#/devices/${r.device_id}`}>{r.device_name}</A> <span className="badge bad">Not answering</span>
     <span className="muted">{r.detail ? ` ${r.detail}` : ''}</span></>));
+  const mt = d.maintenance;
+  (mt?.problems || []).forEach((p: Row) => item('🩺', <>{p.device_id ? <A href={`#/devices/${p.device_id}?tab=health`}>{p.device}</A> : <A href="#/maintenance">{p.device}</A>}{': '}{p.text}
+    {' '}<span className={`badge ${p.level === 'bad' ? 'bad' : 'warn'}`}>{p.level === 'bad' ? 'Problem' : 'Check'}</span></>));
+  if (mt && (mt.updates || mt.reboot)) item('🛠', <><A href="#/maintenance">{[mt.updates ? `Updates waiting on ${mt.updates} machine${mt.updates === 1 ? '' : 's'}` : '',
+    mt.containers ? `${mt.containers} container${mt.containers === 1 ? '' : 's'}` : '', mt.reboot ? `${mt.reboot} need${mt.reboot === 1 ? 's' : ''} a restart` : ''].filter(Boolean).join(', ')}</A>
+    {mt.security ? <span className="warn-text">{` · ${mt.security} security`}</span> : null}</>);
   if (d.new_on_network) item('📶', <><A href="#/status">{`${d.new_on_network} new device${d.new_on_network === 1 ? '' : 's'} on the network`}</A> to add or ignore</>);
   (d.certs || []).forEach((r: Row) => item('🛡', <>The certificate for {r.name} on <A href={`#/devices/${r.device_id}`}>{r.device_name}</A> <CertText date={r.cert_expires} /></>));
   (d.power || []).forEach((r: Row) => item('🔌', <><A href={r.kind === 'rack' ? `#/racks/${r.id}` : `#/devices/${r.id}`}>{r.name}</A>{` is at ${Math.round(r.pct * 100)}% of its power (${r.used_w} of ${r.limit_w} W)`}</>));

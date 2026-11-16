@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from . import __version__, ai, aiproviders, alerts, certs, collect, crypto, db, discover, docker, monitor, netwatch, pcbuild, power, proxmox, remote, units
+from . import __version__, ai, aiproviders, alerts, certs, collect, crypto, db, discover, docker, machine, monitor, netwatch, pcbuild, power, proxmox, remote, units, upkeep
 from .models import ENTITIES, ENUMS, iface_order
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -931,6 +931,7 @@ def dashboard(_s=Depends(require_session), conn=Depends(get_db)):
         "certs": monitor.certs_expiring(conn, 30),
         "power": power.warnings(conn),
         "new_on_network": len(netwatch.pending(conn)),
+        "maintenance": maintenance_summary(conn),
     }
 
 
@@ -1236,6 +1237,7 @@ def device_full(did: int, _s=Depends(require_session), conn=Depends(get_db)):
         "can_wake": _wake_targets(conn, did) is not None,
         "power": next((x for x in power.summary(conn)["supplies"] if x["id"] == did), None),
         "docker": docker_summary(conn, did),
+        "machine": upkeep.load(conn, f"machine:{did}") is not None,
     }
 
 
@@ -1420,8 +1422,9 @@ async def docker_check(did: int, request: Request, s=Depends(require_session), c
         raise HTTPException(400, "Read the containers first")
     r = await _docker_run(conn, s, conf, docker.CHECK_SCRIPT + "echo HARM_LIST\n" + docker.LIST_SCRIPT)
     check, _, listing = r["output"].partition("HARM_LIST")
+    updates, versions = docker.parse_check(check)
     snap = _docker_save(conn, did, {**snap, "at": monitor._now(), "containers": docker.parse_list(listing),
-                                    "updates": docker.parse_check(check), "checked_at": monitor._now()})
+                                    "updates": updates, "versions": versions, "checked_at": monitor._now()})
     conn.commit()
     return {"conf": conf, "snap": snap}
 
@@ -1451,6 +1454,12 @@ async def docker_op(did: int, request: Request, s=Depends(require_session), conn
     if op == "update" and r["ok"] and "HARM_RESULT=pulled-only" not in out:
         snap["updates"] = {**(snap.get("updates") or {}), c["image"]: "current"}
     _docker_save(conn, did, snap)
+    if r["ok"]:
+        v = ((snap.get("versions") or {}).get(c["image"]) or {})
+        did_note(conn, did, {"update": f"Updated container {c['name']}" + (f" to {v['new']}" if v.get("new") else "")
+                             + (" (already up to date)" if "HARM_RESULT=same" in out else "") + ".",
+                             "restart": f"Restarted container {c['name']}.", "stop": f"Stopped container {c['name']}.",
+                             "start": f"Started container {c['name']}."}[op])
     audit(conn, request, f"docker-{op}", "devices", did, f"{dev['name']}: {c['name']} ({'worked' if r['ok'] else 'failed'})")
     conn.commit()
     return {"ok": r["ok"], "message": docker.op_result(op, out) if r["ok"] else "", "output": out.strip(), "snap": snap}
@@ -1464,10 +1473,354 @@ async def docker_prune(did: int, request: Request, s=Depends(require_session), c
         raise HTTPException(501, DEMO_NO_NETWORK)
     conf, _ = _docker_get(conn, did)
     r = await _docker_run(conn, s, conf, docker.PRUNE_SCRIPT)
+    m = re.search(r"Total reclaimed space:\s*(.+)", r["output"])
+    if r["ok"]:
+        did_note(conn, did, "Cleaned up old Docker images" + (f" ({m.group(1).strip()} freed)." if m else "."))
     audit(conn, request, "docker-prune", "devices", did, dev["name"])
     conn.commit()
-    m = re.search(r"Total reclaimed space:\s*(.+)", r["output"])
     return {"ok": r["ok"], "freed": m.group(1).strip() if m else "", "output": r["output"]}
+
+
+# ---------------------------------------------------------------------------
+# Machine health and updates (harm/machine.py, harm/upkeep.py), over the same SSH connection as
+# Docker. Checking only reads; installing updates and restarting are one click each.
+# ---------------------------------------------------------------------------
+
+def did_note(conn, did: int | None, text: str) -> None:
+    """The maintenance log: what HaRM did, as a "Did" note on the device (Settings can turn it off)."""
+    if did and monitor.settings(conn)["auto_log"]:
+        conn.execute("INSERT INTO notes (entity, entity_id, kind, body) VALUES ('devices', ?, 'action', ?)", (did, text[:2000]))
+
+
+def _machine_login(conn, s, conf: dict) -> tuple[str, str | None]:
+    row = conn.execute("SELECT * FROM credentials WHERE id = ?", (conf.get("credential_id"),)).fetchone() \
+        if conf.get("credential_id") else None
+    if not row or not row["username"]:
+        raise HTTPException(400, "Pick a saved login with a username for this device")
+    pw = _decrypt(s["dek"], row["password_enc"], "password")
+    return row["username"], (None if pw and pw.startswith("<<") else pw)
+
+
+def _machine_view(conn, did: int) -> dict:
+    conf = upkeep.connection(conn, did)
+    bg = upkeep.bg_logins(conn).get(str(did))
+    return {"conf": conf, "snap": upkeep.load(conn, f"machine:{did}"), "labels": upkeep.load(conn, f"machine_labels:{did}", {}),
+            "backups": upkeep.load(conn, f"machine_backups:{did}", []), "problems": upkeep.problems(conn, did),
+            "error": upkeep.load(conn, f"machine_error:{did}"),
+            "background": {"on": bool(bg), "label": (bg or {}).get("label", ""), "since": (bg or {}).get("at")}}
+
+
+async def _machine_check(conn, s, did: int, conf: dict, trust: bool = False) -> None:
+    user, pw = _machine_login(conn, s, conf)
+    try:
+        if trust:
+            await asyncio.to_thread(remote.forget_host, conf["host"], int(conf.get("port") or 22))
+        _, events = await upkeep.check_one(conn, did, user, pw, conf)
+    except remote.RemoteError as e:
+        raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
+    except machine.MachineError as e:
+        raise HTTPException(400, str(e))
+    upkeep.save(conn, f"machine_error:{did}", None)
+    if events:
+        task = asyncio.ensure_future(asyncio.to_thread(alerts.deliver, events))
+        monitor._sending.add(task)
+        task.add_done_callback(monitor._sending.discard)
+
+
+@app.get("/api/devices/{did}/machine")
+def machine_get(did: int, _s=Depends(require_session), conn=Depends(get_db)):
+    fetch_one(conn, "devices", did)
+    return _machine_view(conn, did)
+
+
+@app.post("/api/devices/{did}/machine/check")
+async def machine_check(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Read the machine's health, updates and backups (and its containers, if HaRM reads them)."""
+    dev = fetch_one(conn, "devices", did)
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    conf = upkeep.connection(conn, did)
+    if "host" in body:
+        conf = {"host": str(body.get("host") or "").strip(), "port": int(body.get("port") or 22),
+                "credential_id": _coerce(conn, "credential_id", "fk:credentials", body.get("credential_id")),
+                "sudo": bool(body.get("sudo"))}
+    if not conf.get("host"):
+        raise HTTPException(400, "host: enter the address to reach it over SSH")
+    await _machine_check(conn, s, did, conf, bool(body.get("trust_new_key")))
+    db.set_meta(conn, f"docker_conf:{did}", json.dumps(conf))
+    audit(conn, request, "machine-check", "devices", did, dev["name"])
+    conn.commit()
+    return _machine_view(conn, did)
+
+
+@app.post("/api/devices/{did}/machine/labels")
+async def machine_labels(did: int, request: Request, _s=Depends(require_session), conn=Depends(get_db)):
+    """What a disk, volume or pool really is ("12 × 4 TB in RAID 6"), shown over what the system reports."""
+    fetch_one(conn, "devices", did)
+    body = await body_json(request)
+    key = str(body.get("key") or "")
+    if not re.match(r"^(vol|disk|pool|md):.{1,250}$", key):
+        raise HTTPException(400, "Unknown disk or volume")
+    labels = upkeep.load(conn, f"machine_labels:{did}", {})
+    item = {"name": " ".join(str(body.get("name") or "").split())[:80], "real": " ".join(str(body.get("real") or "").split())[:120],
+            "ignore": bool(body.get("ignore"))}
+    if any(item.values()):
+        labels[key] = item
+    else:
+        labels.pop(key, None)
+    upkeep.save(conn, f"machine_labels:{did}", labels or None)
+    conn.commit()
+    return _machine_view(conn, did)
+
+
+@app.post("/api/devices/{did}/machine/backups")
+async def machine_backups(did: int, request: Request, _s=Depends(require_session), conn=Depends(get_db)):
+    """The backups to watch on this machine: folders that should get new files, and ZFS snapshots."""
+    fetch_one(conn, "devices", did)
+    body = await body_json(request)
+    try:
+        items = machine.clean_backups(body.get("backups") or [])
+    except machine.MachineError as e:
+        raise HTTPException(400, str(e))
+    upkeep.save(conn, f"machine_backups:{did}", items or None)
+    snap = upkeep.load(conn, f"machine:{did}")
+    if snap:  # folders added now are read on the next check
+        snap["backups"] = machine.backup_status(items, snap.get("folders") or {}, snap.get("snapshots") or {})
+        upkeep.save(conn, f"machine:{did}", snap)
+    conn.commit()
+    return _machine_view(conn, did)
+
+
+async def _machine_change(conn, s, request, did: int, what: str, script: str, timeout: int) -> dict:
+    dev = fetch_one(conn, "devices", did)
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    conf = upkeep.connection(conn, did)
+    if not conf.get("host"):
+        raise HTTPException(400, "Check the machine first")
+    user, pw = _machine_login(conn, s, conf)
+    try:
+        r = await upkeep.run(conf["host"], int(conf.get("port") or 22), user, pw, bool(conf.get("sudo")), script, timeout)
+    except remote.RemoteError as e:
+        raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
+    why = machine.explain(r["output"])
+    if why:
+        raise HTTPException(400, why)
+    audit(conn, request, f"machine-{what}", "devices", did, f"{dev['name']} ({'worked' if r['ok'] else 'failed'})")
+    return r
+
+
+@app.post("/api/devices/{did}/machine/upgrade")
+async def machine_upgrade(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Install the waiting OS updates (apt, dnf, pacman or apk), then check again."""
+    before = (upkeep.load(conn, f"machine:{did}") or {}).get("updates") or {}
+    r = await _machine_change(conn, s, request, did, "upgrade", machine.UPGRADE_SCRIPT, 1800)
+    if r["ok"]:
+        n = before.get("count") or 0
+        names = ", ".join(p["name"] for p in (before.get("packages") or [])[:8])
+        did_note(conn, did, f"Installed {n} update{'s' if n != 1 else ''}" + (f" ({names}{'…' if n > 8 else ''})" if names else "")
+                 + (". Needs a restart to finish." if "HARM_REBOOT=1" in r["output"] else "."))
+        try:
+            await _machine_check(conn, s, did, upkeep.connection(conn, did))
+        except HTTPException:
+            pass
+    conn.commit()
+    return {"ok": r["ok"], "output": r["output"][-20000:], **_machine_view(conn, did)}
+
+
+@app.post("/api/devices/{did}/machine/reboot")
+async def machine_reboot(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    r = await _machine_change(conn, s, request, did, "reboot", machine.REBOOT_SCRIPT, 60)
+    if r["ok"]:
+        did_note(conn, did, "Restarted the machine.")
+        snap = upkeep.load(conn, f"machine:{did}")
+        if snap:
+            upkeep.save(conn, f"machine:{did}", {**snap, "restarted_at": upkeep.now()})
+    conn.commit()
+    return {"ok": r["ok"], "output": r["output"]}
+
+
+@app.post("/api/devices/{did}/background")
+async def machine_background(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Turn background checks on for this machine with a login (copied, encrypted with background.key), or off."""
+    dev = fetch_one(conn, "devices", did)
+    body = await body_json(request)
+    if not body.get("on"):
+        upkeep.bg_forget(conn, did)
+        audit(conn, request, "background-off", "devices", did, dev["name"])
+        conn.commit()
+        return _machine_view(conn, did)
+    conf = upkeep.connection(conn, did)
+    if not conf.get("host"):
+        raise HTTPException(400, "Check the machine once first, so HaRM knows how to reach it")
+    cid = _coerce(conn, "credential_id", "fk:credentials", body.get("credential_id")) or conf.get("credential_id")
+    user, pw = _machine_login(conn, s, {"credential_id": cid})
+    label = conn.execute("SELECT label FROM credentials WHERE id = ?", (cid,)).fetchone()["label"]
+    sudo = str(body.get("sudo") or "none")
+    if sudo not in ("all", "limited", "none"):
+        raise HTTPException(400, "sudo: all, limited or none")
+    upkeep.bg_set(conn, did, user, pw, f"{label} ({user})", sudo)
+    audit(conn, request, "background-on", "devices", did, f"{dev['name']}: {label}")
+    conn.commit()
+    return _machine_view(conn, did)
+
+
+def _maintenance(conn) -> dict:
+    """Everything across machines that needs attention or an update, for Maintenance and Home."""
+    st = monitor.settings(conn)
+    machines, containers = [], []
+    for dev in upkeep.devices_with_connection(conn):
+        did = dev["id"]
+        snap = upkeep.load(conn, f"machine:{did}")
+        dk = upkeep.load(conn, f"docker:{did}")
+        u = (snap or {}).get("updates") or {}
+        machines.append({"id": did, "name": dev["name"], "at": (snap or {}).get("at"), "os": ((snap or {}).get("os") or {}).get("name"),
+                         "problems": upkeep.problems(conn, did), "error": upkeep.load(conn, f"machine_error:{did}"),
+                         "updates": {"count": u.get("count", 0), "security": u.get("security", 0), "manager": u.get("manager"),
+                                     "packages": (u.get("packages") or [])[:60]},
+                         "reboot": ((snap or {}).get("reboot") or {}).get("needed", False) and not (snap or {}).get("restarted_at"),
+                         "uptime_s": (snap or {}).get("uptime_s"), "backups": (snap or {}).get("backups", []),
+                         "background": str(did) in upkeep.bg_logins(conn), "docker_at": (dk or {}).get("checked_at")})
+        for c in (dk or {}).get("containers", []):
+            if (dk.get("updates") or {}).get(c["image"]) == "update":
+                containers.append({"device_id": did, "device": dev["name"], "name": c["name"], "image": c["image"],
+                                   "project": c.get("project"), **((dk.get("versions") or {}).get(c["image"]) or {})})
+    pve = upkeep.load(conn, "proxmox_live")
+    pve_probs = upkeep.pve_problems(conn, st["pve_backup_days"])
+    return {"machines": machines, "containers": containers, "proxmox": pve, "proxmox_problems": pve_probs,
+            "proxmox_ready": bool(_pve_conf(conn).get("url") and db.get_meta(conn, "proxmox_secret")),
+            "background": {"on": st["bg_checks"], "hours": st["bg_hours"], "last": upkeep.load(conn, "bg_last"),
+                           "next": upkeep.next_run(st), "proxmox": bool(upkeep.load(conn, "bg_proxmox"))}}
+
+
+def maintenance_summary(conn) -> dict:
+    m = _maintenance(conn)
+    items = [{**p, "device": x["name"], "device_id": x["id"]} for x in m["machines"] for p in x["problems"] if p["level"] != "info"]
+    items += [{**p, "device": "Proxmox"} for p in m["proxmox_problems"]]
+    return {"problems": sorted(items, key=lambda p: p["level"] != "bad")[:20],
+            "updates": sum(1 for x in m["machines"] if x["updates"]["count"]) + len({c["device_id"] for c in m["containers"]}),
+            "security": sum(x["updates"]["security"] for x in m["machines"]),
+            "containers": len(m["containers"]), "reboot": sum(1 for x in m["machines"] if x["reboot"])}
+
+
+@app.get("/api/maintenance")
+def maintenance(_s=Depends(require_session), conn=Depends(get_db)):
+    return _maintenance(conn)
+
+
+@app.post("/api/maintenance/check-all")
+async def maintenance_check_all(request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Check every machine HaRM can reach (and ask registries about their containers' images)."""
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    results = []
+    for dev in upkeep.devices_with_connection(conn):
+        conf = upkeep.connection(conn, dev["id"])
+        if not conf.get("host") or not conf.get("credential_id"):
+            continue
+        try:
+            await _machine_check(conn, s, dev["id"], conf)
+            if body.get("images", True) and upkeep.load(conn, f"docker:{dev['id']}") is not None:
+                r = await _docker_run(conn, s, conf, docker.CHECK_SCRIPT)
+                updates, versions = docker.parse_check(r["output"])
+                snap = upkeep.load(conn, f"docker:{dev['id']}", {})
+                _docker_save(conn, dev["id"], {**snap, "updates": updates, "versions": versions, "checked_at": monitor._now()})
+            results.append({"device": dev["name"], "ok": True})
+        except HTTPException as e:
+            upkeep.save(conn, f"machine_error:{dev['id']}", {"at": upkeep.now(), "error": e.detail})
+            results.append({"device": dev["name"], "ok": False, "error": e.detail})
+        conn.commit()
+    if _pve_conf(conn).get("url") and db.get_meta(conn, "proxmox_secret"):
+        try:
+            await asyncio.to_thread(upkeep.pve_read, conn, _pve_secret(conn, s))
+        except proxmox.ProxmoxError as e:
+            results.append({"device": "Proxmox", "ok": False, "error": str(e)})
+    audit(conn, request, "check-all", None, None, f"{sum(r['ok'] for r in results)} of {len(results)} machines checked")
+    conn.commit()
+    return {"results": results, **_maintenance(conn)}
+
+
+# ---------------------------------------------------------------------------
+# Proxmox: live state, backups and one-click power and snapshots, with the token saved in Discover.
+# ---------------------------------------------------------------------------
+
+def _pve_secret(conn, s) -> str:
+    blob = db.get_meta(conn, "proxmox_secret")
+    if not blob:
+        raise HTTPException(400, "Connect Proxmox first, in Discover > Proxmox, with “remember” on")
+    try:
+        return crypto.unseal(s["dek"], crypto.b64d(blob), PVE_AAD).decode()
+    except crypto.DecryptError:
+        raise HTTPException(400, "The saved Proxmox token can't be read. Enter it again in Discover > Proxmox")
+
+
+def _pve_error(e: proxmox.ProxmoxError) -> HTTPException:
+    return HTTPException(409 if e.code == "pin" else 400, str(e))
+
+
+@app.post("/api/proxmox/live")
+async def proxmox_live(request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    if body.get("trust_new_cert"):
+        conf = _pve_conf(conn)
+        conf.pop("fingerprint", None)
+        db.set_meta(conn, "proxmox", json.dumps(conf))
+    secret = _pve_secret(conn, s)
+    try:
+        snap = await asyncio.to_thread(upkeep.pve_read, conn, secret)
+    except proxmox.ProxmoxError as e:
+        raise _pve_error(e)
+    conf = _pve_conf(conn)
+    if not conf.get("fingerprint"):  # pinned on first use
+        try:
+            px = upkeep.pve_client(conn, secret)
+            px.get("/version")
+            db.set_meta(conn, "proxmox", json.dumps({**conf, "fingerprint": px.fingerprint}))
+        except proxmox.ProxmoxError:
+            pass
+    conn.commit()
+    return {**_maintenance(conn), "proxmox": snap}
+
+
+@app.post("/api/background/proxmox")
+async def background_proxmox(request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Read Proxmox in the background too: a copy of the token, encrypted with background.key."""
+    body = await body_json(request)
+    upkeep.bg_set_proxmox(conn, _pve_secret(conn, s) if body.get("on") else None)
+    audit(conn, request, "background-proxmox", None, None, "on" if body.get("on") else "off")
+    conn.commit()
+    return {"on": bool(body.get("on"))}
+
+
+@app.post("/api/proxmox/op")
+async def proxmox_op(request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Start, shut down, reboot, stop or snapshot one VM or container."""
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    node, kind, vmid, op = (str(body.get(k) or "") for k in ("node", "type", "vmid", "op"))
+    try:
+        px = upkeep.pve_client(conn, _pve_secret(conn, s))
+        r = await asyncio.to_thread(proxmox.guest_op, px, node, kind, vmid, op, str(body.get("note") or "")[:200])
+        snap = await asyncio.to_thread(upkeep.pve_read, conn, _pve_secret(conn, s))
+    except proxmox.ProxmoxError as e:
+        raise _pve_error(e)
+    g = next((x for x in snap["guests"] if x["vmid"] == vmid), {"name": vmid})
+    host = conn.execute("SELECT id FROM devices WHERE LOWER(name) = ? OR LOWER(hostname) = ?", (node.lower(), node.lower())).fetchone()
+    dev = conn.execute("SELECT id FROM devices WHERE vm_id = ? AND (host_id = ? OR ? IS NULL)",
+                       (vmid, host["id"] if host else None, host["id"] if host else None)).fetchone()
+    words = {"start": "Started", "shutdown": "Shut down", "reboot": "Rebooted", "stop": "Stopped (forced)",
+             "snapshot": f"Took snapshot {r.get('snapshot', '')} of"}[op]
+    if r["ok"]:
+        did_note(conn, dev["id"] if dev else (host["id"] if host else None), f"{words} {g['name']} ({vmid}) on Proxmox.")
+    audit(conn, request, f"proxmox-{op}", "devices", dev["id"] if dev else None, f"{g['name']} ({vmid}) on {node}: "
+          f"{'worked' if r['ok'] else r.get('detail') or 'failed'}")
+    conn.commit()
+    return {**r, "proxmox": snap}
 
 
 @app.post("/api/devices/{did}/collect")
@@ -2621,11 +2974,18 @@ async def discover_unifi(request: Request, s=Depends(require_session), conn=Depe
         except crypto.DecryptError:
             key = ""
     url, site, verify = str(body.get("url") or ""), str(body.get("site") or ""), bool(body.get("verify"))
+    conf = _unifi_conf(conn)
     try:
-        out = await asyncio.to_thread(discover.unifi_import, url, key, site, verify)
+        same = conf.get("url") == discover._base_url(url)
     except discover.DiscoverError as e:
         raise HTTPException(400, str(e))
-    db.set_meta(conn, "unifi", json.dumps({"url": discover._base_url(url), "site": site, "verify": verify}))
+    pin = conf.get("fingerprint") if same and not body.get("trust_new_cert") else None
+    try:
+        out = await asyncio.to_thread(discover.unifi_import, url, key, site, verify, pin)
+    except discover.DiscoverError as e:
+        raise HTTPException(409 if e.code == "pin" else 400, str(e))
+    db.set_meta(conn, "unifi", json.dumps({"url": discover._base_url(url), "site": site, "verify": verify,
+                                           "fingerprint": out.pop("fingerprint", "") or conf.get("fingerprint", "")}))
     if body.get("remember") and body.get("api_key"):
         db.set_meta(conn, "unifi_key", crypto.b64e(crypto.seal(s["dek"], key.encode(), UNIFI_AAD)))
     elif body.get("remember") is False:
@@ -2798,10 +3158,16 @@ async def discover_proxmox(request: Request, s=Depends(require_session), conn=De
             secret = ""
     verify = bool(body.get("verify"))
     try:
-        out = await asyncio.to_thread(proxmox.read, url, token_id, secret, verify)
+        same = conf.get("url") == proxmox.base_url(url)
     except proxmox.ProxmoxError as e:
         raise HTTPException(400, str(e))
-    db.set_meta(conn, "proxmox", json.dumps({"url": proxmox.base_url(url), "token_id": token_id, "verify": verify}))
+    pin = conf.get("fingerprint") if same and not body.get("trust_new_cert") else None
+    try:
+        out = await asyncio.to_thread(proxmox.read, url, token_id, secret, verify, True, pin)
+    except proxmox.ProxmoxError as e:
+        raise HTTPException(409 if e.code == "pin" else 400, str(e))
+    db.set_meta(conn, "proxmox", json.dumps({"url": proxmox.base_url(url), "token_id": token_id, "verify": verify,
+                                             "fingerprint": out.pop("fingerprint", "") or conf.get("fingerprint", "")}))
     if body.get("remember", True) and body.get("secret"):
         db.set_meta(conn, "proxmox_secret", crypto.b64e(crypto.seal(s["dek"], secret.encode(), PVE_AAD)))
     if out["cluster"]:
@@ -2924,7 +3290,8 @@ def status_board(_s=Depends(require_session), conn=Depends(get_db)):
             actions.setdefault(a["device_id"], []).append({"id": a["id"], "name": a["name"], "confirm": a["confirm"]})
     wakeable = {r[0] for r in conn.execute("SELECT DISTINCT device_id FROM interfaces WHERE mac IS NOT NULL AND mac != ''")}
     rows = [_status_row(conn, d) | {"actions": actions.get(d["id"], []), "can_wake": d["id"] in wakeable,
-                                    "containers": docker_summary(conn, d["id"])} for d in with_ip]
+                                    "containers": docker_summary(conn, d["id"]),
+                                    "health": [p for p in upkeep.problems(conn, d["id"]) if p["level"] != "info"]} for d in with_ip]
     last = conn.execute("SELECT MAX(checked_at) FROM device_status").fetchone()[0]
     return {"devices": rows, "without_address": len(devices) - len(with_ip), "last_check": last,
             "checking": monitor._full_lock.locked(), **monitor.settings(conn)}
@@ -3071,6 +3438,9 @@ async def action_run(aid: int, request: Request, s=Depends(require_session), con
     conn.execute("DELETE FROM action_runs WHERE action_id = ? AND id NOT IN "
                  "(SELECT id FROM action_runs WHERE action_id = ? ORDER BY id DESC LIMIT 50)", (aid, aid))
     ok = sum(1 for r in results if r["ok"])
+    if a["device_id"]:
+        did_note(conn, a["device_id"], f"Ran “{a['name']}”" + (f" on {', '.join(r['host'] for r in results)}" if len(results) > 1 else "")
+                 + (": it worked." if ok == len(results) else f": {len(results) - ok} of {len(results)} failed."))
     audit(conn, request, "run-action", "actions", aid,
           f"{a['name']} on {', '.join(r['host'] for r in results)}: {ok} of {len(results)} worked")
     conn.commit()

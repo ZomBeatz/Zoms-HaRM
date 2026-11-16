@@ -5,9 +5,20 @@ import { api, GET, loadLookups } from '../api/client';
 import { S } from '../lib/state';
 import { locPath } from '../lib/lookups';
 import { nz, type Row } from '../lib/util';
-import { confirmBox, toast } from '../ui/overlay';
+import { choose, confirmBox, toast } from '../ui/overlay';
 import { A, Badge, Btn, Card, HelpLink, Mono, PageHead, Small, Table, Tabs, type Kid } from '../ui/bits';
 import { Pending, useLoad } from '../app/router';
+
+/* Proxmox and UniFi certificates are pinned the first time; a changed one asks before HaRM sends the token. */
+async function pinnedPost(path: string, body: Row): Promise<any> {
+  try { return await api('POST', path, body); }
+  catch (e) {
+    const msg = (e as Error).message;
+    if (!/certificate changed/i.test(msg)) throw e;
+    if (await choose('The certificate changed', msg, [['no', 'Cancel'], ['yes', 'Trust the new certificate', 'primary']]) !== 'yes') throw new Error('Cancelled: the certificate wasn’t trusted');
+    return api('POST', path, { ...body, trust_new_cert: true });
+  }
+}
 
 const keyOf = (x: Row) => x.mac || x.ip;
 const Field = ({ label, children, hint }: { label: string; children: Kid; hint?: Kid }) =>
@@ -241,7 +252,7 @@ export default function Discover() {
         <label className="check inline-check"><input type="checkbox" checked={uni.remember} onChange={e => setU({ ...uni, remember: e.target.checked })} />Remember the key (encrypted with your vault)</label>
         <div className="inline"><Btn label="Import from UniFi" cls="primary" disabled={busy === 'unifi'} onClick={() => run('unifi', async () => {
           say('unifi', 'Asking the gateway…');
-          const out = await api('POST', '/discover/unifi', { url: uni.url, api_key: uni.key, site: uni.site, verify: uni.verify, remember: uni.remember });
+          const out = await pinnedPost('/discover/unifi', { url: uni.url, api_key: uni.key, site: uni.site, verify: uni.verify, remember: uni.remember });
           setU({ ...uni, key: '', hasKey: uni.hasKey || uni.remember });
           say('unifi', `Site “${out.site.name}”: ${out.hosts.length} devices and clients.`);
           show(out, `UniFi · ${out.site.name}`);
@@ -260,11 +271,12 @@ export default function Discover() {
               <li>Untick <B>Privilege Separation</B> (or give the token its own permission in the next step).</li>
               <li><B>Datacenter &gt; Permissions &gt; Add &gt; API Token Permission</B>: path <code>/</code>, role <B>PVEAuditor</B> (read-only).</li>
               <li>Copy the secret: Proxmox only shows it once.</li></ol>
+            <p className="muted small">To also start, shut down and snapshot VMs from <B>Maintenance</B>, make a role (<B>Datacenter &gt; Permissions &gt; Roles &gt; Create</B>) with <code>VM.PowerMgmt</code> and <code>VM.Snapshot</code>, and add it for the token on <code>/</code> too.</p>
           </details>
           <label className="check inline-check"><input type="checkbox" checked={prox.verify} onChange={e => setP({ ...prox, verify: e.target.checked })} />Verify certificate (off for Proxmox’s self-signed certificate)</label>
           <div className="inline"><Btn label="Read Proxmox" cls="primary" disabled={busy === 'px'} onClick={() => run('px', async () => {
             say('px', 'Reading the cluster…');
-            const out = await api('POST', '/discover/proxmox', { url: prox.url, token_id: prox.token, secret: prox.secret, verify: prox.verify });
+            const out = await pinnedPost('/discover/proxmox', { url: prox.url, token_id: prox.token, secret: prox.secret, verify: prox.verify });
             setP({ ...prox, secret: '', hasSecret: true });
             say('px', `${out.cluster ? `Cluster “${out.cluster}”: ` : ''}${out.nodes.length} node${out.nodes.length === 1 ? '' : 's'}, ${out.guests.length} VMs and containers.`);
             setPx(out);

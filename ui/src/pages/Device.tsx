@@ -17,6 +17,7 @@ import { revealCredential } from '../dialogs/credential';
 import { deletePart, installDialog, uninstallDialog } from '../dialogs/parts';
 import { importSpecs, undoImport } from '../dialogs/import';
 import { ContainersTab } from './Containers';
+import { HealthTab } from './Machine';
 import { pickCPU } from '../dialogs/library';
 import { printLabels } from '../dialogs/print';
 import { BackLink, Pending, cleanHash, goBackOr, useLoad } from '../app/router';
@@ -427,6 +428,7 @@ export default function Device({ id, q: qs }: { id: number; q: URLSearchParams }
       <MenuButton label="⋯" items={[
         ['⇩ Import specs…', actions.importSpecs],
         S.lastImport[id] ? ['↶ Undo last import', () => undoImport(id, back)] : null,
+        ['🩺 Health and updates…', () => setTab('health')],
         ['🐳 Docker containers…', () => setTab('containers')],
         ['⟳ Check if it’s online', check],
         d.can_wake ? ['⏻ Wake up (Wake-on-LAN)', () => wakeDevice(id, dev.name)] : null,
@@ -521,6 +523,8 @@ export default function Device({ id, q: qs }: { id: number; q: URLSearchParams }
         <Card title="Cables & connections" actions={<Small label="+ Add" onClick={() => editEntity('connections', { a_device_id: id }, back)} />}>
           <ConnTable rows={d.connections} after={back} perspective={id} /></Card>
       </>],
+      ...(d.machine || tabReq.t === 'health' ? [['health', 'Health', null,
+        () => <HealthTab deviceId={id} after={back} />] as [string, Kid, number | null, () => Kid]] : []),
       ...(d.docker || tabReq.t === 'containers' ? [['containers', 'Containers', d.docker ? (d.docker.problems.length || d.docker.total) : null,
         () => <ContainersTab deviceId={id} host={(mainIface?.ip || '').split('/')[0]} after={back} />] as [string, Kid, number | null, () => Kid]] : []),
       ['logins', 'Logins', d.credentials.length || null, () => <Card title="Logins" actions={<Small label="+ Add" onClick={actions.addLogin} />}><CredTable rows={d.credentials} after={back} /></Card>],

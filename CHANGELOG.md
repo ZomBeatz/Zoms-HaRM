@@ -53,6 +53,17 @@
 - The **Status** page shows a server's containers on its tile, and **Watch its web page** makes a container's port a service with the usual checks and alerts.
 - New examples in **Actions**: update Plex installed as a package, update every Compose project in a folder, clean up old images.
 
+**Maintenance: health, updates and backups**
+- A machine's **Health** tab (**⋯ > Health and updates…**) reads it over SSH with a saved login: disk space, each drive's health (SMART), ZFS pools and RAID arrays, memory, waiting updates with security fixes marked, whether it needs a restart, and its containers. Drive health goes into each drive's **Health** field, matched by serial number.
+- **Labels for virtual drives:** say what a disk, volume or pool really is ("12 × 4 TB in RAID 6"), shown over what the system reports (a 42 TB virtual drive), or stop warnings about it.
+- **Backups to watch:** folders that should get new files and ZFS datasets that should get new snapshots, with how often. Proxmox backups are checked for every VM.
+- **Maintenance** (in the sidebar): what needs attention on every machine, system updates with **Install** and **Restart**, container updates with the versions (1.41.9 → 1.42.2), backups, and **⟳ Check everything**. Problems also show on **Home** and on the **Status** page.
+- **Proxmox:** every VM's state, use and newest backup, with **Start**, **Shut down**, **Reboot**, **Take a snapshot** and **Stop** (the token needs `VM.PowerMgmt` and `VM.Snapshot` for the buttons).
+- **Maintenance log:** updates, restarts, container changes, Proxmox power and snapshots, and actions each leave a **Did** note on the device.
+- **Background checks** (off unless you turn them on): read chosen machines every few hours, also while HaRM is locked, with a login of their own (encrypted with `background.key`, not in backups), and alert about new problems. They only read.
+- **Alerts** about problems machine checks find; a container that stops or keeps restarting comes with the last lines of its log.
+- Proxmox and UniFi certificates are remembered the first time HaRM connects; a changed one asks before HaRM sends the token again.
+
 **Cleaning up parts**
 - **Delete** on any part of a device removes it outright (added by mistake, by hand or by a scan), with **Undo**. It doesn't go to Spare Parts. **Remove** is now **To spares**, with **Delete it instead** in it.
 - **Import specs** can **Replace with this scan**: parts the new scan didn't find are deleted, and only the kinds of parts it read. **Undo** (in the message, or **⋯ > Undo last import**) puts everything back as it was.

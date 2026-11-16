@@ -301,7 +301,10 @@ def seed_status(db_path: Path) -> None:
             {"host": row["ip"], "port": 22, "credential_id": cred["id"] if cred else None, "sudo": True})))
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (f"docker:{row['id']}", json.dumps(
             {"at": ts(minutes=12), "checked_at": ts(minutes=12), "containers": boxes,
-             "updates": {b["image"]: updates.get(b["image"], "current") for b in boxes}})))
+             "updates": {b["image"]: updates.get(b["image"], "current") for b in boxes},
+             "versions": {"lscr.io/linuxserver/plex:latest": {"now": "1.41.9.9961-46083195d", "new": "1.42.2.10156-f737b826c"},
+                          "nextcloud:29-apache": {"now": "29.0.8", "new": "29.0.16"}}})))
+    seed_machines(conn, ts)
     # The new-device watch, on the home LAN only (not the guest Wi-Fi), found two things it doesn't know.
     lan = conn.execute("SELECT id FROM networks WHERE name = 'Home LAN'").fetchone()["id"]
     db_meta = lambda k, v: conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (k, v))
@@ -313,6 +316,92 @@ def seed_status(db_path: Path) -> None:
                      (mac, ip, mac, name, lan, "new", ts(**ago), ts(minutes=8)))
     conn.commit()
     conn.close()
+
+
+def seed_machines(conn, ts):
+    """Machine checks, as last read: pve1's RAID card shows its 12 drives as one 42 TB virtual drive
+    (labelled with what it really is), the docker VM's disk is filling up and has security updates,
+    the plex VM needs a restart, and Proxmox has a VM whose backups stopped."""
+    from datetime import datetime, timezone
+    meta = lambda k, v: conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (k, json.dumps(v)))
+    ids = {r["name"]: (r["id"], r["ip"]) for r in conn.execute(
+        "SELECT d.id, d.name, MIN(i.ip) AS ip FROM devices d LEFT JOIN interfaces i ON i.device_id = d.id GROUP BY d.id")}
+    cred = conn.execute("SELECT id FROM credentials ORDER BY id LIMIT 1").fetchone()["id"]
+    TB, GB = 10 ** 12, 10 ** 9
+
+    def vol(mount, size, pct, source, fstype="ext4"):
+        used = int(size * pct / 100)
+        return {"source": source, "type": fstype, "size": size, "used": used, "avail": size - used, "mount": mount, "pct": pct}
+
+    def disk(name, size, model, serial, smart=None, virtual=False, tran="sata", rota=False):
+        return {"name": name, "size": size, "rotational": rota, "tran": tran, "model": model, "serial": serial, "virtual": virtual,
+                "smart": smart or {"health": "unknown", "hours": None, "temp": None, "realloc": None, "pending": None, "wear": None,
+                                   "note": "virtual drive" if virtual else "not available"}}
+
+    def ok(hours, temp, wear=None, realloc=0):
+        return {"health": "ok", "hours": hours, "temp": temp, "realloc": realloc, "pending": 0, "wear": wear, "note": ""}
+
+    def pkg(name, now, new, security=False):
+        return {"name": name, "now": now, "new": new, "security": security}
+
+    def snap(os_name, os_id, days_up, cpus, mem_gb, free_gb, volumes, disks, updates, reboot=False, pools=(), pve="", backups=()):
+        return {"at": ts(minutes=14), "root": True, "smartctl": True,
+                "os": {"name": os_name, "id": os_id, "version": "", "kernel": "6.14.11-4-pve" if pve else "6.12.48-1-amd64", "hostname": "", "pve": pve},
+                "uptime_s": days_up * 86400, "load": [0.42, 0.51, 0.47], "cpus": cpus,
+                "mem": {"total": mem_gb * GB, "avail": free_gb * GB, "swap_total": 8 * GB, "swap_free": 8 * GB},
+                "volumes": volumes, "disks": disks, "pools": list(pools), "md": [],
+                "reboot": {"needed": reboot, "why": ["kernel"] if reboot else [], "kernel_now": "6.8.0-85-generic",
+                           "kernel_new": "6.8.0-87-generic" if reboot else "", "packages": []},
+                "updates": {"manager": "apt", "refreshed": True, "count": len(updates), "security": sum(p["security"] for p in updates),
+                            "packages": updates},
+                "snapshots": {"tank/backups": ts(hours=5)}, "folders": {}, "backups": list(backups)}
+
+    machines = {
+        "pve1": snap("Debian GNU/Linux 13 (trixie)", "debian", 41, 32, 128, 61,
+                     [vol("/", 98 * GB, 34, "/dev/mapper/pve-root"), vol("/mnt/media", 42 * TB, 71, "/dev/sdb1", "xfs")],
+                     [disk("sda", 480 * GB, "Dell BOSS-S1 VD", "BOSS0", virtual=True),
+                      disk("sdb", 42 * TB, "DELL PERC H730P Mini", "6d0946f0", virtual=True, rota=True, tran=""),
+                      disk("nvme0n1", 2 * TB, "Samsung SSD 990 PRO 2TB", "S7KHNJ0X102233A", ok(9120, 41, wear=3), tran="nvme")],
+                     [pkg("pve-manager", "9.0.10", "9.0.11"), pkg("proxmox-kernel-6.14", "6.14.11-3", "6.14.11-4")],
+                     pve="pve-manager/9.0.10/deb1ca707ec72a89 (running kernel: 6.14.11-4-pve)",
+                     pools=[{"name": "tank", "size": 2 * TB, "alloc": int(0.62 * TB), "free": int(1.38 * TB), "health": "ONLINE"}],
+                     backups=[{"kind": "zfs", "path": "tank/backups", "hours": 24, "name": "Nightly snapshots", "newest": ts(hours=5), "file": "", "missing": False, "unread": False}]),
+        "docker": snap("Debian GNU/Linux 13 (trixie)", "debian", 12, 6, 16, 5,
+                       [vol("/", 128 * GB, 92, "/dev/sda1")], [disk("sda", 128 * GB, "QEMU HARDDISK", "drive-scsi0", virtual=True)],
+                       [pkg("openssl", "3.5.1-1", "3.5.1-1+deb13u1", True), pkg("libssl3t64", "3.5.1-1", "3.5.1-1+deb13u1", True),
+                        pkg("docker-ce", "28.4.0-1", "28.5.1-1"), pkg("containerd.io", "1.7.27-1", "1.7.28-1")],
+                       backups=[{"kind": "folder", "path": "/srv/backups/nextcloud", "hours": 24, "name": "Nextcloud backups",
+                                 "newest": ts(days=4), "file": "/srv/backups/nextcloud/nc-2026-11-11.tar.zst", "missing": False, "unread": False}]),
+        "plex": snap("Ubuntu 24.04.3 LTS", "ubuntu", 63, 4, 8, 3, [vol("/", 64 * GB, 58, "/dev/sda2")],
+                     [disk("sda", 64 * GB, "QEMU HARDDISK", "drive-scsi0", virtual=True)], [], reboot=True),
+    }
+    labels = {"pve1": {"disk:6d0946f0": {"name": "Media array", "real": "12 × 4 TB WD Red in RAID 6 (40 TB usable)"},
+                       "vol:/mnt/media": {"name": "Media", "real": "On the 12-drive RAID 6 array"}}}
+    for name, m in machines.items():
+        did, ip = ids[name]
+        meta(f"machine:{did}", m)
+        meta(f"docker_conf:{did}", {"host": ip or name, "port": 22, "credential_id": cred, "sudo": True})
+        if name in labels:
+            meta(f"machine_labels:{did}", labels[name])
+        if m["backups"]:
+            meta(f"machine_backups:{did}", [{k: b[k] for k in ("kind", "path", "hours", "name")} for b in m["backups"]])
+    meta("bg_logins", {str(ids["pve1"][0]): {"sealed": "", "label": "harm-check (harm-check)", "at": ts(days=2)}})
+    # Proxmox, as last read.
+    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('proxmox_secret', 'demo')")
+    meta("proxmox", {"url": "https://10.20.0.10:8006", "token_id": "root@pam!harm", "verify": False})
+    now = int(datetime.now(timezone.utc).timestamp())
+    guests = [("100", "plex", "pve1", "qemu", "running", 4, 8), ("101", "home-assistant", "pve1", "qemu", "running", 2, 4),
+              ("110", "docker", "pve2", "qemu", "running", 6, 16), ("120", "unifi-controller", "pve2", "lxc", "running", 1, 2),
+              ("130", "windows-test", "pve2", "qemu", "stopped", 4, 8)]
+    meta("proxmox_live", {"at": ts(minutes=14), "backups_error": "", "guests": [
+        {"vmid": v, "name": n, "node": node, "type": t, "status": st, "template": False, "cpu": 6.5 if st == "running" else 0,
+         "cpus": c, "mem": int(m * GB * 0.6) if st == "running" else 0, "maxmem": m * GB, "uptime": 12 * 86400 if st == "running" else 0, "lock": ""}
+        for v, n, node, t, st, c, m in guests],
+        "backups": {"100": {"ctime": now - 20 * 3600, "storage": "pbs", "size": 31 * GB}, "101": {"ctime": now - 20 * 3600, "storage": "pbs", "size": 9 * GB},
+                    "110": {"ctime": now - 9 * 86400, "storage": "pbs", "size": 52 * GB}, "120": {"ctime": now - 20 * 3600, "storage": "pbs", "size": 2 * GB}}})
+    # The maintenance log on the docker VM.
+    for body, ago in (("Updated container uptime-kuma to 1.23.16.", {"days": 3}), ("Installed 14 updates (curl, libcurl4, …).", {"days": 9})):
+        conn.execute("INSERT INTO notes (entity, entity_id, kind, body, created_at) VALUES ('devices', ?, 'action', ?, ?)", (ids["docker"][0], body, ts(**ago)))
 
 
 def main():

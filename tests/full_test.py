@@ -782,9 +782,15 @@ Let me know if you need anything else!"""
     def _():
         assert c.call("GET", "/settings/app") == {"status_interval": 5, "update_check": False, "ai_enabled": True, "currency": "USD",
                                                    "idle_minutes": 30, "session_hours": 12, "backup_keep": 14, "start_page": "dashboard",
-                                                   "site_name": "", "part_location_id": None, "part_rack_id": None,
+                                                   "site_name": "", "auto_log": True, "bg_checks": False, "bg_hours": 6, "pve_backup_days": 2,
+                                                   "part_location_id": None, "part_rack_id": None,
                                                    "device_location_id": None, "device_rack_id": None}
         c.call("POST", "/settings/app", {"status_interval": 7}, expect=400)
+        c.call("POST", "/settings/app", {"bg_hours": 5}, expect=400)
+        c.call("POST", "/settings/app", {"bg_hours": "soon"}, expect=400)
+        m = c.call("GET", "/maintenance")
+        assert m["machines"] == [] and m["background"]["on"] is False and m["proxmox"] is None, m
+        assert c.call("GET", "/dashboard")["maintenance"]["problems"] == []
         assert c.call("POST", "/settings/app", {"status_interval": 0})["status_interval"] == 0
         assert c.call("GET", "/status")["status_interval"] == 0
         assert c.call("GET", "/update-check")["enabled"] is False

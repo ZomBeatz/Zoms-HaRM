@@ -66,6 +66,9 @@ function StatusTile({ d, after }: { d: Row; after: () => void }) {
         {d.containers.problems.length ? <> <span className="badge bad">{`${d.containers.problems.join(', ')} not running`}</span></> : null}
         {d.containers.updates.length ? <> <span className="badge info">{`${d.containers.updates.length} update${d.containers.updates.length === 1 ? '' : 's'}`}</span></> : null}
       </a></div> : null}
+      {d.health?.length ? <div className="st-others"><a className="st-other small" href={`#/devices/${d.id}?tab=health`} title={d.health.map((p: { text: string }) => p.text).join('\n')}>
+        {'🩺 '}<span className={`badge ${d.health.some((p: { level: string }) => p.level === 'bad') ? 'bad' : 'warn'}`}>{d.health.length === 1 ? d.health[0].text : `${d.health.length} things to check`}</span>
+      </a></div> : null}
       <HistoryStrip st={d as any} />
       {acts.length ? <div className="st-actions">{acts}</div> : null}
     </div>

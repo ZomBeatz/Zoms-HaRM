@@ -235,6 +235,14 @@ const HELP: [string, string, () => Kid, { keyboard?: boolean }?][] = [
     <p>Press <B>▶ Run</B>. A message says whether it worked, with <B>Show output</B>. The last 50 runs are kept, encrypted like your logins.</p>
     <p>Actions use your saved logins, so they only run while HaRM is unlocked, and each run is in the <A href="#/audit">Audit log</A>. Tick <B>Ask before running</B> for anything that restarts or shuts down.</p>
   </>],
+  ['services', 'Services: cards, favorites and buttons', () => <>
+    <p><A href="#/services">Services</A> shows every web page and port on your devices as cards or a list, with whether each answers. <B>⚙ Layout</B> sets the card size, grouping, sorting and what each card shows, on this device.</p>
+    <L items={[
+      <><B>Favorites: </B>tap ☆ on a card. Favorites come first and show on Home.</>,
+      <><B>Lists: </B>names like “Media” or “Admin pages”, set in <B>⋯ &gt; Edit card…</B>. Tap a list’s chip at the top to see just that list.</>,
+      <><B>Buttons: </B><B>Edit card…</B> adds up to 8: open a link or an app (ssh://, smb://, rdp://, vnc://), copy text, or run one of your saved <A href="#/actions">actions</A>. Buttons can’t hold commands of their own, and an action keeps its own <B>Ask before running</B>.</>,
+    ]} />
+  </>],
   ['maintenance', 'Maintenance: health, updates and backups', () => <>
     <p>A machine’s <B>Health</B> tab reads it over SSH with a saved login: disk space, each drive’s health (SMART), ZFS pools and RAID arrays, memory, waiting updates (security fixes marked), whether it needs a restart, and its backups. Open a device and pick <B>⋯ &gt; Health and updates…</B>.</p>
     <L items={[

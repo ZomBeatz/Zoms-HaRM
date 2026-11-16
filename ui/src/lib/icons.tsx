@@ -4,7 +4,7 @@
 import { Fragment, createElement, type ReactNode } from 'react';
 import {
   Activity, Archive, Bell, Bot, Boxes, BrushCleaning, Container, Cable, Camera, ChartColumn, ChevronDown, ChevronRight, CircleHelp, Clock, Clipboard, Compass, Copy,
-  Download, ExternalLink, Eye, EyeOff, Flag, Globe, Hammer, HardDrive, HeartPulse, House, Keyboard, KeyRound, Layers, Library, ListChecks,
+  Download, ExternalLink, Eye, EyeOff, Flag, Globe, Hammer, HardDrive, HeartPulse, House, Keyboard, KeyRound, Layers, LayoutGrid, Library, ListChecks,
   Lock, MapPin, Maximize, Menu, MessageSquare, Monitor, Moon, Network, NotebookPen, Package, Pause, Pencil, Pin, Play, Plug, Power,
   Printer, QrCode, Radar, RotateCw, ScrollText, Server, Settings, Share2, Shield, Smartphone, Snowflake, Square, Star, Sun,
   SunMoon, Tag, Trash2, TriangleAlert, Undo2, Video, Wrench, Zap, type LucideIcon,
@@ -21,7 +21,7 @@ const ICONS: Record<string, LucideIcon> = {
   'printer': Printer, 'hard-drive': HardDrive, 'video': Video, 'moon': Moon, 'sun': Sun, 'sun-moon': SunMoon,
   'rotate-cw': RotateCw, 'container': Container, 'brush-cleaning': BrushCleaning, 'undo-2': Undo2, 'boxes': Boxes, 'triangle-alert': TriangleAlert, 'play': Play, 'square': Square, 'copy': Copy,
   'message-square': MessageSquare, 'keyboard': Keyboard, 'activity': Activity, 'zap': Zap, 'power': Power,
-  'maximize': Maximize, 'heart-pulse': HeartPulse, 'archive': Archive, 'clock': Clock, 'pause': Pause, 'bell': Bell, 'chart-column': ChartColumn, 'eye': Eye, 'eye-off': EyeOff,
+  'maximize': Maximize, 'heart-pulse': HeartPulse, 'layout-grid': LayoutGrid, 'archive': Archive, 'clock': Clock, 'pause': Pause, 'bell': Bell, 'chart-column': ChartColumn, 'eye': Eye, 'eye-off': EyeOff,
 };
 
 export const ICON_FOR: Record<string, string> = {
@@ -34,7 +34,7 @@ export const ICON_FOR: Record<string, string> = {
   '▾': 'chevron-down', '▸': 'chevron-right', '🧭': 'compass', '🛡': 'shield', '🖨': 'printer', '📍': 'map-pin',
   '💾': 'hard-drive', '🎥': 'video', '🌙': 'moon', '☀': 'sun', '◐': 'sun-moon', '⟳': 'rotate-cw', '🐳': 'container', '🧹': 'brush-cleaning', '↶': 'undo-2', '🧩': 'boxes',
   '⚠': 'triangle-alert', '▶': 'play', '■': 'square', '⎘': 'copy', '💬': 'message-square', '⌨': 'keyboard', '📶': 'activity',
-  '⚡': 'zap', '⏻': 'power', '⛶': 'maximize', '🔔': 'bell', '📊': 'chart-column', '🩺': 'heart-pulse', '🗄': 'archive', '🕑': 'clock', '⏸': 'pause', '🎉': '',
+  '⚡': 'zap', '⏻': 'power', '⛶': 'maximize', '🔔': 'bell', '📊': 'chart-column', '🩺': 'heart-pulse', '⊞': 'layout-grid', '🗄': 'archive', '🕑': 'clock', '⏸': 'pause', '🎉': '',
 };
 /* Elements whose text stays as typed. */
 export const NO_ICONS = new Set(['option', 'textarea', 'title', 'style', 'script', 'code', 'pre']);

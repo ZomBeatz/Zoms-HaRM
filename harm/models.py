@@ -146,8 +146,9 @@ ENTITIES: dict[str, dict] = {
         "fields": {
             "device_id": f(fk("devices"), True), "name": f(T, True), "protocol": f(T),
             "port": f(I), "url": f(T), "version": f(T), "status": f(T), "notes": f(T),
+            "favorite": f(B), "lists": f(T), "icon": f(T), "color": f(T), "buttons": f(T),
         },
-        "search": ["name", "url", "version", "notes"],
+        "search": ["name", "url", "version", "notes", "lists"],
         "select": """SELECT t.*, d.name AS device_name FROM services t
                      JOIN devices d ON d.id = t.device_id""",
         "order": "t.name COLLATE NOCASE",

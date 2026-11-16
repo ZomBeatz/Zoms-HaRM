@@ -981,3 +981,39 @@ body.wall .wall-exit:hover { opacity: 1; }
 .mt-machine { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--line); }
 .mt-machine:first-child { border-top: 0; }
 .mt-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+
+/* Services as cards. A card's color (--svc) shows as its top edge and icon. */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: none; padding: 6px 12px; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.svc-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); margin-bottom: 16px; }
+.svc-grid.size-s { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.svc-grid.size-l { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.svc-card { --svc: var(--line); display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 12px; background: var(--panel);
+  border: 1px solid var(--line); border-top: 3px solid var(--svc); border-radius: var(--radius); }
+.svc-card.is-down { border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); }
+.svc-card.size-s { padding: 8px 10px; gap: 6px; }
+.svc-top { display: flex; gap: 10px; align-items: flex-start; min-width: 0; }
+.svc-icon { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--svc) 18%, transparent); color: color-mix(in srgb, var(--svc) 70%, var(--text)); }
+.svc-card[style] .svc-icon { color: var(--svc); }
+.size-s .svc-icon { width: 30px; height: 30px; }
+.svc-title { flex: 1; min-width: 0; }
+.svc-name { font-weight: 600; overflow-wrap: anywhere; }
+.svc-star { flex: none; background: none; border: 0; padding: 2px 4px; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; }
+.svc-star.on { color: var(--zb-warn); }
+.svc-body { display: grid; gap: 4px; min-width: 0; }
+.svc-addr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.svc-notes { margin: 0; white-space: pre-line; }
+.svc-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; align-items: center; }
+.svc-group-title { margin: 8px 0; font-size: 15px; }
+.icon-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+.icon-pick { display: grid; place-items: center; min-width: 34px; height: 34px; padding: 0 6px; }
+.icon-pick.on, .swatch.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+.swatch { width: 28px; height: 28px; padding: 0; border-radius: 50%; }
+.card-btn-row { align-items: flex-end; padding: 6px 0; border-top: 1px solid var(--line); }
+.card-editor h4 { margin: 12px 0 4px; }
+.svc-star.on svg { fill: currentColor; }
+.svc-body .chips { gap: 4px; }
+.svc-body .chip { padding: 1px 8px; font-size: 12px; line-height: 1.5; min-height: 0; height: auto; background: var(--panel-2); border: 1px solid var(--line); color: var(--text-2); }

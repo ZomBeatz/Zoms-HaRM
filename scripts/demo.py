@@ -399,6 +399,25 @@ def seed_machines(conn, ts):
         for v, n, node, t, st, c, m in guests],
         "backups": {"100": {"ctime": now - 20 * 3600, "storage": "pbs", "size": 31 * GB}, "101": {"ctime": now - 20 * 3600, "storage": "pbs", "size": 9 * GB},
                     "110": {"ctime": now - 9 * 86400, "storage": "pbs", "size": 52 * GB}, "120": {"ctime": now - 20 * 3600, "storage": "pbs", "size": 2 * GB}}})
+    # Services as cards: favorites, lists, icons, colors and a few buttons of their own.
+    act = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM actions")}
+    cards = {
+        "Plex": dict(favorite=1, lists="Media", icon="film", color="orange",
+                     buttons=[{"kind": "link", "label": "Settings", "value": "http://10.20.0.100:32400/web/index.html#!/settings"}]),
+        "Nextcloud": dict(favorite=1, lists="Media, Family", icon="cloud", color="blue"),
+        "Pi-hole": dict(favorite=1, lists="Network", icon="shield", color="red",
+                        buttons=[{"kind": "copy", "label": "DNS address", "value": "192.168.10.53"}]),
+        "Proxmox VE": dict(lists="Admin pages", icon="server", color="purple",
+                           buttons=[{"kind": "link", "label": "SSH", "value": "ssh://root@10.20.0.10"},
+                                    {"kind": "action", "label": "Update", "action_id": act.get("Update packages")}]),
+        "DSM": dict(lists="Admin pages, Family", icon="hard-drive", color="teal"),
+        "Portainer": dict(lists="Admin pages", icon="container", color="blue"),
+        "Uptime Kuma": dict(favorite=1, lists="Admin pages", icon="activity", color="green"),
+    }
+    for name, c in cards.items():
+        c["buttons"] = json.dumps([b for b in c.get("buttons", []) if b.get("action_id", 1)]) if c.get("buttons") else None
+        conn.execute("UPDATE services SET favorite = ?, lists = ?, icon = ?, color = ?, buttons = ? WHERE name = ?",
+                     (c.get("favorite", 0), c["lists"], c["icon"], c["color"], c["buttons"], name))
     # The maintenance log on the docker VM.
     for body, ago in (("Updated container uptime-kuma to 1.23.16.", {"days": 3}), ("Installed 14 updates (curl, libcurl4, …).", {"days": 9})):
         conn.execute("INSERT INTO notes (entity, entity_id, kind, body, created_at) VALUES ('devices', ?, 'action', ?, ?)", (ids["docker"][0], body, ts(**ago)))

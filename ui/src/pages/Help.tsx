@@ -110,6 +110,7 @@ const HELP: [string, string, () => Kid, { keyboard?: boolean }?][] = [
     <><B>Reveal</B> shows a login for 60 seconds. Every reveal is recorded in the <A href="#/audit">Audit Log</A>.</>,
     'Set “Last rotated” and Home reminds you about logins older than a year.',
     <><B>Bitwarden: </B>the Vault’s <B>⋯</B> menu imports Bitwarden’s or Vaultwarden’s plain .json export (you see each login and its device before anything is saved; delete the file afterwards) and exports for Bitwarden (it asks for your master password again).</>,
+    <><B>Old passwords </B>are listed on <A href="#/maintenance">Maintenance</A>, with <B>Change on machine</B>. How old counts as old is in Settings &gt; Status and actions.</>,
     <><B>🔑 Change on machine… </B>on a Linux login sets a new password over SSH with chpasswd, saves it, keeps the old one in its secret notes and checks the new one signs in. Update anything else that uses the old one.</>,
   ]} />],
   ['forms', 'Forms, unsaved changes and drafts', () => <L items={[
@@ -243,6 +244,8 @@ const HELP: [string, string, () => Kid, { keyboard?: boolean }?][] = [
       <><B>Favorites: </B>tap ☆ on a card. Favorites come first and show on Home.</>,
       <><B>Lists: </B>names like “Media” or “Admin pages”, set in <B>⋯ &gt; Edit card…</B>. Tap a list’s chip at the top to see just that list.</>,
       <><B>Buttons: </B><B>Edit card…</B> adds up to 8: open a link or an app (ssh://, smb://, rdp://, vnc://), copy text, or run one of your saved <A href="#/actions">actions</A>. Buttons can’t hold commands of their own, and an action keeps its own <B>Ask before running</B>.</>,
+      <><B>Results on the card: </B>tick <B>Show its result on the card</B> on an action button, and the last line the action printed (like “2 streams”) shows on the card. It updates when you press the button; nothing runs by itself.</>,
+      <><B>Saved layouts: </B><B>⚙ Layout &gt; Save this layout as…</B> keeps the look and the filters under a name (“Wall tablet”), to pick from ⚙ Layout on any device.</>,
     ]} />
   </>],
   ['maintenance', 'Maintenance: health, updates and backups', () => <>
@@ -255,8 +258,10 @@ const HELP: [string, string, () => Kid, { keyboard?: boolean }?][] = [
     ]} />
   </>],
   ['connect', 'Connecting to a machine', () => <>
-    <p>Open a device and press <B>🔌 Connect</B>: a terminal in HaRM with the saved login, your own SSH app or a copied <C>ssh</C> command, a Remote Desktop file for Windows, VNC, the Proxmox console of a VM or node, or the management page (iDRAC, iLO).</p>
+    <p>Open a device and press <B>🔌 Connect</B>: a terminal in HaRM with the saved login, your own SSH app or a copied <C>ssh</C> command, a Remote Desktop file for Windows, its screen over VNC (in HaRM or your VNC app), the Proxmox console of a VM or node, or the management page (iDRAC, iLO).</p>
     <L items={[
+      <><B>HaRM’s SSH key: </B>make one in <A href="#/settings">Settings &gt; Locking and security</A>, then <B>🗝 Add HaRM’s SSH key</B> in Connect puts it on a machine. HaRM then signs in with it, and background checks can use it instead of a stored password. The private key is encrypted with your master password.</>,
+      <><B>Screen in HaRM: </B>VNC through HaRM, for machines with a VNC port (5900–5999) on their Network tab. If the machine asks for a password, HaRM uses the picked login’s (that’s in the audit log) or asks you.</>,
       'The terminal only works while HaRM is unlocked, and closes when it locks, after 30 minutes without typing, or when you leave the page. At most 4 are open at once.',
       <>Opening and closing one is recorded in the <A href="#/audit">Audit Log</A>; what you type is never stored. Turn it off in <A href="#/settings">Settings &gt; Locking and security</A>.</>,
       'It needs the ssh program on the computer running HaRM (built into Windows, macOS and most Linux).',

@@ -10,17 +10,20 @@ import { runAction } from '../lib/actions';
 import { CertText, ServicePill } from '../lib/status';
 import { SERVICE_COLORS, SERVICE_ICONS, serviceIcon } from '../lib/serviceIcons';
 import { fmtMs, prefGet, prefSet, timeAgo, type Row } from '../lib/util';
-import { copy, modal, toast, type ModalCtl } from '../ui/overlay';
-import { A, Btn, Card, MenuButton, PageHead, Small, Table } from '../ui/bits';
+import { choose, copy, modal, toast, type ModalCtl } from '../ui/overlay';
+import { formDialog } from '../ui/form';
+import { A, Btn, Card, MenuButton, PageHead, Small, Table, type MenuItem } from '../ui/bits';
 
-export interface CardButton { kind: 'link' | 'copy' | 'action'; label: string; value?: string; action_id?: number }
+export interface CardButton { kind: 'link' | 'copy' | 'action'; label: string; value?: string; action_id?: number; show?: boolean;
+  result?: { ok: boolean; at: string; line: string } }
 export interface Svc extends Row {
   id: number; device_id: number; device_name: string; name: string; url: string | null; port: number | null; protocol: string | null;
   version: string | null; notes: string | null; favorite: number; lists: string | null; icon: string | null; color: string | null;
   buttons: CardButton[]; state: string | null; latency_ms: number | null; detail: string | null; checked_at: string | null;
   cert_expires: string | null; location_id: number | null; location_name: string | null; host: string | null;
 }
-interface Board { services: Svc[]; actions: { id: number; name: string; confirm: number; device_id: number | null }[]; colors: string[] }
+interface Saved { name: string; view: Partial<View>; filters: { state?: string; list?: string; favOnly?: boolean } }
+interface Board { services: Svc[]; actions: { id: number; name: string; confirm: number; device_id: number | null }[]; colors: string[]; layouts: Saved[] }
 
 type Show = 'address' | 'device' | 'state' | 'speed' | 'version' | 'notes' | 'lists';
 interface View {
@@ -79,6 +82,9 @@ export function ServiceCard({ s, board, view, after }: { s: Svc; board: Board; v
       {sh.version && s.version ? <div className="small">{`Version ${s.version}`}</div> : null}
       {sh.lists && listsOf(s).length ? <div className="chips">{listsOf(s).map(l => <span key={l} className="chip small">{l}</span>)}</div> : null}
       {sh.notes && s.notes && view.size === 'l' ? <p className="muted small svc-notes">{s.notes}</p> : null}
+      {s.buttons.filter(b => b.show).map((b, i) => <div key={i} className="small svc-result" title={b.result ? `${b.label}, ${timeAgo(b.result.at)}` : undefined}>
+        <span className="muted">{`${b.label}: `}</span>{b.result ? <span className={b.result.ok ? '' : 'bad-text'}>{b.result.line || (b.result.ok ? 'done' : 'failed')}</span>
+          : <span className="muted">press ⚡ to check</span>}</div>)}
     </div> : null}
     <div className="svc-buttons">
       {isWeb(s.url) ? <a className="button sm primary" href={s.url!} target="_blank" rel="noopener noreferrer">Open ↗</a> : null}
@@ -114,7 +120,7 @@ function CardEditor({ m, s, board, after }: { m: ModalCtl; s: Svc; board: Board;
   const save = async () => {
     try {
       await api('PUT', `/services/${s.id}`, { icon: icon || null, color: color || null, lists: lists || null, favorite: fav,
-        buttons: btns.length ? JSON.stringify(btns.map(b => b.kind === 'action' ? { kind: b.kind, label: b.label, action_id: Number(b.action_id) } : { kind: b.kind, label: b.label, value: b.value })) : null });
+        buttons: btns.length ? JSON.stringify(btns.map(b => b.kind === 'action' ? { kind: b.kind, label: b.label, action_id: Number(b.action_id), ...(b.show ? { show: true } : {}) } : { kind: b.kind, label: b.label, value: b.value })) : null });
       m.close(true); toast('Card saved'); after();
     } catch (e) { toast((e as Error).message, 'bad'); }
   };
@@ -147,6 +153,8 @@ function CardEditor({ m, s, board, after }: { m: ModalCtl; s: Svc; board: Board;
         <Small label="↑" title="Move up" disabled={!i} onClick={() => move(i, -1)} />
         <Small label="↓" title="Move down" disabled={i === btns.length - 1} onClick={() => move(i, 1)} />
         <Small label="🗑" title="Remove" onClick={() => setBtns(x => x.filter((_, j) => j !== i))} />
+        {b.kind === 'action' ? <label className="check inline-check"><input type="checkbox" checked={!!b.show} onChange={e => setB(i, { show: e.target.checked })} />
+          Show its result on the card (the last line of what it printed, like “2 streams”)</label> : null}
         {b.kind === 'action' && a && !a.confirm ? <p className="warn-text small">{`“${a.name}” runs without asking. For anything that restarts or shuts down, tick Ask before running on the action.`}</p> : null}
       </div>;
     })}
@@ -201,6 +209,30 @@ export default function Services() {
   const groups = new Map<string, Svc[]>();
   for (const s of shown) for (const g of groupOf(s)) groups.set(g, [...(groups.get(g) || []), s]);
   const down = all.filter(s => s.state === 'down').length;
+  // Saved layouts: the look and the filters, under a name, for every device (a wall tablet, a phone).
+  const use = (l: Saved) => {
+    setView({ ...DEFAULT_VIEW, ...l.view, show: { ...DEFAULT_VIEW.show, ...(l.view.show || {}) } });
+    pick('harm-services-state', l.filters.state || 'all', setState);
+    pick('harm-services-list', l.filters.list || '', setList);
+    setFavOnly(!!l.filters.favOnly); prefSet('harm-services-fav', l.filters.favOnly ? '1' : '0');
+    toast(`Showing “${l.name}”`);
+  };
+  const putLayouts = async (layouts: Saved[]) => { q.set({ ...board, layouts: (await api('PUT', '/services/layouts', { layouts })).layouts }); };
+  const saveAs = () => formDialog({
+    title: 'Save this layout',
+    fields: [{ k: 'name', label: 'Name (like “Wall tablet” or “Media”)', required: true }],
+    submit: async v => {
+      const name = String(v.name).trim();
+      const mine: Saved = { name, view, filters: { state, list, favOnly } };
+      await putLayouts([...board.layouts.filter(l => l.name.toLowerCase() !== name.toLowerCase()), mine]);
+    },
+    onDone: () => toast('Saved. Pick it from ⚙ Layout on any device'),
+  });
+  const delSaved = async () => {
+    const which = await choose('Delete a saved layout', 'Devices showing it keep their layout; it just leaves the list.',
+      [['', 'Cancel'], ...board.layouts.map((l): [string, string, string] => [l.name, l.name, 'danger'])]);
+    if (which) { await putLayouts(board.layouts.filter(l => l.name !== which)); toast(`Deleted “${which}”`); }
+  };
   const body = (rows: Svc[]) => view.mode === 'cards'
     ? <div className={`svc-grid size-${view.size}`}>{rows.map(s => <ServiceCard key={s.id} s={s} board={board} view={view} after={after} />)}</div>
     : <div className="table-wrap"><Table rows={rows as unknown as Row[]} cols={[
@@ -221,7 +253,10 @@ export default function Services() {
         <button type="button" className={view.mode === 'cards' ? 'on' : ''} onClick={() => setView({ ...view, mode: 'cards' })}>⊞ Cards</button>
         <button type="button" className={view.mode === 'list' ? 'on' : ''} onClick={() => setView({ ...view, mode: 'list' })}>☰ List</button>
       </div>
-      <MenuButton label="⚙ Layout" items={[['Card size, grouping, sorting and what’s shown…', () => modal('Layout', () => <LayoutLive view={view} set={setView} />)]]} />
+      <MenuButton label="⚙ Layout" items={[['Card size, grouping, sorting and what’s shown…', () => modal('Layout', () => <LayoutLive view={view} set={setView} />)],
+        ...board.layouts.map((l): MenuItem => [`▸ ${l.name}`, () => use(l)]),
+        ['💾 Save this layout as…', saveAs],
+        board.layouts.length ? ['🗑 Delete a saved layout…', delSaved] : null]} />
       <Btn label="+ New" cls="primary" onClick={() => editEntity('services', {}, after)} />
     </PageHead>
     <div className="toolbar">
@@ -234,7 +269,7 @@ export default function Services() {
     {!all.length ? <Card title="No services yet"><p>Services are the web pages and ports on your devices: Proxmox’s page, Plex, a NAS, SSH. Add them on a device’s <b>Network</b> tab, with <b>+ New</b> here, or let <A href="#/discover">Discover</A> find them. Each one is checked to see if it answers.</p></Card>
       : !shown.length ? <p className="muted">Nothing matches. <Small label="Clear filters" onClick={() => { setFind(''); pick('harm-services-state', 'all', setState); pick('harm-services-list', '', setList); setFavOnly(false); prefSet('harm-services-fav', '0'); }} /></p>
       : [...groups.entries()].map(([g, rows]) => g ? <section key={g} className="svc-group"><h3 className="svc-group-title">{`${g} · ${rows.length}`}</h3>{body(rows)}</section> : <div key="all">{body(rows)}</div>)}
-    <p className="muted small">{`Checked with the online checks${all.some(s => s.checked_at) ? `, last ${timeAgo(all.map(s => s.checked_at || '').sort().pop())}` : ''}. Favorites, lists and buttons are kept in HaRM; the layout is kept on this device.`}</p>
+    <p className="muted small">{`Checked with the online checks${all.some(s => s.checked_at) ? `, last ${timeAgo(all.map(s => s.checked_at || '').sort().pop())}` : ''}. Favorites, lists and buttons are kept in HaRM; the layout is kept on this device (save it under a name in ⚙ Layout to use it on others).`}</p>
   </>;
 }
 

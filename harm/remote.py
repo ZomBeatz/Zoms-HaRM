@@ -77,11 +77,17 @@ def _windows_command() -> str:
             + base64.b64encode(boot.encode("utf-16-le")).decode())
 
 
-def _ssh(host, port, user, password, command, stdin_text, extra=(), timeout=TIMEOUT):
+def _ssh(host, port, user, password, command, stdin_text, extra=(), timeout=TIMEOUT, key=None):
+    from .sshkey import KeyFile  # HaRM's own key, if it has one: tried before the password
+    with KeyFile(key) as key_path:
+        return _ssh_run(host, port, user, password, command, stdin_text, extra, timeout, key_path)
+
+
+def _ssh_run(host, port, user, password, command, stdin_text, extra, timeout, key_path):
     args = ["ssh", "-T", "-p", str(port), "-l", user,
             "-o", "StrictHostKeyChecking=accept-new", "-o", f"UserKnownHostsFile={KNOWN_HOSTS}",
             "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15", "-o", "LogLevel=ERROR",
-            "-o", "NumberOfPasswordPrompts=1", *extra]
+            "-o", "NumberOfPasswordPrompts=1", *(["-i", key_path] if key_path else []), *extra]
     keep = ("PATH", "HOME", "USER", "LANG", "SSH_AUTH_SOCK", "SYSTEMROOT", "USERPROFILE", "USERNAME", "TEMP", "TMP", "APPDATA")
     env = {k: v for k, v in os.environ.items() if k.upper() in keep}
     if password:
@@ -127,7 +133,7 @@ def forget_host(host: str, port: int = 22) -> None:
     subprocess.run(["ssh-keygen", "-R", name, "-f", str(KNOWN_HOSTS)], capture_output=True, timeout=10)
 
 
-def collect_ssh(host: str, port: int, user: str, password: str | None, sudo: bool, os_hint: str) -> str:
+def collect_ssh(host: str, port: int, user: str, password: str | None, sudo: bool, os_hint: str, key: str | None = None) -> str:
     if not available()["ssh"]:
         raise RemoteError("The ssh client isn't installed on the HaRM server (package openssh-client)")
     host = (host or "").strip()
@@ -142,7 +148,7 @@ def collect_ssh(host: str, port: int, user: str, password: str | None, sudo: boo
     if sudo and not password:
         sudo = False  # sudo without a password only works with NOPASSWD; try it non-interactively
     if os_hint != "windows":
-        p = _ssh(host, port, user, password, _unix_command(sudo), (password + "\n") if sudo else "")
+        p = _ssh(host, port, user, password, _unix_command(sudo), (password + "\n") if sudo else "", key=key)
         if p.returncode == 0 and '"harm_collect"' in p.stdout:
             return p.stdout
         windows_like = re.search(r"is not recognized|'sh' is not|CommandNotFoundException", p.stderr + p.stdout)
@@ -151,7 +157,7 @@ def collect_ssh(host: str, port: int, user: str, password: str | None, sudo: boo
                 raise RemoteError("The machine answered but the collector printed nothing usable")
             raise _explain(p)
     p = _ssh(host, port, user, password, _windows_command(),
-             (COLLECT / "harm-collect.ps1").read_text(encoding="utf-8-sig"))
+             (COLLECT / "harm-collect.ps1").read_text(encoding="utf-8-sig"), key=key)
     if p.returncode == 0 and '"harm_collect"' in p.stdout:
         return p.stdout
     raise _explain(p)
@@ -192,7 +198,8 @@ SSH_OPTIONS = {"kexalgorithms": "KexAlgorithms", "hostkeyalgorithms": "HostKeyAl
                "pubkeyacceptedalgorithms": "PubkeyAcceptedAlgorithms",
                "pubkeyacceptedkeytypes": "PubkeyAcceptedAlgorithms", "ciphers": "Ciphers", "macs": "MACs",
                "connecttimeout": "ConnectTimeout", "serveraliveinterval": "ServerAliveInterval",
-               "pubkeyauthentication": "PubkeyAuthentication", "preferredauthentications": "PreferredAuthentications"}
+               "pubkeyauthentication": "PubkeyAuthentication", "preferredauthentications": "PreferredAuthentications",
+               "identitiesonly": "IdentitiesOnly"}
 _OPT_VALUE = re.compile(r"^[A-Za-z0-9@.,+_^=-]{1,400}$")
 
 
@@ -260,7 +267,7 @@ def _clip(text: str) -> str:
 
 def run_action(host: str, port: int, user: str, password: str | None, mode: str, command: str,
                sudo: bool = False, legacy: bool = False, options: str | None = None,
-               timeout: int = TIMEOUT, stdin_extra: str = "") -> dict:
+               timeout: int = TIMEOUT, stdin_extra: str = "", key: str | None = None) -> dict:
     """Run a saved action on one machine. 'script' sends the whole text as one shell script;
     'lines' sends each line as its own command (for iLO, iDRAC, switches and Windows, which
     have no Unix shell). Returns {ok, exit_code, output, ms}."""
@@ -275,7 +282,7 @@ def run_action(host: str, port: int, user: str, password: str | None, mode: str,
             raise RemoteError("There are no commands to send (lines starting with # are skipped)", "command")
         out, rc = [], 0
         for ln in lines:
-            p = _ssh(host, port, user, password, ln, "", extra, timeout)
+            p = _ssh(host, port, user, password, ln, "", extra, timeout, key)
             if p.returncode == 255 and not p.stdout:
                 raise _explain(p, "The connection")
             out.append(f"> {ln}\n{p.stdout}{p.stderr}".rstrip() + "\n")
@@ -292,7 +299,7 @@ def run_action(host: str, port: int, user: str, password: str | None, mode: str,
     else:
         cmd = _unix_command(sudo, command.encode())
         stdin = ((password + "\n") if sudo else "") + stdin_extra  # a script reads what follows sudo's password
-    p = _ssh(host, port, user, password, cmd, stdin, extra, timeout)
+    p = _ssh(host, port, user, password, cmd, stdin, extra, timeout, key)
     if p.returncode == 255 and not p.stdout:
         raise _explain(p, "The connection")
     err = p.stderr or ""

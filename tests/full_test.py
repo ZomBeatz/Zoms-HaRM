@@ -782,7 +782,7 @@ Let me know if you need anything else!"""
     def _():
         assert c.call("GET", "/settings/app") == {"status_interval": 5, "update_check": False, "ai_enabled": True, "currency": "USD",
                                                    "idle_minutes": 30, "session_hours": 12, "backup_keep": 14, "start_page": "dashboard",
-                                                   "site_name": "", "auto_log": True, "terminal": True, "bg_checks": False, "bg_hours": 6, "pve_backup_days": 2,
+                                                   "site_name": "", "auto_log": True, "terminal": True, "bg_checks": False, "bg_hours": 6, "pve_backup_days": 2, "password_days": 365,
                                                    "part_location_id": None, "part_rack_id": None,
                                                    "device_location_id": None, "device_rack_id": None}
         c.call("POST", "/settings/app", {"status_interval": 7}, expect=400)
@@ -887,6 +887,57 @@ Let me know if you need anything else!"""
         c.call("POST", f"/credentials/{cr['id']}/change-on-machine", {"new_password": "a-long-new-password", "host": ""}, expect=400)
         c.call("DELETE", f"/credentials/{cr['id']}")
 
+    @test("SSH key: made once, private part never sent, replaced and deleted, audited")
+    def _():
+        assert c.call("GET", "/ssh-key")["key"] is None
+        c.call("POST", f"/devices/{S['up']['id']}/ssh-key", {"host": "127.0.0.1"}, expect=400)  # no key yet
+        k = c.call("POST", "/ssh-key", {})["key"]
+        assert k["public"].startswith("ssh-ed25519 ") and "PRIVATE" not in json.dumps(c.call("GET", "/ssh-key")), k
+        c.call("POST", "/ssh-key", {}, expect=409)
+        k2 = c.call("POST", "/ssh-key", {"replace": True})["key"]
+        assert k2["public"] != k["public"]
+        assert c.call("DELETE", "/ssh-key")["key"] is None
+        acts = [a["action"] for a in c.call("GET", "/audit")[:5]]
+        assert "ssh-key-deleted" in acts and "ssh-key-new" in acts, acts
+
+    @test("VNC in HaRM: only the device's own addresses and VNC ports, tickets only for this browser")
+    def _():
+        did = S["up"]["id"]
+        c.call("POST", "/vnc", {"device_id": did, "host": "10.255.255.1", "port": 5900}, expect=400)  # not its address
+        c.call("POST", "/vnc", {"device_id": did, "host": "127.0.0.1", "port": 22}, expect=400)  # not a VNC port
+        c.call("POST", "/vnc", {"host": "127.0.0.1", "port": 5900}, expect=400)  # no device
+        assert c.call("POST", "/vnc", {"device_id": did, "host": "127.0.0.1", "port": 5900})["ticket"]
+        c.call("POST", "/settings/app", {"terminal": False})
+        c.call("POST", "/vnc", {"device_id": did, "host": "127.0.0.1", "port": 5900}, expect=403)
+        c.call("POST", "/settings/app", {"terminal": True})
+        from harm import vnc as _vnc
+        t = _vnc.ticket("me", "127.0.0.1", 5900, "x")
+        assert _vnc.take(t, "someone else") is None and _vnc.take(t, "me") is None  # used up by the wrong browser
+        t = _vnc.ticket("me", "127.0.0.1", 5900, "x")
+        assert _vnc.take(t, "me")["port"] == 5900 and _vnc.take(t, "me") is None  # works once
+        from websockets.sync.client import connect as ws_connect
+        from websockets.exceptions import ConnectionClosed, InvalidStatus
+        for origin in ("http://evil.example", BASE):  # another site's page, then HaRM's page with no ticket
+            try:
+                with ws_connect(f"ws://127.0.0.1:{PORT}/api/vnc/ws?t=nope", origin=origin, open_timeout=5) as w:
+                    w.recv(timeout=5)
+                raise AssertionError(f"the relay opened for {origin}")
+            except (ConnectionClosed, InvalidStatus):
+                pass
+
+    @test("old passwords: listed on Maintenance and Home, by the age in Settings")
+    def _():
+        cr = c.call("POST", "/credentials", {"label": "Old pw test", "username": "admin", "password": "old-pass", "last_rotated": "2020-01-01"})
+        new = c.call("POST", "/credentials", {"label": "New pw test", "username": "admin", "password": "new-pass", "last_rotated": "2099-01-01"})
+        names = [x["label"] for x in c.call("GET", "/maintenance")["old_logins"]]
+        assert "Old pw test" in names and "New pw test" not in names, names
+        c.call("POST", "/settings/app", {"password_days": 0})
+        assert c.call("GET", "/maintenance")["old_logins"] == []
+        c.call("POST", "/settings/app", {"password_days": 7}, expect=400)
+        c.call("POST", "/settings/app", {"password_days": 365})
+        for x in (cr, new):
+            c.call("DELETE", f"/credentials/{x['id']}")
+
     @test("service cards: favorites, lists, icon, color, and buttons that can only link, copy or run an action")
     def _():
         did = S["up"]["id"]
@@ -905,6 +956,14 @@ Let me know if you need anything else!"""
         c.call("PUT", f"/services/{sv['id']}", {"color": "#ff0000"}, expect=400)
         b = next(x for x in c.call("GET", "/services/board")["services"] if x["id"] == sv["id"])
         assert b["buttons"] == good and b["host"], b
+        shows = [{"kind": "action", "label": "Streams", "action_id": act["id"], "show": True}]
+        assert json.loads(c.call("PUT", f"/services/{sv['id']}", {"buttons": json.dumps(shows)})["buttons"]) == shows
+        lay = [{"name": "Wall tablet", "view": {"mode": "cards", "size": "l"}, "filters": {"favOnly": True}}]
+        assert c.call("PUT", "/services/layouts", {"layouts": lay})["layouts"] == lay
+        assert c.call("GET", "/services/board")["layouts"] == lay
+        c.call("PUT", "/services/layouts", {"layouts": lay * 2}, expect=400)  # same name twice
+        c.call("PUT", "/services/layouts", {"layouts": [{"name": "", "view": {}}]}, expect=400)
+        assert c.call("PUT", "/services/layouts", {"layouts": []})["layouts"] == []
         c.call("DELETE", f"/services/{sv['id']}")
         c.call("DELETE", f"/actions/{act['id']}")
 

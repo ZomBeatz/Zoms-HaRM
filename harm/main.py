@@ -21,12 +21,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import pyotp
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from . import __version__, ai, aiproviders, alerts, certs, collect, crypto, db, discover, docker, machine, monitor, netwatch, pcbuild, power, proxmox, remote, terminal, units, upkeep, vaultio
+from . import __version__, ai, aiproviders, alerts, certs, collect, crypto, db, discover, docker, machine, monitor, netwatch, pcbuild, power, proxmox, remote, sshkey, terminal, units, upkeep, vaultio, vnc
 from .models import ENTITIES, ENUMS, iface_order
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -131,6 +131,7 @@ def _housekeeping(stop: threading.Event, backups: bool) -> None:
 @asynccontextmanager
 async def lifespan(_app):
     db.init()
+    sshkey.sweep()
     conn = db.connect()
     try:
         _load_limits(conn)
@@ -909,9 +910,7 @@ def dashboard(_s=Depends(require_session), conn=Depends(get_db)):
             "FROM components WHERE warranty_until IS NOT NULL "
             "AND warranty_until <= date('now','+90 days') AND status != 'Disposed' "
             "ORDER BY warranty_until LIMIT 20"),
-        "stale_credentials": group(
-            "SELECT id, label, last_rotated FROM credentials WHERE last_rotated IS NOT NULL "
-            "AND last_rotated <= date('now','-365 days') ORDER BY last_rotated LIMIT 20"),
+        "stale_credentials": [dict(r) for r in _old_logins(conn)[:20]],
         "needs_repair": group(
             "SELECT id, name AS label, status FROM devices WHERE status IN ('Broken', 'In Repair') "
             "ORDER BY status, name LIMIT 20"),
@@ -1315,7 +1314,7 @@ async def specs_parse(request: Request, _s=Depends(require_session)):
 def collect_targets(did: int, _s=Depends(require_session), conn=Depends(get_db)):
     """Addresses and saved logins that could be used to read this device's specs over SSH."""
     dev = fetch_one(conn, "devices", did)
-    hosts = [r["ip"] for r in conn.execute(
+    hosts = [r["ip"].split("/")[0].strip() for r in conn.execute(
         "SELECT ip FROM interfaces WHERE device_id = ? AND ip IS NOT NULL AND ip != '' "
         f"ORDER BY {IFACE_ORDER}", (did,))]
     if dev["hostname"]:
@@ -1358,7 +1357,8 @@ async def _docker_run(conn, s, conf: dict, script: str, trust: bool = False) -> 
     try:
         if trust:
             await asyncio.to_thread(remote.forget_host, host, port)
-        r = await asyncio.to_thread(remote.run_action, host, port, row["username"], pw, "script", script, bool(conf.get("sudo")))
+        r = await asyncio.to_thread(remote.run_action, host, port, row["username"], pw, "script", script, bool(conf.get("sudo")),
+                                    key=_hkey(conn, s))
     except remote.RemoteError as e:
         raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
     try:
@@ -1516,7 +1516,7 @@ async def _machine_check(conn, s, did: int, conf: dict, trust: bool = False) -> 
     try:
         if trust:
             await asyncio.to_thread(remote.forget_host, conf["host"], int(conf.get("port") or 22))
-        _, events = await upkeep.check_one(conn, did, user, pw, conf)
+        _, events = await upkeep.check_one(conn, did, user, pw, conf, key=_hkey(conn, s))
     except remote.RemoteError as e:
         raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
     except machine.MachineError as e:
@@ -1602,7 +1602,7 @@ async def _machine_change(conn, s, request, did: int, what: str, script: str, ti
         raise HTTPException(400, "Check the machine first")
     user, pw = _machine_login(conn, s, conf)
     try:
-        r = await upkeep.run(conf["host"], int(conf.get("port") or 22), user, pw, bool(conf.get("sudo")), script, timeout)
+        r = await upkeep.run(conf["host"], int(conf.get("port") or 22), user, pw, bool(conf.get("sudo")), script, timeout, _hkey(conn, s))
     except remote.RemoteError as e:
         raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
     why = machine.explain(r["output"])
@@ -1657,11 +1657,17 @@ async def machine_background(did: int, request: Request, s=Depends(require_sessi
         raise HTTPException(400, "Check the machine once first, so HaRM knows how to reach it")
     cid = _coerce(conn, "credential_id", "fk:credentials", body.get("credential_id")) or conf.get("credential_id")
     user, pw = _machine_login(conn, s, {"credential_id": cid})
+    if body.get("use_key"):  # sign in with HaRM's key: no password is copied
+        priv = _hkey(conn, s)
+        if not priv:
+            raise HTTPException(400, "Make HaRM's SSH key first, in Settings > Locking and security")
+        upkeep.bg_set_key(conn, priv)
+        pw = None
     label = conn.execute("SELECT label FROM credentials WHERE id = ?", (cid,)).fetchone()["label"]
     sudo = str(body.get("sudo") or "none")
     if sudo not in ("all", "limited", "none"):
         raise HTTPException(400, "sudo: all, limited or none")
-    upkeep.bg_set(conn, did, user, pw, f"{label} ({user})", sudo)
+    upkeep.bg_set(conn, did, user, pw, f"{label} ({user}{', SSH key' if body.get('use_key') else ''})", sudo)
     audit(conn, request, "background-on", "devices", did, f"{dev['name']}: {label}")
     conn.commit()
     return _machine_view(conn, did)
@@ -1690,9 +1696,24 @@ def _maintenance(conn) -> dict:
     pve = upkeep.load(conn, "proxmox_live")
     pve_probs = upkeep.pve_problems(conn, st["pve_backup_days"])
     return {"machines": machines, "containers": containers, "proxmox": pve, "proxmox_problems": pve_probs,
+            "old_logins": [dict(r) for r in _old_logins(conn)], "password_days": st["password_days"],
             "proxmox_ready": bool(_pve_conf(conn).get("url") and db.get_meta(conn, "proxmox_secret")),
             "background": {"on": st["bg_checks"], "hours": st["bg_hours"], "last": upkeep.load(conn, "bg_last"),
                            "next": upkeep.next_run(st), "proxmox": bool(upkeep.load(conn, "bg_proxmox"))}}
+
+
+def _old_logins(conn) -> list:
+    """Logins with a password that hasn't changed in a while (Settings > Status and actions > Maintenance).
+    One never marked as changed counts from when it was saved."""
+    days = monitor.settings(conn)["password_days"]
+    if not days:
+        return []
+    return conn.execute(
+        "SELECT c.id, c.label, c.username, c.kind, c.device_id, d.name AS device, "
+        "COALESCE(c.last_rotated, date(c.created_at)) AS last_rotated, c.last_rotated IS NULL AS no_date "
+        "FROM credentials c LEFT JOIN devices d ON d.id = c.device_id "
+        "WHERE c.password_enc IS NOT NULL AND COALESCE(c.last_rotated, date(c.created_at)) <= date('now', ?) "
+        "ORDER BY 7 LIMIT 200", (f"-{days} days",)).fetchall()
 
 
 def maintenance_summary(conn) -> dict:
@@ -1838,6 +1859,55 @@ def _owner_alive(owner: str) -> bool:
         return any(hashlib.sha256(t.encode()).hexdigest() == owner and not _expired(s, now) for t, s in _sessions.items())
 
 
+def _vnc_ports(conn, did: int) -> set[int]:
+    """The ports VNC may be opened on for this device: 5900-5999, and its services called VNC."""
+    ports = {r["port"] for r in conn.execute("SELECT port FROM services WHERE device_id = ? AND port IS NOT NULL "
+                                             "AND (name LIKE '%vnc%' OR url LIKE 'vnc:%')", (did,))}
+    return ports | set(range(5900, 6000))
+
+
+@app.post("/api/vnc")
+async def vnc_open(request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """A one-minute ticket for the page to open a VNC screen on one of this device's addresses."""
+    if not monitor.settings(conn)["terminal"]:
+        raise HTTPException(403, "The terminal and screen in HaRM are turned off in Settings > Locking and security")
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    did = _coerce(conn, "device_id", "fk:devices", body.get("device_id"))
+    if not did:
+        raise HTTPException(400, "Open VNC from a device")
+    dev = fetch_one(conn, "devices", did)
+    host, port = str(body.get("host") or "").strip(), int(body.get("port") or 5900)
+    if host not in collect_targets(did, s, conn)["hosts"]:
+        raise HTTPException(400, "That isn't one of this device's addresses (add it on its Network tab)")
+    if port not in _vnc_ports(conn, did):
+        raise HTTPException(400, "VNC opens on ports 5900 to 5999, or a service on this device named VNC")
+    try:
+        t = vnc.ticket(_owner(request), host, port, f"{dev['name']} ({host}:{port})")
+    except vnc.VNCError as e:
+        raise HTTPException(400, str(e))
+    audit(conn, request, "vnc-open", "devices", did, f"{dev['name']}: {host}:{port}")
+    conn.commit()
+    return {"ticket": t, "label": f"{dev['name']} · {host}:{port}"}
+
+
+@app.websocket("/api/vnc/ws")
+async def vnc_socket(ws: WebSocket, t: str = ""):
+    origin = urlparse(ws.headers.get("origin") or "").netloc
+    if not origin or origin != ws.headers.get("host"):
+        await ws.close(1008)  # only HaRM's own page
+        return
+    owner = hashlib.sha256((ws.cookies.get(COOKIE) or "").encode()).hexdigest()
+    v = vnc.take(t, owner) if _owner_alive(owner) else None
+    if not v:
+        await ws.close(1008)
+        return
+    asked = [p.strip() for p in (ws.headers.get("sec-websocket-protocol") or "").split(",") if p.strip()]
+    await ws.accept(subprotocol="binary" if "binary" in asked else None)
+    await vnc.relay(ws, v["host"], v["port"], owner, _owner_alive)
+
+
 @app.post("/api/terminal")
 async def terminal_open(request: Request, s=Depends(require_session), conn=Depends(get_db)):
     if not monitor.settings(conn)["terminal"]:
@@ -1864,7 +1934,7 @@ async def terminal_open(request: Request, s=Depends(require_session), conn=Depen
         if body.get("trust_new_key"):
             await asyncio.to_thread(remote.forget_host, host, port)
         t = await asyncio.to_thread(terminal.start, _owner(request), f"{user}@{host}", host, port, user, pw,
-                                    int(body.get("cols") or 100), int(body.get("rows") or 30), bool(body.get("legacy")))
+                                    int(body.get("cols") or 100), int(body.get("rows") or 30), bool(body.get("legacy")), _hkey(conn, s))
     except terminal.TerminalError as e:
         raise HTTPException(400, str(e))
     audit(conn, request, "terminal-open", "devices" if dev else None, did, f"{dev['name'] + ': ' if dev else ''}{user}@{host}:{port}")
@@ -1969,7 +2039,7 @@ async def collect_remote(did: int, request: Request, s=Depends(require_session),
             if body.get("trust_new_key"):
                 await asyncio.to_thread(remote.forget_host, host, port)
             out = await asyncio.to_thread(remote.collect_ssh, host, port, user, pw,
-                                          bool(body.get("sudo", True)), str(body.get("os") or "auto"))
+                                          bool(body.get("sudo", True)), str(body.get("os") or "auto"), _hkey(conn, s))
             where = f"{user}@{host}"
     except remote.RemoteError as e:
         audit(conn, request, "collect-failed", "devices", did, f"{dev['name']}: {e}")
@@ -2305,6 +2375,81 @@ async def bitwarden_export(request: Request, s=Depends(require_session), conn=De
     return vaultio.to_bitwarden(creds)
 
 
+def _hkey(conn, s) -> str | None:
+    """HaRM's own SSH key, if it has one (tried before a saved password)."""
+    return sshkey.private(conn, s.get("dek"))
+
+
+@app.get("/api/ssh-key")
+def ssh_key_info(s=Depends(require_session), conn=Depends(get_db)):
+    return {"key": sshkey.info(conn), "background": upkeep.load(conn, "bg_ssh_key") is not None}
+
+
+@app.post("/api/ssh-key")
+async def ssh_key_make(request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Make HaRM's key pair. A new one replaces the old, so machines need the new public key."""
+    body = await body_json(request)
+    if sshkey.info(conn) and not body.get("replace"):
+        raise HTTPException(409, "HaRM has a key already")
+    name = re.sub(r"[^A-Za-z0-9._-]+", "-", monitor.settings(conn)["site_name"] or "").strip("-")[:40]
+    priv, pub = sshkey.generate(f"zoms-harm{'@' + name if name else ''}")
+    sshkey.save(conn, s["dek"], priv, pub)
+    if upkeep.load(conn, "bg_ssh_key") is not None:
+        upkeep.bg_set_key(conn, priv)
+    audit(conn, request, "ssh-key-new" if body.get("replace") else "ssh-key-made", None, None, pub.split()[-1])
+    conn.commit()
+    return {"key": sshkey.info(conn), "background": upkeep.load(conn, "bg_ssh_key") is not None}
+
+
+@app.delete("/api/ssh-key")
+def ssh_key_delete(request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    sshkey.remove(conn)
+    upkeep.bg_set_key(conn, None)
+    audit(conn, request, "ssh-key-deleted")
+    conn.commit()
+    return {"key": None, "background": False}
+
+
+@app.post("/api/devices/{did}/ssh-key")
+async def ssh_key_machine(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Add HaRM's public key to a login's authorized_keys on the machine (or take it out), then check it."""
+    dev = fetch_one(conn, "devices", did)
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    pub, priv = sshkey.public(conn), _hkey(conn, s)
+    if not pub or not priv:
+        raise HTTPException(400, "Make HaRM's SSH key first, in Settings > Locking and security")
+    host, port = str(body.get("host") or "").strip(), int(body.get("port") or 22)
+    if not host:
+        raise HTTPException(400, "Enter the machine's address")
+    user, pw = _machine_login(conn, s, {"credential_id": body.get("credential_id")})
+    remove = bool(body.get("remove"))
+    try:
+        if body.get("trust_new_key"):
+            await asyncio.to_thread(remote.forget_host, host, port)
+        r = await asyncio.to_thread(remote.run_action, host, port, user, pw, "script",
+                                    sshkey.remove_script(pub) if remove else sshkey.install_script(pub), False, False, None, 60,
+                                    key=priv)
+    except remote.RemoteError as e:
+        raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
+    if f"HARM_RESULT={'removed' if remove else 'added'}" not in r["output"]:
+        raise HTTPException(400, "The machine didn't take it: " + (r["output"].strip().splitlines() or ["no answer"])[-1][:300])
+    works = None
+    if not remove:  # does it let HaRM in with only the key?
+        try:
+            t = await asyncio.to_thread(remote.run_action, host, port, user, None, "script", "true\n", False, False,
+                                        "-o IdentitiesOnly=yes -o PreferredAuthentications=publickey", 30, key=priv)
+            works = t["ok"]
+        except remote.RemoteError:
+            works = False
+    what = "Took HaRM's SSH key out of" if remove else "Added HaRM's SSH key to"
+    audit(conn, request, "ssh-key-removed" if remove else "ssh-key-added", "devices", did, f"{dev['name']}: {user}@{host}")
+    did_note(conn, did, f"{what} {user}'s authorized_keys on {host}.")
+    conn.commit()
+    return {"ok": True, "works": works}
+
+
 @app.post("/api/credentials/{cid}/change-on-machine")
 async def credential_change(cid: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
     """Change this login's password on a Linux machine over SSH, then keep the new one here."""
@@ -2332,7 +2477,7 @@ async def credential_change(cid: int, request: Request, s=Depends(require_sessio
     via_pw = _decrypt(s["dek"], via["password_enc"], "password")
     try:
         r = await asyncio.to_thread(remote.run_action, host, port, via["username"], via_pw, "script", script,
-                                    bool(body.get("sudo")), False, None, 60, vaultio.change_input(new))
+                                    bool(body.get("sudo")), False, None, 60, vaultio.change_input(new), _hkey(conn, s))
     except remote.RemoteError as e:
         raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
     problem = vaultio.change_result(r["output"])
@@ -3550,7 +3695,7 @@ def status_board(_s=Depends(require_session), conn=Depends(get_db)):
 
 
 @app.get("/api/services/board")
-def services_board(_s=Depends(require_session), conn=Depends(get_db)):
+def services_board(sess=Depends(require_session), conn=Depends(get_db)):
     """Every service, with whether it answers, for the Services page (cards or a list)."""
     rows = []
     status = {r["service_id"]: dict(r) for r in conn.execute("SELECT * FROM service_status")}
@@ -3568,7 +3713,52 @@ def services_board(_s=Depends(require_session), conn=Depends(get_db)):
                      "device_status": d.get("status"), "host": ((d.get("ips") or "").split(",")[0].split("/")[0].strip() or d.get("hostname") or None)})
     actions = [{"id": a["id"], "name": a["name"], "confirm": a["confirm"], "device_id": a["device_id"]}
                for a in fetch_list(conn, "actions", limit=5000)]
-    return {"services": rows, "actions": actions, "colors": SERVICE_COLORS}
+    # Buttons that show their result: the last line of that action's newest run (it runs only when pressed).
+    shown = {b["action_id"] for r in rows for b in r["buttons"] if b.get("kind") == "action" and b.get("show")}
+    results = {}
+    for aid in shown:
+        run = conn.execute("SELECT ok, at, output_enc FROM action_runs WHERE action_id = ? ORDER BY id DESC LIMIT 1", (aid,)).fetchone()
+        if run:
+            try:
+                text = crypto.unseal(sess["dek"], run["output_enc"], RUN_AAD).decode() if run["output_enc"] else ""
+            except crypto.DecryptError:
+                text = ""
+            line = next((ln.strip() for ln in reversed(text.splitlines()) if ln.strip() and not ln.startswith("> ")), "")
+            results[aid] = {"ok": bool(run["ok"]), "at": run["at"], "line": line[:80]}
+    for r in rows:
+        for b in r["buttons"]:
+            if b.get("show") and b.get("action_id") in results:
+                b["result"] = results[b["action_id"]]
+    return {"services": rows, "actions": actions, "colors": SERVICE_COLORS, "layouts": _service_layouts(conn)}
+
+
+def _service_layouts(conn) -> list:
+    try:
+        return json.loads(db.get_meta(conn, "service_layouts") or "[]")
+    except ValueError:
+        return []
+
+
+@app.put("/api/services/layouts")
+async def service_layouts_save(request: Request, _s=Depends(require_session), conn=Depends(get_db)):
+    """Named Services layouts (how cards look, and the filters), kept in HaRM so every device can pick them."""
+    body = await body_json(request)
+    items = body.get("layouts")
+    if not isinstance(items, list) or len(items) > 20:
+        raise HTTPException(400, "Up to 20 saved layouts")
+    out, names = [], set()
+    for it in items:
+        name = " ".join(str((it or {}).get("name") or "").split())[:40] if isinstance(it, dict) else ""
+        view, filters = it.get("view") if name else None, it.get("filters") or {}
+        if not name or not isinstance(view, dict) or not isinstance(filters, dict) or name.lower() in names:
+            raise HTTPException(400, "Each layout needs its own name")
+        if len(json.dumps(view)) + len(json.dumps(filters)) > 4000:
+            raise HTTPException(400, "That layout is too big")
+        names.add(name.lower())
+        out.append({"name": name, "view": view, "filters": filters})
+    db.set_meta(conn, "service_layouts", json.dumps(out) if out else None)
+    conn.commit()
+    return {"layouts": out}
 
 
 @app.post("/api/status/check")
@@ -3676,7 +3866,7 @@ def _service_rules(conn, data: dict) -> None:
                 aid = b.get("action_id")
                 if not isinstance(aid, int) or not conn.execute("SELECT 1 FROM actions WHERE id = ?", (aid,)).fetchone():
                     raise HTTPException(400, f"buttons: “{label}” runs an action that doesn't exist")
-                out.append({"kind": "action", "label": label, "action_id": aid})
+                out.append({"kind": "action", "label": label, "action_id": aid, **({"show": True} if b.get("show") else {})})
             else:
                 raise HTTPException(400, "buttons: a button opens a link, copies text or runs an action")
         data["buttons"] = json.dumps(out) if out else None
@@ -3738,13 +3928,14 @@ async def action_run(aid: int, request: Request, s=Depends(require_session), con
                 pw = None
     port = a["port"] or 22
     trust = bool(body.get("trust_new_key"))
+    key = _hkey(conn, s)
 
     async def one(host):
         try:
             if trust:
                 await asyncio.to_thread(remote.forget_host, host, port)
             r = await asyncio.to_thread(remote.run_action, host, port, user, pw, a["mode"], a["command"],
-                                        bool(a["sudo"]), bool(a["legacy_ssh"]), a["ssh_options"])
+                                        bool(a["sudo"]), bool(a["legacy_ssh"]), a["ssh_options"], key=key)
             return {"host": host, **r}
         except remote.RemoteError as e:
             return {"host": host, "ok": False, "exit_code": None, "output": "", "ms": None, "error": str(e), "code": e.code}

@@ -67,6 +67,7 @@ CHOICES = {
     "start_page": ("dashboard", "status", "devices", "tasks", "racks", "last"),
     "bg_hours": (1, 3, 6, 12, 24),
     "pve_backup_days": (0, 1, 2, 3, 7, 14),
+    "password_days": (0, 90, 180, 365, 730),
 }
 
 
@@ -93,6 +94,7 @@ def settings(conn) -> dict:
             "bg_checks": bool(conf.get("bg_checks", False)),
             "bg_hours": int(conf.get("bg_hours", 6)),
             "pve_backup_days": int(conf.get("pve_backup_days", 2)),
+            "password_days": int(conf.get("password_days", 365)),
             **{k: conf.get(k) for k in NEW_ITEM_DEFAULTS}}
 
 

@@ -4,7 +4,7 @@ import { api, GET } from '../api/client';
 import { S, rerender, useApp } from '../lib/state';
 import { FMT, deviceWord, hasKeyboard, money, timeAgo, type Row } from '../lib/util';
 import { alertChime, look, setLook, type Look } from '../lib/look';
-import { copy, toast } from '../ui/overlay';
+import { choose, copy, toast } from '../ui/overlay';
 import { A, Badge, Btn, Card, KV, PageHead, Small, type Kid } from '../ui/bits';
 import { formDialog } from '../ui/form';
 import { editAlerts, editNetwatch, testAlerts } from '../dialogs/watch';
@@ -261,10 +261,11 @@ export default function Settings() {
         </div>
         <Btn label="🔒 Lock now" onClick={lockNow} />
       </div></Card>
-      <Card title="Terminal in HaRM"><div>
-        <label className="check"><input type="checkbox" checked={!!app.terminal} onChange={e => saveApp({ terminal: e.target.checked })} /><span>Allow a terminal (SSH) in HaRM’s page</span></label>
-        <p className="muted small">A device’s <b>🔌 Connect</b> opens SSH in HaRM with a saved login. It works only while HaRM is unlocked, closes when it locks or after 30 minutes without typing, and opening it is in the audit log. Untick it if HaRM is shared with people who shouldn’t get a shell on your machines.</p>
+      <Card title="Terminal and screen in HaRM"><div>
+        <label className="check"><input type="checkbox" checked={!!app.terminal} onChange={e => saveApp({ terminal: e.target.checked })} /><span>Allow a terminal (SSH) and a screen (VNC) in HaRM’s page</span></label>
+        <p className="muted small">A device’s <b>🔌 Connect</b> opens SSH with a saved login, or its screen over VNC, in HaRM. They work only while HaRM is unlocked and close when it locks (the terminal also after 30 minutes without typing), and opening one is in the audit log. Untick it if HaRM is shared with people who shouldn’t get into your machines.</p>
       </div></Card>
+      <SshKeyCard />
       <Card title="Master password"><div>
         <p>Unlocks HaRM and the saved logins inside it. Changing it keeps every saved login.</p>
         <Btn label="Change password…" onClick={() => formDialog({
@@ -458,7 +459,35 @@ function MaintenanceCard({ app, save }: { app: Row; save: (v: Row) => void }) {
     <p className="muted small">{`Background checks only read (health, updates, backups, containers) and can alert you. They need a login HaRM can use while locked: turn them on per machine on its Health tab (⋯ > Check it in the background). ${bgCount ? `${bgCount} machine${bgCount === 1 ? ' has' : 's have'} one.` : 'No machine has one yet.'} Those logins are encrypted with background.key in HaRM’s data folder, not your master password, so use limited accounts.`}</p>
     <label className="disc-field"><span>Warn when a Proxmox VM’s newest backup is older than</span><select aria-label="Proxmox backup age" value={app.pve_backup_days} onChange={e => save({ pve_backup_days: +e.target.value })}>
       {[[1, '1 day'], [2, '2 days'], [3, '3 days'], [7, 'a week'], [14, '2 weeks'], [0, 'Never warn']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+    <label className="disc-field"><span>Remind me about passwords not changed in</span><select aria-label="Password age" value={app.password_days} onChange={e => save({ password_days: +e.target.value })}>
+      {[[90, '3 months'], [180, '6 months'], [365, 'a year'], [730, '2 years'], [0, 'Never remind me']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
     {m?.proxmox_ready ? <label className="check"><input type="checkbox" checked={!!m.background.proxmox} onChange={e => pveBg(e.target.checked)} /><span>Also read Proxmox in the background (keeps a copy of its token the same way)</span></label> : null}
     <p><A href="#/maintenance">Open Maintenance</A></p>
+  </div></Card>;
+}
+
+/* HaRM's own SSH key: machines that have its public key let HaRM in without a password. */
+function SshKeyCard() {
+  const [k, setK] = useState<Row | null>(null);
+  useEffect(() => { GET('/ssh-key').then(setK).catch(() => setK({ key: null })); }, []);
+  if (!k) return null;
+  const make = async (replace: boolean) => {
+    if (replace && await choose('Make a new SSH key?', 'Machines that have the old key stop letting HaRM in with it, until you add the new one (🔌 Connect > Add HaRM’s SSH key). Take the old one out of them too.',
+      [['no', 'Cancel'], ['yes', 'Make a new key', 'primary']]) !== 'yes') return;
+    try { setK(await api('POST', '/ssh-key', { replace })); toast(replace ? 'New key made' : 'Key made. Now add it to your machines with 🔌 Connect'); }
+    catch (e) { toast((e as Error).message, 'bad'); }
+  };
+  const del = async () => {
+    if (await choose('Delete HaRM’s SSH key?', 'HaRM signs in with saved passwords again. Machines keep the public key until you take it out (🔌 Connect, before deleting it here).',
+      [['no', 'Cancel'], ['yes', 'Delete', 'danger']]) !== 'yes') return;
+    try { setK(await api('DELETE', '/ssh-key')); toast('Key deleted'); } catch (e) { toast((e as Error).message, 'bad'); }
+  };
+  return <Card title="HaRM’s SSH key"><div>
+    <p className="muted small">One key for this HaRM. Add its public key to a machine (a device’s <b>🔌 Connect</b>) and HaRM signs in with it instead of a password: for checks, actions and the terminal, and for background checks without a stored password. The private key is encrypted with your master password and never leaves HaRM.</p>
+    {k.key ? <>
+      <div className="inline"><code className="mono small key-line">{k.key.public}</code><Small label="📋 Copy" onClick={() => copy(k.key.public, 'Public key copied')} /></div>
+      <p className="muted small">{`Made ${timeAgo(k.key.created)}${k.background ? ' · background checks have a copy' : ''}`}</p>
+      <div className="inline"><Btn label="⟳ New key…" onClick={() => make(true)} /><Btn label="Delete…" onClick={del} /></div>
+    </> : <Btn label="🗝 Make a key" cls="primary" onClick={() => make(false)} />}
   </div></Card>;
 }

@@ -18,7 +18,7 @@ import subprocess
 import threading
 import time
 
-from . import remote
+from . import remote, sshkey
 
 MAX_OPEN = 4
 IDLE = 30 * 60
@@ -32,6 +32,8 @@ class TerminalError(Exception):
 
 
 class Session:
+    keyfile = None  # HaRM's key on disk while ssh may need it
+
     def __init__(self, owner: str, label: str, args: list[str], env: dict, cols: int, rows: int):
         self.id = secrets.token_urlsafe(16)
         self.owner, self.label = owner, label
@@ -128,12 +130,14 @@ class Session:
                 os.close(self.master)
             except OSError:
                 pass
+        if self.keyfile:
+            self.keyfile.close()
         with _lock:
             _open.pop(self.id, None)
 
 
 def start(owner: str, label: str, host: str, port: int, user: str, password: str | None, cols: int, rows: int,
-          legacy: bool = False) -> Session:
+          legacy: bool = False, key: str | None = None) -> Session:
     if not remote.available()["ssh"]:
         raise TerminalError("The ssh client isn't installed on the HaRM server (package openssh-client)")
     try:
@@ -148,6 +152,10 @@ def start(owner: str, label: str, host: str, port: int, user: str, password: str
             "-o", "StrictHostKeyChecking=accept-new", "-o", f"UserKnownHostsFile={remote.KNOWN_HOSTS}",
             "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=30", "-o", "NumberOfPasswordPrompts=1",
             *(remote.legacy_options() if legacy else [])]
+    keyfile = sshkey.KeyFile(key)
+    key_path = keyfile.__enter__()
+    if key_path:
+        args += ["-i", key_path]
     keep = ("PATH", "HOME", "USER", "LANG", "SSH_AUTH_SOCK", "SYSTEMROOT", "USERPROFILE", "USERNAME", "TEMP", "TMP", "APPDATA")
     env = {k: v for k, v in os.environ.items() if k.upper() in keep}
     env["TERM"] = "xterm-256color"
@@ -156,7 +164,14 @@ def start(owner: str, label: str, host: str, port: int, user: str, password: str
     else:
         args += ["-o", "BatchMode=yes"]
     args += [host]
-    s = Session(owner, label, args, env, cols, rows)
+    try:
+        s = Session(owner, label, args, env, cols, rows)
+    except BaseException:
+        keyfile.close()
+        raise
+    s.keyfile = keyfile  # ssh only reads it while signing in: deleted after 30 seconds, or when the terminal ends
+    if key_path:
+        threading.Timer(30, keyfile.close).start()
     with _lock:
         _open[s.id] = s
     return s

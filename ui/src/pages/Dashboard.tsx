@@ -55,7 +55,7 @@ export default function Dashboard() {
     item('🔌', <>{`${n} active device${n > 1 ? 's are' : ' is'} marked not hooked up: `}
       {d.unconnected_active.slice(0, 6).map((r: Row, i: number) => <span key={r.id}>{i ? ', ' : ''}<A href={`#/devices/${r.id}`}>{r.label}</A></span>)}{n > 6 ? ' …' : ''}</>);
   }
-  if (d.stale_credentials.length) item('🔑', <><A href="#/vault">{`${d.stale_credentials.length} login${d.stale_credentials.length > 1 ? 's' : ''}`}</A> not changed in over a year</>);
+  if (d.stale_credentials.length) item('🔑', <><A href="#/maintenance">{`${d.stale_credentials.length} login${d.stale_credentials.length > 1 ? 's' : ''}`}</A> with an old password</>);
   const showUpd = upd.newer && !hideUpd && prefGet('harm-update-hidden') !== upd.latest;
   return <>
     <PageHead title="Home" sub={isEmpty ? 'Let’s get your hardware in here.' : 'What needs you, and what you’ve got.'}>

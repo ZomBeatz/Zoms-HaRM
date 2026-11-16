@@ -80,9 +80,14 @@ function BackgroundForm({ m, deviceId, conf, done }: { m: ModalCtl; deviceId: nu
   const [creds, setCreds] = useState<Row[] | null>(null);
   const [cred, setCred] = useState('');
   const [sudo, setSudo] = useState('limited');
-  useEffect(() => { GET(`/devices/${deviceId}/collect-targets`).then(t => setCreds(t.credentials)).catch(() => setCreds([])); }, [deviceId]);
+  const [hasKey, setHasKey] = useState(false);
+  const [useKey, setUseKey] = useState(false);
+  useEffect(() => {
+    GET(`/devices/${deviceId}/collect-targets`).then(t => setCreds(t.credentials)).catch(() => setCreds([]));
+    GET('/ssh-key').then(k => setHasKey(!!k.key)).catch(() => {});
+  }, [deviceId]);
   const on = async () => {
-    try { done(await api('POST', `/devices/${deviceId}/background`, { on: true, credential_id: cred || null, sudo })); m.close(true); toast('Background checks are on for this machine'); }
+    try { done(await api('POST', `/devices/${deviceId}/background`, { on: true, credential_id: cred || null, sudo, use_key: useKey })); m.close(true); toast('Background checks are on for this machine'); }
     catch (e) { toast((e as Error).message, 'bad'); }
   };
   return <div className="disc-form">
@@ -92,6 +97,8 @@ function BackgroundForm({ m, deviceId, conf, done }: { m: ModalCtl; deviceId: nu
       <select value={cred} onChange={e => setCred(e.target.value)}>
         <option value="">Pick a saved login</option>
         {(creds || []).map(c => <option key={c.id} value={c.id}>{`${c.label}${c.username ? ` (${c.username})` : ''}`}</option>)}</select></label>
+    {hasKey ? <label className="check"><input type="checkbox" checked={useKey} onChange={e => setUseKey(e.target.checked)} />
+      <span>Sign in with HaRM’s SSH key, and keep no password (add the key to the machine first, with <b>🔌 Connect</b>)</span></label> : null}
     {cred && +cred === conf.credential_id ? <p className="warn-text small">That’s the login HaRM uses for your one-click checks. A login just for background checks is safer.</p> : null}
     <label className="disc-field"><span>sudo</span><select value={sudo} onChange={e => setSudo(e.target.value)}>
       <option value="limited">Only for drive health and the update list (set up on the machine, see Help)</option>

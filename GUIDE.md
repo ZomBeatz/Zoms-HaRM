@@ -159,6 +159,10 @@ Don't want AI in HaRM at all? Untick **Settings > AI Assist > Use AI features**:
 
 **Background checks** (off at first, **Settings > Status and actions > Maintenance**) read the machines you choose every few hours, also while HaRM is locked, and alert about new problems. They only read. They need a login of their own, kept encrypted in `background.key` in the data folder (not in backups), so give them a limited account: a user like `harm-check`, allowed to run only `smartctl` and `apt-get update -qq` with sudo (in `/etc/sudoers.d/harm-check`), then **sudo: Only for drive health and the update list** when you turn it on.
 
+**Connect** (🔌 on a device's page): a terminal in HaRM signed in with the saved login, your own SSH app, a copied `ssh` command, a Remote Desktop file for Windows, VNC, the Proxmox console, or the management page. The terminal only works while HaRM is unlocked and closes when it locks or after 30 minutes without typing; turn it off in **Settings > Locking and security**.
+
+**Bitwarden:** the vault's **⋯** menu has **Import from Bitwarden…** (the plain .json export; you see each login and its device before saving, then delete the file) and **Export for Bitwarden…** (asks for your master password again). **🔑 Change on machine…** on a Linux login sets a new password over SSH with `chpasswd`, saves it, keeps the old one in its secret notes, and checks the new one works.
+
 **Spare Parts:** everything on the shelf or inside devices. Install parts into devices and take them out again (**To spares**); quantities split automatically. A part added by mistake, by hand or by a scan, has **Delete** (with **Undo**), so it doesn't land in Spare Parts. Re-running **Import specs** can **Replace with this scan**, and every import can be undone.
 
 **Virtual & Clusters:** track VMs and containers as devices that **run on** a host (VM ID, vCPUs, memory, disk). A host's **VMs** tab shows what's running on it and how much of its CPU and memory is claimed. Group hosts into **clusters** (Proxmox, Kubernetes, vSphere…). **Discover > Proxmox** imports a whole Proxmox cluster with all its VMs and containers.
@@ -225,7 +229,8 @@ HaRM has these steps built in too: **Help & Guide > Troubleshooting**, the **Sho
 
 - Logins are encrypted (AES-256-GCM) with a key that only your master password or recovery code unlocks. Nobody can read them from a copied database.
 - HaRM locks itself after 30 minutes idle (change it in **Settings > Locking and security**). Optional two-factor login is in **Settings**.
-- Every change, sign-in, password reveal and action run is recorded in the **Audit Log**.
+- Every change, sign-in, password reveal, action run, terminal and export is recorded in the **Audit Log**.
+- The **terminal in HaRM** only works while HaRM is unlocked and never stores what you type. Logins leave HaRM only in an **Export for Bitwarden**, which asks for the master password again.
 - **Actions** run commands on your machines with your saved logins, so they only work while HaRM is unlocked. Their results are encrypted like your logins. HaRM never allows SSH settings that could run a program on its own computer.
 - Proxmox and UniFi certificates are remembered the first time HaRM connects. If one changes, HaRM asks before sending its token again.
 - **Background checks** and **alerts** work while HaRM is locked, so their logins and passwords are encrypted with key files in the data folder (`background.key`, `alerts.key`), not your master password. Anyone with the data folder can use them: give them limited accounts.

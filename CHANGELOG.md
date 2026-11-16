@@ -71,6 +71,15 @@
 - **Alerts** about problems machine checks find; a container that stops or keeps restarting comes with the last lines of its log.
 - Proxmox and UniFi certificates are remembered the first time HaRM connects; a changed one asks before HaRM sends the token again.
 
+**Connecting to your machines**
+- **🔌 Connect** on a device: a **terminal in HaRM** signed in with the saved login, **Open in my SSH app**, **Copy SSH command**, a **Remote Desktop file** (.rdp) for Windows, a **VNC** link, the **Proxmox console** of a VM or node, and the **management page** (iDRAC, iLO).
+- The terminal only works while HaRM is unlocked, closes when it locks, after 30 minutes without typing or when you leave the page, and at most 4 are open. Opening and closing are in the audit log; nothing typed is stored. Turn it off in **Settings > Locking and security**.
+
+**Logins and Bitwarden**
+- **Import from Bitwarden** (or Vaultwarden) on the vault's **⋯** menu: pick the .json export, see each login with the device it seems to be for, untick any you don't want, and import. Passwords never show in the preview.
+- **Export for Bitwarden** asks for your master password again and saves a file Bitwarden and Vaultwarden can import.
+- **🔑 Change on machine…** on a Linux login sets a new password on the machine over SSH, saves it in HaRM, keeps the old one in the login's secret notes, and checks the new one signs in.
+
 **Cleaning up parts**
 - **Delete** on any part of a device removes it outright (added by mistake, by hand or by a scan), with **Undo**. It doesn't go to Spare Parts. **Remove** is now **To spares**, with **Delete it instead** in it.
 - **Import specs** can **Replace with this scan**: parts the new scan didn't find are deleted, and only the kinds of parts it read. **Undo** (in the message, or **⋯ > Undo last import**) puts everything back as it was.

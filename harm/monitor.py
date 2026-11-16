@@ -89,6 +89,7 @@ def settings(conn) -> dict:
             "start_page": str(conf.get("start_page") or "dashboard"),
             "site_name": str(conf.get("site_name") or ""),
             "auto_log": bool(conf.get("auto_log", True)),
+            "terminal": bool(conf.get("terminal", True)),
             "bg_checks": bool(conf.get("bg_checks", False)),
             "bg_hours": int(conf.get("bg_hours", 6)),
             "pve_backup_days": int(conf.get("pve_backup_days", 2)),
@@ -104,7 +105,7 @@ def save_settings(conn, changes: dict) -> dict:
         cur["status_interval"] = v
     if "update_check" in changes:
         cur["update_check"] = bool(changes["update_check"])
-    for k in ("ai_enabled", "auto_log", "bg_checks"):
+    for k in ("ai_enabled", "auto_log", "bg_checks", "terminal"):
         if k in changes:
             cur[k] = bool(changes[k])
     if "currency" in changes:

@@ -782,7 +782,7 @@ Let me know if you need anything else!"""
     def _():
         assert c.call("GET", "/settings/app") == {"status_interval": 5, "update_check": False, "ai_enabled": True, "currency": "USD",
                                                    "idle_minutes": 30, "session_hours": 12, "backup_keep": 14, "start_page": "dashboard",
-                                                   "site_name": "", "auto_log": True, "bg_checks": False, "bg_hours": 6, "pve_backup_days": 2,
+                                                   "site_name": "", "auto_log": True, "terminal": True, "bg_checks": False, "bg_hours": 6, "pve_backup_days": 2,
                                                    "part_location_id": None, "part_rack_id": None,
                                                    "device_location_id": None, "device_rack_id": None}
         c.call("POST", "/settings/app", {"status_interval": 7}, expect=400)
@@ -791,6 +791,12 @@ Let me know if you need anything else!"""
         m = c.call("GET", "/maintenance")
         assert m["machines"] == [] and m["background"]["on"] is False and m["proxmox"] is None, m
         assert c.call("GET", "/dashboard")["maintenance"]["problems"] == []
+        c.call("POST", "/settings/app", {"terminal": False})
+        c.call("POST", "/terminal", {"host": "127.0.0.1", "username": "x"}, expect=403)
+        c.call("POST", "/settings/app", {"terminal": True})
+        c.call("POST", "/terminal", {"host": "", "username": "x"}, expect=400)
+        c.call("POST", "/terminal/nope/input", {"d": "ls\n"}, expect=404)
+        c.call("GET", "/terminal/nope/stream", expect=404)
         assert c.call("POST", "/settings/app", {"status_interval": 0})["status_interval"] == 0
         assert c.call("GET", "/status")["status_interval"] == 0
         assert c.call("GET", "/update-check")["enabled"] is False
@@ -860,6 +866,26 @@ Let me know if you need anything else!"""
                 return True
             time.sleep(0.1)
         raise AssertionError(f"no alert with {text!r}: {[h['title'] for h in hooks]}")
+
+    @test("Bitwarden: preview without secrets, import encrypted, export only with the master password")
+    def _():
+        did = S["up"]["id"]
+        data = json.dumps({"encrypted": False, "folders": [], "items": [
+            {"type": 1, "name": "BW import test", "login": {"username": "bwuser", "password": "bw-secret-1", "uris": [{"uri": "http://127.0.0.1/"}]}},
+            {"type": 1, "name": "BW skipped", "login": {"username": "x", "password": "y"}}]})
+        prev = c.call("POST", "/vault/bitwarden/preview", {"data": data})["items"]
+        assert len(prev) == 2 and prev[0]["has_password"] and "password" not in prev[0] and "bw-secret-1" not in json.dumps(prev), prev
+        c.call("POST", "/vault/bitwarden/preview", {"data": json.dumps({"encrypted": True, "items": []})}, expect=400)
+        assert c.call("POST", "/vault/bitwarden/import", {"data": data, "picks": [{"i": 0, "device_id": did}]})["imported"] == 1
+        cr = next(x for x in c.call("GET", "/credentials") if x["label"] == "BW import test")
+        assert cr["device_id"] == did and not any(x["label"] == "BW skipped" for x in c.call("GET", "/credentials"))
+        assert c.call("POST", f"/credentials/{cr['id']}/reveal")["password"] == "bw-secret-1"
+        c.call("POST", "/vault/bitwarden/export", {"password": "not it at all"}, expect=403)
+        out = c.call("POST", "/vault/bitwarden/export", {"password": PW})
+        assert out["encrypted"] is False and any(i["login"]["password"] == "bw-secret-1" for i in out["items"]), out
+        c.call("POST", f"/credentials/{cr['id']}/change-on-machine", {"new_password": "short", "host": "127.0.0.1"}, expect=400)
+        c.call("POST", f"/credentials/{cr['id']}/change-on-machine", {"new_password": "a-long-new-password", "host": ""}, expect=400)
+        c.call("DELETE", f"/credentials/{cr['id']}")
 
     @test("service cards: favorites, lists, icon, color, and buttons that can only link, copy or run an action")
     def _():

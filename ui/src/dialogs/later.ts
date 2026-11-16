@@ -15,5 +15,9 @@ export const aiAssist = (preset?: Row) => load(() => import('./ai')).then(m => m
 export const libraryLookup = (form: FormCtl) => load(() => import('./library')).then(m => m.libraryLookup(form));
 export const editAlerts = (after?: After) => load(() => import('./watch')).then(m => m.editAlerts(after));
 export const editNetwatch = (after?: After) => load(() => import('./watch')).then(m => m.editNetwatch(after));
+export const connectDialog = (dev: Row) => load(() => import('./connect')).then(m => m.connectDialog(dev));
+export const importBitwarden = (after?: After) => load(() => import('./vaultio')).then(m => m.importBitwarden(after));
+export const exportBitwarden = () => load(() => import('./vaultio')).then(m => m.exportBitwarden());
+export const changeOnMachine = (cred: Row, after?: After) => load(() => import('./vaultio')).then(m => m.changeOnMachine(cred, after));
 export const installApp = () => load(() => import('./phone')).then(m => m.installApp());
 export const phoneAppHelp = () => load(() => import('./phone')).then(m => m.phoneAppHelp());

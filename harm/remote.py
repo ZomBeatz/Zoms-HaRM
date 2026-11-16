@@ -191,7 +191,8 @@ _supported_cache: dict[str, set] = {}
 SSH_OPTIONS = {"kexalgorithms": "KexAlgorithms", "hostkeyalgorithms": "HostKeyAlgorithms",
                "pubkeyacceptedalgorithms": "PubkeyAcceptedAlgorithms",
                "pubkeyacceptedkeytypes": "PubkeyAcceptedAlgorithms", "ciphers": "Ciphers", "macs": "MACs",
-               "connecttimeout": "ConnectTimeout", "serveraliveinterval": "ServerAliveInterval"}
+               "connecttimeout": "ConnectTimeout", "serveraliveinterval": "ServerAliveInterval",
+               "pubkeyauthentication": "PubkeyAuthentication", "preferredauthentications": "PreferredAuthentications"}
 _OPT_VALUE = re.compile(r"^[A-Za-z0-9@.,+_^=-]{1,400}$")
 
 
@@ -259,7 +260,7 @@ def _clip(text: str) -> str:
 
 def run_action(host: str, port: int, user: str, password: str | None, mode: str, command: str,
                sudo: bool = False, legacy: bool = False, options: str | None = None,
-               timeout: int = TIMEOUT) -> dict:
+               timeout: int = TIMEOUT, stdin_extra: str = "") -> dict:
     """Run a saved action on one machine. 'script' sends the whole text as one shell script;
     'lines' sends each line as its own command (for iLO, iDRAC, switches and Windows, which
     have no Unix shell). Returns {ok, exit_code, output, ms}."""
@@ -287,10 +288,10 @@ def run_action(host: str, port: int, user: str, password: str | None, mode: str,
     sudo = sudo and user != "root"
     if sudo and not password:
         cmd = _unix_command(False, command.encode()).replace("sh -c ", "sudo -n sh -c ", 1)
-        stdin = ""
+        stdin = stdin_extra
     else:
         cmd = _unix_command(sudo, command.encode())
-        stdin = (password + "\n") if sudo else ""
+        stdin = ((password + "\n") if sudo else "") + stdin_extra  # a script reads what follows sudo's password
     p = _ssh(host, port, user, password, cmd, stdin, extra, timeout)
     if p.returncode == 255 and not p.stdout:
         raise _explain(p, "The connection")

@@ -109,6 +109,8 @@ const HELP: [string, string, () => Kid, { keyboard?: boolean }?][] = [
     <>Paste a 2FA setup key or an <C>otpauth://</C> link into the TOTP field and HaRM shows live 6-digit codes.</>,
     <><B>Reveal</B> shows a login for 60 seconds. Every reveal is recorded in the <A href="#/audit">Audit Log</A>.</>,
     'Set “Last rotated” and Home reminds you about logins older than a year.',
+    <><B>Bitwarden: </B>the Vault’s <B>⋯</B> menu imports Bitwarden’s or Vaultwarden’s plain .json export (you see each login and its device before anything is saved; delete the file afterwards) and exports for Bitwarden (it asks for your master password again).</>,
+    <><B>🔑 Change on machine… </B>on a Linux login sets a new password over SSH with chpasswd, saves it, keeps the old one in its secret notes and checks the new one signs in. Update anything else that uses the old one.</>,
   ]} />],
   ['forms', 'Forms, unsaved changes and drafts', () => <L items={[
     <>If you close a form with changes (✕, Escape, clicking outside, or Cancel), HaRM asks: <B>Keep editing</B>, <B>Discard</B> or <B>Save</B>.</>,
@@ -250,6 +252,14 @@ const HELP: [string, string, () => Kid, { keyboard?: boolean }?][] = [
       <><B>Drive health </B>goes into each drive’s <B>Health</B> field on its part, matched by serial number. It needs <B>Use sudo</B> and smartctl on the machine.</>,
       <><B>Backups: </B><B>⋯ &gt; Backups to watch</B> takes folders that should get new files and ZFS datasets that should get new snapshots, with how often.</>,
       <><A href="#/maintenance">Maintenance</A> gathers every machine: what needs attention, system and container updates (with versions), restarts, backups and Proxmox VMs. <B>Install</B>, <B>Restart</B>, <B>Update</B> and Proxmox power and snapshots are one click each, and each leaves a “Did” note on the device.</>,
+    ]} />
+  </>],
+  ['connect', 'Connecting to a machine', () => <>
+    <p>Open a device and press <B>🔌 Connect</B>: a terminal in HaRM with the saved login, your own SSH app or a copied <C>ssh</C> command, a Remote Desktop file for Windows, VNC, the Proxmox console of a VM or node, or the management page (iDRAC, iLO).</p>
+    <L items={[
+      'The terminal only works while HaRM is unlocked, and closes when it locks, after 30 minutes without typing, or when you leave the page. At most 4 are open at once.',
+      <>Opening and closing one is recorded in the <A href="#/audit">Audit Log</A>; what you type is never stored. Turn it off in <A href="#/settings">Settings &gt; Locking and security</A>.</>,
+      'It needs the ssh program on the computer running HaRM (built into Windows, macOS and most Linux).',
     ]} />
   </>],
   ['background', 'Background checks', () => <>

@@ -4,7 +4,8 @@ import { GET } from '../api/client';
 import { S } from '../lib/state';
 import { genPassword, type Row } from '../lib/util';
 import { copy, modal } from '../ui/overlay';
-import { A, Btn, Card, HelpLink, PageHead, Table } from '../ui/bits';
+import { A, Btn, Card, HelpLink, MenuButton, PageHead, Table } from '../ui/bits';
+import { exportBitwarden, importBitwarden } from '../dialogs/later';
 import { ConnTable, CredTable } from '../ui/tables';
 import { editCredential, editEntity } from '../lib/forms';
 import { revealCredential } from '../dialogs/credential';
@@ -49,6 +50,7 @@ export function Vault({ q: qs }: { q: URLSearchParams }) {
     <PageHead title="Vault" sub="Logins and secrets, encrypted with AES-256-GCM under your master password.">
       <HelpLink s="logins" />
       <Btn label="Password generator" onClick={() => modal('Password generator', <PasswordGenerator />)} />
+      <MenuButton label="⋯" items={[['⇩ Import from Bitwarden…', () => importBitwarden(() => q.reload())], ['⇪ Export for Bitwarden…', () => exportBitwarden()]]} />
       <Btn label="+ Add login" onClick={() => editCredential({})} cls="primary" />
     </PageHead>
     <div className="toolbar"><input type="search" placeholder="Filter…" value={needle} onChange={e => { F.q = e.target.value; setNeedle(e.target.value); }} /></div>

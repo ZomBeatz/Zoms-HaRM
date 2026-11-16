@@ -7,6 +7,7 @@ import { copy, toast } from './overlay';
 import { A, ExtLink, Mono, Small, Table } from './bits';
 import { RowActions, deleteEntity, editCredential } from '../lib/forms';
 import { revealCredential } from '../dialogs/credential';
+import { changeOnMachine } from '../dialogs/later';
 
 type After = (() => unknown) | null | undefined;
 
@@ -26,6 +27,7 @@ export function CredTable({ rows, after }: { rows: Row[]; after?: After }) {
           try { const s = await api('POST', `/credentials/${r.id}/reveal`); copy(s.password, 'Password'); } catch (e) { toast((e as Error).message, 'bad'); }
         }} /> : null}
         <Small label="Edit" onClick={() => editCredential(r, after)} />
+        {r.username && r.has_password ? <Small label="🔑 Change on machine…" title="Set a new password on the machine over SSH, and keep it here" onClick={() => changeOnMachine(r, after)} /> : null}
         <Small label="Delete" onClick={() => deleteEntity('credentials', r, after)} cls="ghost-danger" />
       </div>
     ) },

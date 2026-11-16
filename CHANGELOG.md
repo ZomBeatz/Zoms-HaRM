@@ -47,6 +47,12 @@
 **Keyboard**
 - **Ctrl K** (⌘K on a Mac) searches everything, **/** filters the list on the page, **N** opens **+ New**, **?** shows the shortcuts, **[** folds the sidebar to icons, and **Esc** closes menus and search. See **Help > Keyboard shortcuts** or **Settings > Shortcuts**.
 
+**Docker containers**
+- A device's **Containers** tab lists its Docker containers, read over SSH with a saved login: running, stopped or unhealthy, how long they've been up, their image, published ports, and whether a newer image is out (**Check for updates** asks the registry without downloading anything).
+- **Update** pulls the newest image and re-creates the container with Docker Compose, keeping its settings. **Restart**, **Stop**/**Start** and **Logs** are one click each, and **Clean up old images** frees the space old versions take. Nothing runs on a schedule.
+- The **Status** page shows a server's containers on its tile, and **Watch its web page** makes a container's port a service with the usual checks and alerts.
+- New examples in **Actions**: update Plex installed as a package, update every Compose project in a folder, clean up old images.
+
 **Cleaning up parts**
 - **Delete** on any part of a device removes it outright (added by mistake, by hand or by a scan), with **Undo**. It doesn't go to Spare Parts. **Remove** is now **To spares**, with **Delete it instead** in it.
 - **Import specs** can **Replace with this scan**: parts the new scan didn't find are deleted, and only the kinds of parts it read. **Undo** (in the message, or **⋯ > Undo last import**) puts everything back as it was.

@@ -40,4 +40,14 @@ export interface DeviceFull {
   builds: Pick<Build, 'id' | 'name' | 'status'>[];
   guests: Device[]; guest_totals: { count: number; vcpus: number; ram_gb: number; disk_gb: number; running: number };
   online: DeviceOnline; can_wake: boolean; power: Summary | null;
+  docker: DockerSummary | null;
 }
+
+/* The last containers read on a device (Containers tab, Status). */
+export interface DockerSummary { at: string | null; total: number; problems: string[]; updates: string[] }
+export interface Container {
+  name: string; image: string; image_id: string; state: string; health: string | null; started: string; restarts: number;
+  project: string; service: string; workdir: string; configs: string; ports: string[];
+}
+export interface DockerSnap { at: string; checked_at?: string; containers: Container[]; updates?: Record<string, 'update' | 'current' | 'unknown'> }
+export interface DockerConf { host?: string; port?: number; credential_id?: number | null; sudo?: boolean }

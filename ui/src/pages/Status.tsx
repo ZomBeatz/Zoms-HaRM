@@ -60,6 +60,12 @@ function StatusTile({ d, after }: { d: Row; after: () => void }) {
         <span key={sv.id} className="st-other small">{sv.name} <ServicePill sv={sv as any} />
           {sv.cert_expires && (new Date(sv.cert_expires).getTime() - Date.now()) < 30 * 864e5 ? <> <span className="badge warn" title="Its certificate">Certificate <CertText date={sv.cert_expires} /></span></> : null}</span>
       ))}</div> : null}
+      {d.containers ? <div className="st-others"><a className="st-other small" href={`#/devices/${d.id}?tab=containers`}
+        title={d.containers.at ? `Containers as read ${timeAgo(d.containers.at)}` : undefined}>
+        {`🐳 ${d.containers.total} container${d.containers.total === 1 ? '' : 's'}`}
+        {d.containers.problems.length ? <> <span className="badge bad">{`${d.containers.problems.join(', ')} not running`}</span></> : null}
+        {d.containers.updates.length ? <> <span className="badge info">{`${d.containers.updates.length} update${d.containers.updates.length === 1 ? '' : 's'}`}</span></> : null}
+      </a></div> : null}
       <HistoryStrip st={d as any} />
       {acts.length ? <div className="st-actions">{acts}</div> : null}
     </div>

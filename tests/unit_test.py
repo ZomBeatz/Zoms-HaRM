@@ -12,7 +12,9 @@ import ssl
 import sys
 import tempfile
 import threading
+import time
 import traceback
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -281,8 +283,8 @@ def _():
         'case "$1" in\n'
         "  ps) [ \"$2\" = \"-aq\" ] && printf 'a\\nb\\n'; [ \"$2\" = \"-a\" ] && printf 'lscr.io/linuxserver/plex:latest\\nnginx:1.25\\n'; [ \"$2\" = \"-q\" ] && echo a;;\n"
         f"  inspect) [ \"$2\" = \"-f\" ] && echo sha256:aaa || printf '%s\\n%s\\n' '{_json.dumps(plex)}' '{_json.dumps(old)}';;\n"
-        "  image) echo 'lscr.io/linuxserver/plex@sha256:111 ';;\n"
-        "  buildx) case \"$6\" in *plex*) echo '\"sha256:222\"';; *) echo '';; esac;;\n"
+        "  image) case \"$4\" in *version*) echo 1.40.0;; *) echo 'lscr.io/linuxserver/plex@sha256:111 ';; esac;;\n"
+        "  buildx) case \"$5$6\" in *version*plex*) echo 'linux/arm64=1.41.9 linux/amd64=1.41.0 ';; *plex*) echo '\"sha256:222\"';; *) echo '';; esac;;\n"
         "  compose) exit 0;;\n"
         "esac\n")
     (fake / "docker").chmod(0o755)
@@ -291,8 +293,10 @@ def _():
     rows = docker.parse_list(run(docker.LIST_SCRIPT))
     assert [r["name"] for r in rows] == ["old-thing", "plex"], rows
     assert rows[1]["ports"] == ["32400→32400/tcp"] and rows[1]["health"] == "healthy", rows[1]
-    ups = docker.parse_check(run(docker.CHECK_SCRIPT))
+    ups, vers = docker.parse_check(run(docker.CHECK_SCRIPT))
     assert ups == {"lscr.io/linuxserver/plex:latest": "update", "nginx:1.25": "unknown"}, ups
+    want = "1.41.9" if os.uname().machine == "aarch64" else "1.41.0"
+    assert vers["lscr.io/linuxserver/plex:latest"] == {"now": "1.40.0", "new": want}, vers
     out = run(docker.op_script(rows[1], "update"))
     assert "HARM_RESULT=same" in out and docker.op_result("update", out) == "Already up to date.", out
     sent = log.read_text()
@@ -349,6 +353,179 @@ def _():
     finally:
         main.remote.run_action = real
         conn.close()
+
+
+def subprocess_ok(script: str) -> bool:
+    import subprocess
+    return subprocess.run(["sh", "-n", "-c", script]).returncode == 0
+
+
+SAMPLE = """HARM_SEC=os
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+ID=debian
+VERSION_ID="12"
+KERNEL=6.1.0-25-amd64
+HOST=nas
+ROOT=0
+HARM_SEC=uptime
+864000.5 100.0
+0.52 0.40 0.30 1/200 999
+8
+HARM_SEC=mem
+MemTotal:       16000000 kB
+MemAvailable:    8000000 kB
+SwapTotal:             0 kB
+SwapFree:              0 kB
+HARM_SEC=df
+Filesystem     Type  1B-blocks  Used Available Capacity Mounted on
+/dev/sda2      ext4  100000 96000 4000 96% /
+/dev/sdb1      xfs   42000000000000 21000000000000 21000000000000 50% /mnt/big array
+/dev/sdb1      xfs   42000000000000 21000000000000 21000000000000 50% /srv/bind
+HARM_SEC=reboot
+NEEDED=packages
+linux-image-6.1.0-26-amd64
+HARM_SEC=updates
+MANAGER=apt
+REFRESHED=1
+openssl/stable-security 3.0.15-1~deb12u1 amd64 [upgradable from: 3.0.14-1~deb12u2]
+plexmediaserver/public 1.41.0.1 amd64 [upgradable from: 1.40.5.1]
+HARM_SEC=disks
+NAME="sda" SIZE="500107862016" ROTA="0" TYPE="disk" TRAN="sata" VENDOR="ATA     " MODEL="Samsung SSD 870" SERIAL="S1"
+NAME="sdb" SIZE="42000000000000" ROTA="1" TYPE="disk" TRAN="" VENDOR="DELL" MODEL="PERC H730P Mini" SERIAL="VD0"
+NAME="sdc" SIZE="4000787030016" ROTA="1" TYPE="disk" TRAN="sata" VENDOR="ATA" MODEL="WDC WD40EFRX" SERIAL="WD-1"
+HARM_SEC=smart
+HARM_DISK=sda
+SMART overall-health self-assessment test result: PASSED
+  9 Power_On_Hours          0x0032   095   095   000    Old_age   Always       -       21034
+  5 Reallocated_Sector_Ct   0x0033   100   100   010    Pre-fail  Always       -       0
+HARM_DISK=sdb
+Product:              PERC H730P Mini
+HARM_DISK=sdc
+SMART overall-health self-assessment test result: FAILED!
+  5 Reallocated_Sector_Ct   0x0033   100   100   010    Pre-fail  Always       -       12
+HARM_SEC=zpool
+tank	8000	4000	4000	DEGRADED
+HARM_SEC=zsnap
+tank/media	1700000000
+HARM_SEC=md
+md0 : active raid1 sdd1[0]
+      1000 blocks super 1.2 [2/1] [U_]
+HARM_SEC=folders
+HARM_FOLDER=/mnt/backups
+1700000000 2048 /mnt/backups/a.tar
+"""
+
+
+@test
+def _():
+    """machine check: disks, SMART, pools, RAID, updates, reboot, backups, labels and drive health"""
+    from harm import machine, upkeep
+    bk = machine.clean_backups([{"kind": "folder", "path": "/mnt/backups/", "hours": 24}, {"kind": "zfs", "path": "tank", "hours": 48}])
+    assert bk[0]["path"] == "/mnt/backups"
+    for bad in ({"kind": "folder", "path": "relative"}, {"kind": "zfs", "path": "tank; rm -rf /"}, {"kind": "folder", "path": "/x", "hours": 5}):
+        try:
+            machine.clean_backups([bad])
+            raise AssertionError(f"accepted {bad}")
+        except machine.MachineError:
+            pass
+    assert "'/mnt/my backups'" in machine.check_script([{"kind": "folder", "path": "/mnt/my backups", "hours": 24}])
+    assert machine.check_script([], True).startswith("HARM_SU=1\n") and "HARM_SU" not in machine.check_script([]).split("\n")[0]
+    snap = machine.parse(SAMPLE, bk)
+    assert [v["mount"] for v in snap["volumes"]] == ["/", "/mnt/big array"], snap["volumes"]  # the bind mount once
+    assert snap["updates"]["count"] == 2 and snap["updates"]["security"] == 1 and snap["updates"]["packages"][0]["name"] == "openssl"
+    assert snap["reboot"]["needed"] and snap["disks"][0]["model"] == "Samsung SSD 870"
+    assert snap["disks"][1]["virtual"] and snap["disks"][1]["smart"]["note"] == "virtual drive"
+    assert snap["disks"][0]["smart"]["hours"] == 21034 and snap["disks"][2]["smart"]["health"] == "failing"
+    assert snap["md"][0]["degraded"] and snap["pools"][0]["health"] == "DEGRADED"
+    assert machine.drive_health(snap["disks"][0]) == "SMART OK, 21k hours"
+    texts = " | ".join(p["text"] for p in machine.problems(snap))
+    for want in ("/ is 96% full", "failing (SMART)", "ZFS pool tank is DEGRADED", "md0 is degraded", "1 security update",
+                 "Needs a restart", "Backup /mnt/backups: the newest is", "Backup tank: the newest is"):
+        assert want in texts, (want, texts)
+    labels = {"vol:/": {"ignore": True}, "disk:WD-1": {"name": "Bay 3"}}
+    texts = " | ".join(p["text"] for p in machine.problems(snap, labels))
+    assert "/ is 96%" not in texts and "Bay 3: the drive reports" in texts, texts
+
+    # Stored through upkeep: SMART goes into the matching part's Health, and an alert goes out once.
+    did = sql("INSERT INTO devices (name, alerts) VALUES ('nas3', 1)")
+    part = sql("INSERT INTO components (category, serial, device_id, status, quantity) VALUES ('Drive', 's1', ?, 'Installed', 1)", did)
+    conn = db.connect()
+    try:
+        db.set_meta(conn, "alerts", '{"enabled": true}')
+        upkeep.save(conn, f"machine_backups:{did}", bk)
+        upkeep.store(conn, did, SAMPLE)
+        assert conn.execute("SELECT health FROM components WHERE id = ?", (part,)).fetchone()[0] == "SMART OK, 21k hours"
+        ev = upkeep.track(conn, did)
+        assert ev and all(e["state"] == "down" for e in ev) and any("DEGRADED" in e["title"] for e in ev), ev
+        assert upkeep.track(conn, did) == [], "alerted twice"
+        upkeep.save(conn, f"machine:{did}", {**upkeep.load(conn, f"machine:{did}"), "pools": []})
+        assert [e["state"] for e in upkeep.track(conn, did)] == ["up"]
+        # Containers: one that was running and stopped, with its log in the alert.
+        upkeep.save(conn, f"docker:{did}", {"containers": [{"name": "web", "state": "exited", "restarts": 0}], "was_running": {"web": 0}})
+        ev = upkeep.track(conn, did, {"web": "panic: out of memory"})
+        assert len(ev) == 1 and "web stopped" in ev[0]["title"] and "out of memory" in ev[0]["message"], ev
+        # The background login: sealed with its own key, readable back, gone when turned off.
+        upkeep.bg_set(conn, did, "harm-ro", "pw-123", "read-only (harm-ro)", "limited")
+        assert upkeep.bg_get(conn, did) == {"user": "harm-ro", "pw": "pw-123", "sudo": "limited"} and "pw-123" not in (db.get_meta(conn, "bg_logins") or "")
+        upkeep.bg_forget(conn, did)
+        assert upkeep.bg_get(conn, did) is None
+    finally:
+        conn.close()
+    for sc in (machine.CHECK_SCRIPT, machine.UPGRADE_SCRIPT, machine.REBOOT_SCRIPT, upkeep.script(bk, True)):
+        assert subprocess_ok(sc), sc[:80]
+
+
+@test
+def _():
+    """pinned certificates: the first one is remembered, a different one is refused before the token goes out"""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+    from harm import tlspin
+
+    def server(cn):
+        key = ec.generate_private_key(ec.SECP256R1())
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)])
+        cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key()).serial_number(1)
+                .not_valid_before(datetime.now(timezone.utc) - timedelta(days=1)).not_valid_after(datetime.now(timezone.utc) + timedelta(days=9))
+                .sign(key, hashes.SHA256()))
+        pem = Path(TMP) / f"{cn}.pem"
+        pem.write_bytes(cert.public_bytes(serialization.Encoding.PEM)
+                        + key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(pem)
+        srv = socket.socket()
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(4)
+        got = []
+
+        def serve():
+            for _ in range(2):
+                c, _a = srv.accept()
+                try:
+                    with ctx.wrap_socket(c, server_side=True) as t:
+                        got.append(t.recv(4096))
+                        t.sendall(b'HTTP/1.1 200 OK\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{"data": 1}')
+                except (OSError, ssl.SSLError):
+                    pass
+        threading.Thread(target=serve, daemon=True).start()
+        return f"https://127.0.0.1:{srv.getsockname()[1]}", got
+
+    url, _ = server("pve-a")
+    op, seen = tlspin.opener(False, None)
+    op.open(urllib.request.Request(url + "/x"), timeout=5).read()
+    pin = seen["fp"]
+    assert len(pin) == 64
+    url2, got = server("impostor")
+    op2, _ = tlspin.opener(False, pin)
+    try:
+        op2.open(urllib.request.Request(url2 + "/x", headers={"Authorization": "PVEAPIToken=secret"}), timeout=5)
+        raise AssertionError("a different certificate was accepted")
+    except tlspin.PinMismatch:
+        pass
+    time.sleep(0.2)
+    assert not any(b"secret" in g for g in got), "the token was sent to the impostor"
 
 
 failed = [r for r in results if r]

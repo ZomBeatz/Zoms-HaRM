@@ -69,7 +69,7 @@ export function PageWaiting() {
   return null;
 }
 
-export interface Loaded<T> { data: T | undefined; error: string; reload: () => Promise<void> }
+export interface Loaded<T> { data: T | undefined; error: string; reload: () => Promise<void>; set: (d: T) => void }
 /* A page's data: loaded on open, again on reload() and whenever rerender() is called. */
 export function useLoad<T>(load: () => Promise<T>): Loaded<T> {
   const [data, setData] = useState<T>();
@@ -101,7 +101,7 @@ export function useLoad<T>(load: () => Promise<T>): Loaded<T> {
   }, []);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => { reload(); }, [tick, reload]);
-  return { data, error, reload };
+  return { data, error, reload, set: setData };
 }
 
 /* What a page shows before its data arrives, or when loading it failed. */

@@ -20,6 +20,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
+from . import tlspin
+
 # Ports probed on every address. A refused connection still proves the host is up.
 PORT_HINTS = {
     22: "SSH", 53: "DNS", 80: "HTTP", 443: "HTTPS", 445: "SMB", 2049: "NFS", 3000: "Web app",
@@ -34,7 +36,10 @@ _CGNAT = ipaddress.ip_network("100.64.0.0/10")
 
 
 class DiscoverError(Exception):
-    pass
+    def __init__(self, msg: str = "", code: str = "error", seen: str = ""):
+        super().__init__(msg)
+        self.code = code
+        self.seen = seen
 
 
 def norm_mac(mac: str | None) -> str | None:
@@ -218,14 +223,10 @@ def _base_url(url: str) -> str:
 
 
 class UniFi:
-    def __init__(self, url: str, api_key: str, verify: bool):
+    def __init__(self, url: str, api_key: str, verify: bool, pin: str | None = None):
         self.base = _base_url(url)
         self.key = api_key
-        ctx = ssl.create_default_context()
-        if not verify:
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-        self.opener = urllib.request.build_opener(_NoRedirect, urllib.request.HTTPSHandler(context=ctx))
+        self.opener, self.seen = tlspin.opener(verify, pin, _NoRedirect)
 
     def get(self, path: str):
         req = urllib.request.Request(self.base + path,
@@ -233,6 +234,10 @@ class UniFi:
         try:
             with self.opener.open(req, timeout=15) as r:
                 return json.loads(r.read(30_000_000) or b"null")
+        except tlspin.PinMismatch as e:
+            raise DiscoverError("The gateway's certificate changed since HaRM last connected. That's normal after "
+                                "a console reset or firmware update, but can also mean something is intercepting "
+                                "the connection.", "pin", e.seen)
         except urllib.error.HTTPError as e:
             if e.code in (401, 403):
                 raise DiscoverError("The gateway rejected the API key")
@@ -278,10 +283,10 @@ def _ip_ok(v) -> str | None:
         return None
 
 
-def unifi_import(url: str, api_key: str, site: str = "", verify: bool = False) -> dict:
+def unifi_import(url: str, api_key: str, site: str = "", verify: bool = False, pin: str | None = None) -> dict:
     if not api_key:
         raise DiscoverError("Enter an API key")
-    u = UniFi(url, api_key, verify)
+    u = UniFi(url, api_key, verify, pin)
     try:
         sites = u.paged("/proxy/network/integration/v1/sites")
     except FileNotFoundError:
@@ -370,7 +375,7 @@ def unifi_import(url: str, api_key: str, site: str = "", verify: bool = False) -
                      "offline reserved clients need a newer UniFi Network version.")
     return {"site": {"name": chosen.get("name"), "ref": ref},
             "sites": [{"name": s.get("name"), "ref": s.get("internalReference")} for s in sites],
-            "hosts": ordered, "networks": networks, "notes": notes}
+            "hosts": ordered, "networks": networks, "notes": notes, "fingerprint": u.seen.get("fp", "")}
 
 
 BMC_NAME = re.compile(r"idrac|\bilo\b|ilo\d|-ilo|ipmi|\bbmc\b|-bmc|\bimm\b|xcc", re.I)

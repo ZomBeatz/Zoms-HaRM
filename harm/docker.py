@@ -23,10 +23,13 @@ LIST_SCRIPT = _NEED_DOCKER + f"docker ps -aq | xargs -r docker inspect --format 
 
 # For each image in use: the digest it was pulled as, and the registry's current one (without
 # downloading it). buildx is part of Docker Engine; without it the answer is "can't tell".
-CHECK_SCRIPT = _NEED_DOCKER + r"""for img in $(docker ps -a --format '{{.Image}}' | sort -u); do
+CHECK_SCRIPT = _NEED_DOCKER + r"""arch=$(uname -m)
+for img in $(docker ps -a --format '{{.Image}}' | sort -u); do
   local_d=$(docker image inspect --format '{{range .RepoDigests}}{{.}} {{end}}' "$img" 2>/dev/null | tr ' ' '\n' | sed -n 's/.*@//p' | head -1)
+  local_v=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$img" 2>/dev/null | tr -d '"\\')
   remote_d=$(docker buildx imagetools inspect --format '{{json .Manifest.Digest}}' "$img" 2>/dev/null | tr -d '"')
-  printf '{"image":"%s","local":"%s","remote":"%s"}\n' "$img" "$local_d" "$remote_d"
+  remote_v=$(docker buildx imagetools inspect --format '{{with .Image.Config}}{{index .Labels "org.opencontainers.image.version"}}{{else}}{{range $p, $i := .Image}}{{$p}}={{index $i.Config.Labels "org.opencontainers.image.version"}} {{end}}{{end}}' "$img" 2>/dev/null | tr -d '"\\')
+  printf '{"image":"%s","local":"%s","remote":"%s","local_v":"%s","remote_v":"%s","arch":"%s"}\n' "$img" "$local_d" "$remote_d" "$local_v" "$remote_v" "$arch"
 done
 """
 
@@ -77,18 +80,36 @@ def parse_list(output: str) -> list[dict]:
     return sorted(rows, key=lambda r: r["name"].lower())
 
 
-def parse_check(output: str) -> dict:
-    """{image: "update" | "current" | "unknown"}"""
+_ARCH = {"x86_64": "linux/amd64", "aarch64": "linux/arm64", "armv7l": "linux/arm/v7"}
+_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+~-]{0,79}$")
+
+
+def _pick_version(raw: str, arch: str) -> str:
+    """The registry's version label: one value, or "platform=version ..." for multi-platform images."""
+    raw = (raw or "").strip()
+    if "=" in raw:
+        by = dict(p.split("=", 1) for p in raw.split() if "=" in p)
+        raw = by.get(_ARCH.get(arch, ""), "") or next((v for v in by.values() if v), "")
+    return raw if _VERSION.match(raw or "") else ""
+
+
+def parse_check(output: str) -> tuple[dict, dict]:
+    """({image: "update" | "current" | "unknown"}, {image: {"now": version, "new": version}})"""
     _check(output)
-    out = {}
+    out, versions = {}, {}
     for line in output.splitlines():
         try:
             r = json.loads(line)
         except ValueError:
             continue
+        img = r.get("image") or ""
         loc, rem = r.get("local") or "", r.get("remote") or ""
-        out[r.get("image") or ""] = "unknown" if not (loc and rem) else ("current" if loc == rem else "update")
-    return out
+        out[img] = "unknown" if not (loc and rem) else ("current" if loc == rem else "update")
+        now = r.get("local_v") if _VERSION.match(r.get("local_v") or "") else ""
+        new = _pick_version(r.get("remote_v"), r.get("arch") or "")
+        if now or new:
+            versions[img] = {"now": now, "new": new}
+    return out, versions
 
 
 def op_script(c: dict, op: str) -> str:

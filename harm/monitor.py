@@ -65,6 +65,8 @@ CHOICES = {
     "session_hours": (4, 8, 12, 24, 72, 168),
     "backup_keep": (7, 14, 30, 90),
     "start_page": ("dashboard", "status", "devices", "tasks", "racks", "last"),
+    "bg_hours": (1, 3, 6, 12, 24),
+    "pve_backup_days": (0, 1, 2, 3, 7, 14),
 }
 
 
@@ -86,6 +88,10 @@ def settings(conn) -> dict:
             "backup_keep": int(conf.get("backup_keep", BACKUP_KEEP_DEFAULT)),
             "start_page": str(conf.get("start_page") or "dashboard"),
             "site_name": str(conf.get("site_name") or ""),
+            "auto_log": bool(conf.get("auto_log", True)),
+            "bg_checks": bool(conf.get("bg_checks", False)),
+            "bg_hours": int(conf.get("bg_hours", 6)),
+            "pve_backup_days": int(conf.get("pve_backup_days", 2)),
             **{k: conf.get(k) for k in NEW_ITEM_DEFAULTS}}
 
 
@@ -98,8 +104,9 @@ def save_settings(conn, changes: dict) -> dict:
         cur["status_interval"] = v
     if "update_check" in changes:
         cur["update_check"] = bool(changes["update_check"])
-    if "ai_enabled" in changes:
-        cur["ai_enabled"] = bool(changes["ai_enabled"])
+    for k in ("ai_enabled", "auto_log", "bg_checks"):
+        if k in changes:
+            cur[k] = bool(changes[k])
     if "currency" in changes:
         v = str(changes["currency"]).strip().upper()
         if not re.fullmatch(r"[A-Z]{3}", v):
@@ -113,7 +120,10 @@ def save_settings(conn, changes: dict) -> dict:
             cur[k] = int(v) if v not in (None, "", 0, "0") else None
     for k, ok in CHOICES.items():
         if k in changes:
-            v = changes[k] if k == "start_page" else int(changes[k])
+            try:
+                v = changes[k] if k == "start_page" else int(changes[k])
+            except (TypeError, ValueError):
+                raise ValueError(f"{k}: one of {', '.join(str(x) for x in ok)}")
             if v not in ok:
                 raise ValueError(f"{k}: one of {', '.join(str(x) for x in ok)}")
             cur[k] = v
@@ -485,6 +495,13 @@ async def run_forever() -> None:
             if mins and seconds_since_full() >= mins * 60 - 5:
                 await check()
             await asyncio.to_thread(alerts.flush_held)  # quiet hours over: send what was held
+            conn = db.connect()
+            try:
+                conf = settings(conn)
+            finally:
+                conn.close()
+            from . import upkeep
+            await upkeep.run_due(conf)  # machine checks with background logins, if turned on
         except asyncio.CancelledError:
             raise
         except Exception as e:  # never take the app down over a check

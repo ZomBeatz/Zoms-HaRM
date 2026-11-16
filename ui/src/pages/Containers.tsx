@@ -12,6 +12,10 @@ type Data = { conf: DockerConf; snap: DockerSnap | null };
 // Docker gives ISO times ("2026-11-01T10:00:00.123Z"); HaRM's helpers take "YYYY-MM-DD HH:MM:SS" in UTC.
 const since = (iso: string) => iso && !iso.startsWith('0001') ? iso.slice(0, 19).replace('T', ' ') : '';
 
+/* "1.40.5 → 1.41.0" when the images carry version labels. */
+export const versionText = (v?: { now?: string; new?: string }) =>
+  v?.new && v.new !== v.now ? (v.now ? `${v.now} → ${v.new}` : `New: ${v.new}`) : '';
+
 const pill = (text: string, cls: string) => <span className={`badge ${cls}`}>{text}</span>;
 
 function stateBadge(c: Container) {
@@ -29,8 +33,12 @@ function showOutput(title: string, text: string) {
   modal(title, <pre className="code logs">{text || 'Nothing was printed.'}</pre>, { wide: true });
 }
 
-/* Where and how to reach Docker: an address, a saved login, and whether to use sudo. */
-function Connect({ deviceId, conf, onRead }: { deviceId: number; conf: DockerConf; onRead: (d: Data) => void }) {
+/* Where and how to reach the machine over SSH: an address, a saved login, and whether to use sudo.
+   Containers and Health share it. */
+export function Connect<T>({ deviceId, conf, onRead, path = 'docker/read', button = '🐳 Read containers',
+  intro = 'HaRM connects over SSH with one of this device’s saved logins and asks Docker for its containers. Nothing is changed.',
+  sudoHint = 'Use sudo (unless the login is in the docker group)' }: {
+  deviceId: number; conf: DockerConf; onRead: (d: T) => void; path?: string; button?: string; intro?: string; sudoHint?: string }) {
   const [t, setT] = useState<Row | null>(null);
   const [host, setHost] = useState(conf.host || '');
   const [port, setPort] = useState(String(conf.port || 22));
@@ -47,7 +55,7 @@ function Connect({ deviceId, conf, onRead }: { deviceId: number; conf: DockerCon
   }, [deviceId]);  // eslint-disable-line react-hooks/exhaustive-deps
   const read = async (trust = false): Promise<void> => {
     setBusy(true); setErr('');
-    try { onRead(await api('POST', `/devices/${deviceId}/docker/read`, { host: host.trim(), port: +port || 22, credential_id: cred || null, sudo, trust_new_key: trust })); }
+    try { onRead(await api('POST', `/devices/${deviceId}/${path}`, { host: host.trim(), port: +port || 22, credential_id: cred || null, sudo, trust_new_key: trust })); }
     catch (e) {
       const msg = (e as Error).message;
       if (/host key changed/i.test(msg) && await choose('The machine’s key changed', msg, [['no', 'Cancel'], ['yes', 'Trust the new key', 'primary']]) === 'yes') return read(true);
@@ -58,7 +66,7 @@ function Connect({ deviceId, conf, onRead }: { deviceId: number; conf: DockerCon
   if (!t && !err) return <div className="muted"><Spinner /> Loading…</div>;
   return (
     <div className="disc-form">
-      <p className="muted">HaRM connects over SSH with one of this device’s saved logins and asks Docker for its containers. Nothing is changed.</p>
+      <p className="muted">{intro}</p>
       <div className="inline">
         <label className="disc-field"><span>Address</span>
           <input list={`dk-hosts-${deviceId}`} value={host} onChange={e => setHost(e.target.value)} placeholder="10.0.0.20" />
@@ -70,8 +78,8 @@ function Connect({ deviceId, conf, onRead }: { deviceId: number; conf: DockerCon
             {(t?.credentials || []).map((c: Row) => <option key={c.id} value={c.id}>{`${c.label}${c.username ? ` (${c.username})` : ''}`}</option>)}</select></label>
       </div>
       {t && !t.credentials.length ? <p className="muted small">This device has no saved logins yet. Add its SSH login on the <b>Logins</b> tab first.</p> : null}
-      <label className="check inline-check"><input type="checkbox" checked={sudo} onChange={e => setSudo(e.target.checked)} />Use sudo (unless the login is in the docker group)</label>
-      <div className="inline"><Btn label="🐳 Read containers" cls="primary" disabled={busy || !host || !cred} onClick={() => read()} />{busy ? <Spinner /> : null}</div>
+      <label className="check inline-check"><input type="checkbox" checked={sudo} onChange={e => setSudo(e.target.checked)} />{sudoHint}</label>
+      <div className="inline"><Btn label={button} cls="primary" disabled={busy || !host || !cred} onClick={() => read()} />{busy ? <Spinner /> : null}</div>
       <div className="form-error">{err}</div>
     </div>
   );
@@ -87,7 +95,7 @@ export function ContainersTab({ deviceId, host, after }: { deviceId: number; hos
   if (!data) return <div className="muted"><Spinner /> Loading…</div>;
   const got = (d: Data) => { setData(d); setSetup(false); after(); };
   if (!data.snap || setup) {
-    return <Card title="Docker containers"><Connect deviceId={deviceId} conf={data.conf} onRead={got} /></Card>;
+    return <Card title="Docker containers"><Connect<Data> deviceId={deviceId} conf={data.conf} onRead={got} /></Card>;
   }
   const snap = data.snap;
   const addr = data.conf.host || host;  // for links to the containers' web pages
@@ -152,7 +160,7 @@ export function ContainersTab({ deviceId, host, after }: { deviceId: number; hos
     { label: 'State', get: (c: Container) => <span>{stateBadge(c)}{c.restarts > 3 ? <span className="warn-text small">{` restarted ${c.restarts}×`}</span> : null}</span>, sort: (c: Container) => c.state },
     { label: 'Up for', get: (c: Container) => c.state === 'running' && since(c.started) ? forHowLong(since(c.started)).replace(/^for /, '') : '' },
     { label: 'Image', get: (c: Container) => <span><span className="mono small">{c.image}</span>{' '}
-      {ups[c.image] === 'update' ? pill('Update available', 'info') : ups[c.image] === 'current' ? <span className="muted small">up to date</span> : null}</span> },
+      {ups[c.image] === 'update' ? pill(versionText(snap.versions?.[c.image]) || 'Update available', 'info') : ups[c.image] === 'current' ? <span className="muted small">{snap.versions?.[c.image]?.now ? `${snap.versions[c.image].now}, up to date` : 'up to date'}</span> : null}</span> },
     { label: 'Ports', get: (c: Container) => <span>{c.ports.map(p => {
       const [from, to] = p.split('→');
       return to.endsWith('/tcp') ? <a key={p} className="mono small" href={`http://${addr}:${from}`} target="_blank" rel="noopener noreferrer">{from} </a> : <span key={p} className="mono small">{`${from} `}</span>;

@@ -235,6 +235,24 @@ const HELP: [string, string, () => Kid, { keyboard?: boolean }?][] = [
     <p>Press <B>▶ Run</B>. A message says whether it worked, with <B>Show output</B>. The last 50 runs are kept, encrypted like your logins.</p>
     <p>Actions use your saved logins, so they only run while HaRM is unlocked, and each run is in the <A href="#/audit">Audit log</A>. Tick <B>Ask before running</B> for anything that restarts or shuts down.</p>
   </>],
+  ['maintenance', 'Maintenance: health, updates and backups', () => <>
+    <p>A machine’s <B>Health</B> tab reads it over SSH with a saved login: disk space, each drive’s health (SMART), ZFS pools and RAID arrays, memory, waiting updates (security fixes marked), whether it needs a restart, and its backups. Open a device and pick <B>⋯ &gt; Health and updates…</B>.</p>
+    <L items={[
+      <><B>Labels: </B>a RAID card shows its drives as one big virtual drive (twelve 4 TB drives as one 42 TB disk). Press ✎ on it to say what it really is; HaRM shows your words first and the real values underneath. Tick <B>Don’t warn about it</B> for a volume that’s meant to be full.</>,
+      <><B>Drive health </B>goes into each drive’s <B>Health</B> field on its part, matched by serial number. It needs <B>Use sudo</B> and smartctl on the machine.</>,
+      <><B>Backups: </B><B>⋯ &gt; Backups to watch</B> takes folders that should get new files and ZFS datasets that should get new snapshots, with how often.</>,
+      <><A href="#/maintenance">Maintenance</A> gathers every machine: what needs attention, system and container updates (with versions), restarts, backups and Proxmox VMs. <B>Install</B>, <B>Restart</B>, <B>Update</B> and Proxmox power and snapshots are one click each, and each leaves a “Did” note on the device.</>,
+    ]} />
+  </>],
+  ['background', 'Background checks', () => <>
+    <p>Off unless you turn them on in <A href="#/settings">Settings &gt; Status and actions &gt; Maintenance</A>. They read every machine you choose every few hours, also while HaRM is locked, and send <A href="#/settings">alerts</A> for new problems. They never install, restart or change anything.</p>
+    <p>Your saved logins are locked with your master password, so a background check needs its own copy: turn it on per machine on its Health tab (<B>⋯ &gt; Check it in the background</B>). That copy is encrypted with <code>background.key</code> in HaRM’s data folder, which isn’t in backups. Anyone who gets that folder could use it, so use a limited account:</p>
+    <L items={[
+      <>Make a user just for HaRM, for example <code>harm-check</code>, with a long random password.</>,
+      <>Drive health and refreshing the update list need root. Let it run only those two with sudo: put <code>harm-check ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/apt-get update -qq</code> in <code>/etc/sudoers.d/harm-check</code> (edit it with <code>visudo -f</code>), and pick <B>sudo: Only for drive health and the update list</B> when you turn it on. Without sudo the rest still works.</>,
+      <>To read containers it must be in the <code>docker</code> group, which is as strong as root. Leave containers to your one-click checks if you’d rather not.</>,
+    ]} />
+  </>],
   ['trouble', 'Troubleshooting: can’t connect', () => <TroubleshootingContent />],
   ['mobile', 'Phones, tablets and scanning', () => <>
     <p>HaRM works on phones and can be installed as an app (its own icon, no browser bars, long-press shortcuts for Scan, Devices and Tasks). Chrome only allows installing sites it fully trusts, so your phone has to trust HaRM’s certificate once. <Btn label="📱 Show me how" onClick={phoneAppHelp} cls="sm primary" /></p>
@@ -262,6 +280,8 @@ const HELP: [string, string, () => Kid, { keyboard?: boolean }?][] = [
     <>Turn on 2FA in <A href="#/settings">Settings</A> so unlocking also needs a code from your phone.</>,
     'Keep your recovery code offline. With neither the password nor the recovery code, stored logins cannot be recovered. The rest of your inventory is not encrypted and is unaffected.',
     'Download backups from Settings. CSV exports never include passwords.',
+    'Proxmox and UniFi certificates are remembered the first time HaRM connects. If one changes, HaRM asks before sending its token again, so a look-alike on your network can’t catch it.',
+    <>Background checks and alerts keep their own logins and passwords encrypted with key files in the data folder (<code>background.key</code>, <code>alerts.key</code>), because they work while HaRM is locked. Give them limited accounts. See <A href="#/help?s=background">Background checks</A>.</>,
   ]} />],
   ['keys', 'Keyboard shortcuts', () => <><p>The same keys work in every ZomBeatz app. Single keys don’t fire while you’re typing in a box.</p><ShortcutsList /></>, { keyboard: true }],
   ['search', 'Search and adding', () => <L items={[

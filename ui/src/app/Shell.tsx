@@ -17,7 +17,7 @@ import { look } from '../lib/look';
 
 /* Sidebar: everyday pages first, the rest folded under “More”. */
 export const NAV_GROUPS: [string | null, [string, string, string][]][] = [
-  [null, [['dashboard', 'Home', '◧'], ['status', 'Status', '📶'], ['tasks', 'Tasks & Notes', '☑']]],
+  [null, [['dashboard', 'Home', '◧'], ['status', 'Status', '📶'], ['maintenance', 'Maintenance', '🛠'], ['tasks', 'Tasks & Notes', '☑']]],
   ['Inventory', [['devices', 'Devices', '▤'], ['virtual', 'Virtual & Clusters', '⧉'], ['racks', 'Racks & Storage', '▥'], ['components', 'Spare Parts', '◫'], ['builds', 'PC Builder', '⚒']]],
   ['Network', [['networks', 'Networks & IPs', '⌗'], ['discover', 'Discover', '⌖'], ['actions', 'Actions', '⚡'], ['vault', 'Logins (Vault)', '🔑']]],
   ['More', [['locations', 'Locations', '⌂'], ['connections', 'Cables', '⇄'], ['library', 'Parts Library', '▦'],

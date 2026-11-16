@@ -261,6 +261,8 @@ export const FORMS: Record<string, (rec: Row) => Field[]> = {
     { k: 'version', label: 'Version' },
     { k: 'status', label: 'Status', list: 'service_statuses' },
     { k: 'notes', label: 'Notes', type: 'textarea', wide: true },
+    { k: 'favorite', label: 'Favorite (first on Services, and on Home)', type: 'checkbox', wide: true },
+    { k: 'lists', label: 'Lists', ph: 'Media, Admin pages', help: 'Separate with commas.', adv: true },
   ],
   credentials: () => [
     { k: 'label', label: 'Label', required: true, ph: 'iDRAC root, pfSense admin' },

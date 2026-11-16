@@ -53,6 +53,13 @@
 - The **Status** page shows a server's containers on its tile, and **Watch its web page** makes a container's port a service with the usual checks and alerts.
 - New examples in **Actions**: update Plex installed as a package, update every Compose project in a folder, clean up old images.
 
+**Services as cards**
+- **Services** (in the sidebar): every web page and port on your devices as **cards** or a **list**, with whether each answers.
+- **Filter**, show only those answering (or not), only **★ Favorites**, or one **list**.
+- **⚙ Layout:** card size, group by device, place, list or state, sort, favorites first, and what each card shows. Kept on each device.
+- **Favorites** come first and show on **Home**. **Lists** ("Media", "Admin pages") sort services into groups; one can be in several.
+- **Edit card…:** an icon (or one guessed from the name), a color, and up to 8 buttons of your own: open a link or an app (`ssh://`, `smb://`, `rdp://`, `vnc://`), copy text, or run a saved action (which keeps its own "Ask before running").
+
 **Maintenance: health, updates and backups**
 - A machine's **Health** tab (**⋯ > Health and updates…**) reads it over SSH with a saved login: disk space, each drive's health (SMART), ZFS pools and RAID arrays, memory, waiting updates with security fixes marked, whether it needs a restart, and its containers. Drive health goes into each drive's **Health** field, matched by serial number.
 - **Labels for virtual drives:** say what a disk, volume or pool really is ("12 × 4 TB in RAID 6"), shown over what the system reports (a 42 TB virtual drive), or stop warnings about it.

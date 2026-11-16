@@ -861,6 +861,27 @@ Let me know if you need anything else!"""
             time.sleep(0.1)
         raise AssertionError(f"no alert with {text!r}: {[h['title'] for h in hooks]}")
 
+    @test("service cards: favorites, lists, icon, color, and buttons that can only link, copy or run an action")
+    def _():
+        did = S["up"]["id"]
+        sv = c.call("POST", "/services", {"device_id": did, "name": "Card test", "url": "http://127.0.0.1:1/"})
+        act = c.call("POST", "/actions", {"name": "Card action", "device_id": did, "command": "true", "confirm": True})
+        good = [{"kind": "link", "label": "SSH", "value": "ssh://root@10.0.0.9"}, {"kind": "copy", "label": "IP", "value": "10.0.0.9"},
+                {"kind": "action", "label": "Run", "action_id": act["id"]}]
+        r = c.call("PUT", f"/services/{sv['id']}", {"favorite": True, "lists": "Media, media , Admin", "icon": "film", "color": "orange",
+                                                   "buttons": json.dumps(good)})
+        assert r["favorite"] and r["lists"] == "Media, media, Admin" and json.loads(r["buttons"]) == good, r
+        for bad in ([{"kind": "link", "label": "x", "value": "javascript:alert(1)"}], [{"kind": "link", "label": "x", "value": "file:///etc/passwd"}],
+                    [{"kind": "action", "label": "x", "action_id": 99999}], [{"kind": "shell", "label": "x", "value": "rm -rf /"}],
+                    [{"kind": "copy", "label": "", "value": "x"}], [good[0]] * 9):
+            c.call("PUT", f"/services/{sv['id']}", {"buttons": json.dumps(bad)}, expect=400)
+        c.call("PUT", f"/services/{sv['id']}", {"icon": "<img>"}, expect=400)
+        c.call("PUT", f"/services/{sv['id']}", {"color": "#ff0000"}, expect=400)
+        b = next(x for x in c.call("GET", "/services/board")["services"] if x["id"] == sv["id"])
+        assert b["buttons"] == good and b["host"], b
+        c.call("DELETE", f"/services/{sv['id']}")
+        c.call("DELETE", f"/actions/{act['id']}")
+
     @test("services: a web page, a closed port, a broken page, and a stopped one")
     def _():
         S["hook"] = hook_server()

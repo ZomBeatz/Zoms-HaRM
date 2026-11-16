@@ -27,7 +27,7 @@ def data_dir() -> Path:
 
 DB_PATH = Path(os.environ.get("HARM_DB") or data_dir() / "harm.db")
 
-SCHEMA_VERSION = 10  # highest key in MIGRATIONS
+SCHEMA_VERSION = 11  # highest key in MIGRATIONS
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -490,6 +490,14 @@ MIGRATIONS: dict[int, list[str]] = {
             first_seen TEXT NOT NULL,
             last_seen  TEXT NOT NULL
         )""",
+    ],
+    11: [
+        # Services as cards: favorites, lists, an icon and color, and buttons of your own.
+        "ALTER TABLE services ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE services ADD COLUMN lists TEXT",
+        "ALTER TABLE services ADD COLUMN icon TEXT",
+        "ALTER TABLE services ADD COLUMN color TEXT",
+        "ALTER TABLE services ADD COLUMN buttons TEXT",
     ],
 }
 

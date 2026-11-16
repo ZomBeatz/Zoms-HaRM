@@ -3297,6 +3297,28 @@ def status_board(_s=Depends(require_session), conn=Depends(get_db)):
             "checking": monitor._full_lock.locked(), **monitor.settings(conn)}
 
 
+@app.get("/api/services/board")
+def services_board(_s=Depends(require_session), conn=Depends(get_db)):
+    """Every service, with whether it answers, for the Services page (cards or a list)."""
+    rows = []
+    status = {r["service_id"]: dict(r) for r in conn.execute("SELECT * FROM service_status")}
+    devs = {d["id"]: d for d in fetch_list(conn, "devices", limit=5000)}
+    for s in fetch_list(conn, "services", limit=5000):
+        d = devs.get(s["device_id"]) or {}
+        st = status.get(s["id"]) or {}
+        try:
+            buttons = json.loads(s["buttons"] or "[]")
+        except ValueError:
+            buttons = []
+        rows.append({**s, "buttons": buttons, "state": st.get("state"), "latency_ms": st.get("latency_ms"), "detail": st.get("detail"),
+                     "checked_at": st.get("checked_at"), "changed_at": st.get("changed_at"), "cert_expires": st.get("cert_expires"),
+                     "location_id": d.get("location_id"), "location_name": d.get("location_name"),
+                     "device_status": d.get("status"), "host": ((d.get("ips") or "").split(",")[0].split("/")[0].strip() or d.get("hostname") or None)})
+    actions = [{"id": a["id"], "name": a["name"], "confirm": a["confirm"], "device_id": a["device_id"]}
+               for a in fetch_list(conn, "actions", limit=5000)]
+    return {"services": rows, "actions": actions, "colors": SERVICE_COLORS}
+
+
 @app.post("/api/status/check")
 async def status_check(request: Request, _s=Depends(require_session)):
     """Check now: one device, or all of them (skipped if a check finished less than max_age seconds ago)."""
@@ -3359,6 +3381,53 @@ RUN_AAD = b"action_runs.output"
 
 def _action_hosts(text: str | None) -> list[str]:
     return [h.strip() for h in re.split(r"[\s,;]+", text or "") if h.strip()]
+
+
+SERVICE_COLORS = ("blue", "orange", "green", "purple", "red", "teal", "yellow", "gray")
+# What a card's own button may open: web pages, and the apps for SSH, file shares and remote desktops.
+BUTTON_SCHEMES = ("http", "https", "ssh", "sftp", "smb", "vnc", "rdp")
+
+
+def _service_rules(conn, data: dict) -> None:
+    """Card settings: a known icon and color, lists as words, and buttons that can only open a link,
+    copy text, or run one of your saved actions (which keep their own confirm and unlock rules)."""
+    if data.get("icon") and not re.match(r"^[a-z0-9-]{1,32}$", data["icon"]):
+        raise HTTPException(400, "icon: pick one from the list")
+    if data.get("color") and data["color"] not in SERVICE_COLORS:
+        raise HTTPException(400, f"color: one of {', '.join(SERVICE_COLORS)}")
+    if "lists" in data and data["lists"] is not None:
+        words = list(dict.fromkeys(w.strip()[:30] for w in re.split(r"[,\n]", data["lists"]) if w.strip()))
+        data["lists"] = ", ".join(words[:12]) or None
+    if "buttons" in data and data["buttons"]:
+        try:
+            raw = json.loads(data["buttons"])
+        except ValueError:
+            raise HTTPException(400, "buttons: not readable")
+        if not isinstance(raw, list) or len(raw) > 8:
+            raise HTTPException(400, "buttons: up to 8")
+        out = []
+        for b in raw:
+            if not isinstance(b, dict):
+                raise HTTPException(400, "buttons: not readable")
+            label = " ".join(str(b.get("label") or "").split())[:30]
+            kind = b.get("kind")
+            if not label:
+                raise HTTPException(400, "buttons: give each button a name")
+            if kind in ("link", "copy"):
+                val = str(b.get("value") or "").strip()[:500]
+                if not val:
+                    raise HTTPException(400, f"buttons: “{label}” needs {'an address' if kind == 'link' else 'something to copy'}")
+                if kind == "link" and urlparse(val).scheme.lower() not in BUTTON_SCHEMES:
+                    raise HTTPException(400, f"buttons: “{label}” must start with {', '.join(s + '://' for s in BUTTON_SCHEMES)}")
+                out.append({"kind": kind, "label": label, "value": val})
+            elif kind == "action":
+                aid = b.get("action_id")
+                if not isinstance(aid, int) or not conn.execute("SELECT 1 FROM actions WHERE id = ?", (aid,)).fetchone():
+                    raise HTTPException(400, f"buttons: “{label}” runs an action that doesn't exist")
+                out.append({"kind": "action", "label": label, "action_id": aid})
+            else:
+                raise HTTPException(400, "buttons: a button opens a link, copies text or runs an action")
+        data["buttons"] = json.dumps(out) if out else None
 
 
 def _action_rules(conn, data: dict, existing: dict | None) -> None:
@@ -3707,6 +3776,8 @@ def _apply_rules(conn, entity: str, data: dict, existing: dict | None) -> None:
             data["status"] = "Planning"
     elif entity == "actions":
         _action_rules(conn, data, existing)
+    elif entity == "services":
+        _service_rules(conn, data)
     elif entity == "connections":
         merged = {**(existing or {}), **data}
         if not merged.get("b_device_id") and not merged.get("b_endpoint"):

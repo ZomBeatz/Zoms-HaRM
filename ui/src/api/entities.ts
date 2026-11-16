@@ -207,6 +207,11 @@ export interface Service {
   version: string | null;
   status: string | null;
   notes: string | null;
+  favorite: boolean | number | null;
+  lists: string | null;
+  icon: string | null;
+  color: string | null;
+  buttons: string | null;
   device_name?: string | null;
   created_at?: string;
   updated_at?: string;

@@ -1,11 +1,14 @@
 /* Home: what needs you, and what you've got. */
-import { useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { GET } from '../api/client';
 import { clock, forHowLong, prefGet, prefSet, type Row } from '../lib/util';
 import { A, Badge, Bar, Card, PageHead, WarrantyCell, type Kid } from '../ui/bits';
 import { CertText } from '../lib/status';
 import { NoteItem } from '../lib/notes';
 import { Pending, useLoad } from '../app/router';
+
+// Favorite services, loaded with the Services page's code (only when there are any).
+const FavoriteServices = lazy(() => import('./Services').then(m => ({ default: m.FavoriteServices })));
 
 export function AuditList({ rows }: { rows: Row[] }) {
   return rows.length ? <ul className="plain audit">{rows.map((a, i) => (
@@ -77,6 +80,7 @@ export default function Dashboard() {
         {sum.totals.storage ? <Stat n={sum.totals.storage} label={`Raw storage · ${sum.totals.drives} drives`} href="#/devices" /> : null}
         {sum.totals.cores ? <Stat n={sum.totals.cores} label={`CPU cores${sum.totals.ram ? ' · ' + sum.totals.ram + ' RAM' : ''}`} href="#/devices" /> : null}
       </div>
+      <Suspense fallback={null}><FavoriteServices /></Suspense>
       <div className="grid two">
         <Card title="Needs attention">{att.length ? <ul className="attention">{att.map(([ico, body], i) => <li key={i}><span className="a-ico">{ico}</span><span>{body}</span></li>)}</ul>
           : <div className="all-good">✓ Nothing needs attention.</div>}</Card>

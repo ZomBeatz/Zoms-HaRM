@@ -1017,3 +1017,15 @@ body.wall .wall-exit:hover { opacity: 1; }
 .svc-star.on svg { fill: currentColor; }
 .svc-body .chips { gap: 4px; }
 .svc-body .chip { padding: 1px 8px; font-size: 12px; line-height: 1.5; min-height: 0; height: auto; background: var(--panel-2); border: 1px solid var(--line); color: var(--text-2); }
+
+/* The terminal page fills the window below its heading. */
+.term-page { display: flex; flex-direction: column; height: calc(100dvh / var(--zoom, 1) - 120px); min-height: 320px; }
+.term-box { flex: 1; min-height: 0; padding: 8px; background: var(--zb-bg); border: 1px solid var(--line); border-radius: var(--radius); }
+.term-box .xterm { height: 100%; }
+.notice.warn { padding: 10px 12px; margin-bottom: 10px; border: 1px solid var(--warn); border-radius: var(--radius-sm); }
+.connect-list { display: grid; gap: 10px; margin-top: 8px; }
+.connect-list > div { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+/* xterm adds these as a <style> element, which the security policy refuses; the same rules from here. */
+.xterm .xterm-scrollable-element > .scrollbar > .slider { background: color-mix(in srgb, var(--text) 20%, transparent); }
+.xterm .xterm-scrollable-element > .scrollbar > .slider:hover { background: color-mix(in srgb, var(--text) 40%, transparent); }
+.xterm .xterm-scrollable-element > .scrollbar > .slider.active { background: color-mix(in srgb, var(--text) 50%, transparent); }

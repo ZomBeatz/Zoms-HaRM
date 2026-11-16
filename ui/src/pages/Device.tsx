@@ -18,6 +18,7 @@ import { deletePart, installDialog, uninstallDialog } from '../dialogs/parts';
 import { importSpecs, undoImport } from '../dialogs/import';
 import { ContainersTab } from './Containers';
 import { HealthTab } from './Machine';
+import { connectDialog } from '../dialogs/later';
 import { pickCPU } from '../dialogs/library';
 import { printLabels } from '../dialogs/print';
 import { BackLink, Pending, cleanHash, goBackOr, useLoad } from '../app/router';
@@ -424,6 +425,7 @@ export default function Device({ id, q: qs }: { id: number; q: URLSearchParams }
     <PageHead title={<span>{dev.name}</span>} sub={nz(dev.device_type, dev.manufacturer, dev.model) || null}>
       <StatusSelect dev={dev} after={back} />
       <button type="button" className={'toggle ' + (dev.connected ? 'on' : 'off')} onClick={toggleConnected}><Dot on={dev.connected} />{dev.connected ? 'Hooked up' : 'Not hooked up'}</button>
+      <Btn label="🔌 Connect" onClick={() => connectDialog({ ...dev, services: d.services })} />
       <Btn label="Edit" onClick={actions.edit} cls="primary" />
       <MenuButton label="⋯" items={[
         ['⇩ Import specs…', actions.importSpecs],

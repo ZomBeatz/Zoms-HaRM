@@ -528,6 +528,100 @@ def _():
     assert not any(b"secret" in g for g in got), "the token was sent to the impostor"
 
 
+@test
+def _():
+    """terminal: typing reaches the program, output comes back in order, resizing works, closing ends it"""
+    from harm import terminal
+    if os.name == "nt":
+        return
+    t = terminal.Session("me", "test", ["sh"], {"PATH": os.environ["PATH"], "PS1": "$ "}, 100, 30)
+    t.write("stty size; echo HARM_$((40+2))\n")
+    out, seen, ended = "", 0, None
+    for _ in range(50):
+        chunks, ended = t.since(seen, 0.2)
+        for seq, text in chunks:
+            seen, out = seq, out + text
+        if "HARM_42" in out.split("echo", 1)[-1]:
+            break
+    assert "30 100" in out and "HARM_42" in out, out
+    t.resize(120, 40)
+    t.write("stty size\n")
+    for _ in range(50):
+        chunks, ended = t.since(seen, 0.2)
+        for seq, text in chunks:
+            seen, out = seq, out + text
+        if "40 120" in out:
+            break
+    assert "40 120" in out, out
+    try:
+        terminal.get(t.id, "someone-else")
+        raise AssertionError("another sign-in reached the terminal")
+    except terminal.TerminalError:
+        pass
+    t.end("bye")
+    assert t.since(seen, 0.1)[1] == "bye" and t.proc.wait(5) is not None
+    try:
+        t.write("x")
+        raise AssertionError("wrote to a closed terminal")
+    except terminal.TerminalError:
+        pass
+
+
+@test
+def _():
+    """logins: Bitwarden exports in and out, and the password-change script takes only the marked line"""
+    import json as _json
+    import subprocess
+    from harm import vaultio
+    export = {"encrypted": False, "folders": [{"id": "f1", "name": "Servers"}], "items": [
+        {"type": 1, "name": "pve1 root", "folderId": "f1", "notes": "rack A",
+         "login": {"username": "root", "password": "p@ss:word", "totp": "JBSWY3DPEHPK3PXP", "uris": [{"uri": "https://10.20.0.10:8006"}, {"uri": "ssh://10.20.0.10"}]},
+         "fields": [{"name": "pin", "value": "1234", "type": 0}, {"name": "hidden", "value": "x", "type": 1}]},
+        {"type": 2, "name": "a secure note"},
+        {"type": 1, "name": "NAS admin", "login": {"username": "admin", "password": "y", "uris": []}}]}
+    items = vaultio.parse_bitwarden(export)
+    assert [i["label"] for i in items] == ["pve1 root", "NAS admin"] and items[0]["folder"] == "Servers"
+    assert "pin: 1234" in items[0]["notes"] and "hidden" not in items[0]["notes"] and "Also: ssh://10.20.0.10" in items[0]["notes"]
+    vaultio.match_devices(items, [{"id": 4, "name": "pve1", "hostname": "pve1.home.lan", "ips": "10.20.0.10, 10.30.0.10"},
+                                  {"id": 7, "name": "nas", "hostname": None, "ips": ""}])
+    assert items[0]["device"] == {"id": 4, "name": "pve1"} and items[1]["device"] == {"id": 7, "name": "nas"}, items
+    for bad in ({"encrypted": True, "items": []}, {"hello": 1}, []):
+        try:
+            vaultio.parse_bitwarden(bad)
+            raise AssertionError(f"read {bad}")
+        except vaultio.VaultIOError:
+            pass
+    back = vaultio.parse_bitwarden(_json.loads(_json.dumps(vaultio.to_bitwarden([{"label": "x", "username": "u", "password": "p", "url": "https://h",
+                                                                                     "totp_secret": "T", "secret_notes": "n", "device_name": "d"}]))))
+    assert back[0]["password"] == "p" and back[0]["totp"] == "T" and "HaRM device: d" in back[0]["notes"], back
+
+    fake = Path(TMP) / "pwbin"
+    fake.mkdir(exist_ok=True)
+    got = Path(TMP) / "chpasswd.txt"
+    (fake / "chpasswd").write_text(f"#!/bin/sh\ncat > '{got}'\n")
+    (fake / "id").write_text('#!/bin/sh\n[ "$1" = "-u" ] && echo 0 && exit 0\n[ "$1" = "admin" ]\n')
+    for f in ("chpasswd", "id"):
+        (fake / f).chmod(0o755)
+    script = vaultio.change_script("admin")
+    env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}"}
+    new = "n3w pass%s\\x$(id)"
+    for stdin in ("old-sudo-password\n" + vaultio.change_input(new), vaultio.change_input(new)):  # sudo read its line, or didn't
+        got.unlink(missing_ok=True)
+        out = subprocess.run(["sh", "-c", script], input=stdin, capture_output=True, text=True, env=env).stdout
+        assert vaultio.change_result(out) is None and got.read_text() == f"admin:{new}\n", (out, got.read_text())
+    assert "old-sudo-password" not in got.read_text()
+    out = subprocess.run(["sh", "-c", vaultio.change_script("nobody")], input=vaultio.change_input(new), capture_output=True, text=True, env=env).stdout
+    assert vaultio.change_result(out) == "There's no such user on that machine", out
+    for bad in ("root; reboot", "-x", ""):
+        try:
+            vaultio.change_script(bad)
+            raise AssertionError(f"accepted {bad!r}")
+        except vaultio.VaultIOError:
+            pass
+    assert vaultio.strong_enough("short") and vaultio.strong_enough("long enough but: colon") and not vaultio.strong_enough("a-good-long-password")
+    assert vaultio.previous_note("old", "keep\nPrevious password (until 2020-01-01): older").splitlines()[0] == "keep"
+
+
 failed = [r for r in results if r]
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")

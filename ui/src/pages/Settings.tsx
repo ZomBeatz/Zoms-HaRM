@@ -261,6 +261,10 @@ export default function Settings() {
         </div>
         <Btn label="🔒 Lock now" onClick={lockNow} />
       </div></Card>
+      <Card title="Terminal in HaRM"><div>
+        <label className="check"><input type="checkbox" checked={!!app.terminal} onChange={e => saveApp({ terminal: e.target.checked })} /><span>Allow a terminal (SSH) in HaRM’s page</span></label>
+        <p className="muted small">A device’s <b>🔌 Connect</b> opens SSH in HaRM with a saved login. It works only while HaRM is unlocked, closes when it locks or after 30 minutes without typing, and opening it is in the audit log. Untick it if HaRM is shared with people who shouldn’t get a shell on your machines.</p>
+      </div></Card>
       <Card title="Master password"><div>
         <p>Unlocks HaRM and the saved logins inside it. Changing it keeps every saved login.</p>
         <Btn label="Change password…" onClick={() => formDialog({

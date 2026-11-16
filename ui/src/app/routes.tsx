@@ -18,6 +18,7 @@ const Uptime = page(() => import('../pages/Uptime'), m => m.default);
 const Actions = page(() => import('../pages/Actions'), m => m.default);
 const Maintenance = page(() => import('../pages/Maintenance'), m => m.default);
 const Services = page(() => import('../pages/Services'), m => m.default);
+const Terminal = page(() => import('../pages/Terminal'), m => m.default);
 const Devices = page(() => import('../pages/Devices'), m => m.default);
 const Device = page(() => import('../pages/Device'), m => m.default);
 const Racks = page(() => import('../pages/Racks'), m => m.Racks);
@@ -59,6 +60,7 @@ export const ROUTES: [RegExp, Render][] = [
   [/^\/actions$/, () => <Actions />],
   [/^\/maintenance$/, () => <Maintenance />],
   [/^\/services$/, () => <Services />],
+  [/^\/terminal$/, (_m, q) => <Terminal q={q} />],
   [/^\/uptime$/, (_m, q) => <Uptime q={q} />],
   [/^\/devices$/, () => <Devices />],
   [/^\/devices\/(\d+)$/, (m, q) => <Device id={+m[1]} q={q} />],

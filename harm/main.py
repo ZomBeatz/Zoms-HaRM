@@ -22,11 +22,11 @@ from urllib.parse import urlparse
 
 import pyotp
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from . import __version__, ai, aiproviders, alerts, certs, collect, crypto, db, discover, docker, machine, monitor, netwatch, pcbuild, power, proxmox, remote, units, upkeep
+from . import __version__, ai, aiproviders, alerts, certs, collect, crypto, db, discover, docker, machine, monitor, netwatch, pcbuild, power, proxmox, remote, terminal, units, upkeep, vaultio
 from .models import ENTITIES, ENUMS, iface_order
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -763,6 +763,7 @@ def auth_logout(request: Request, response: Response):
     if token:
         with _sessions_lock:
             _sessions.pop(token, None)
+        terminal.close_owner(_owner(request))
     response.delete_cookie(COOKIE, path="/")
     return {"ok": True}
 
@@ -1823,6 +1824,125 @@ async def proxmox_op(request: Request, s=Depends(require_session), conn=Depends(
     return {**r, "proxmox": snap}
 
 
+# ---------------------------------------------------------------------------
+# A terminal in the page (harm/terminal.py): SSH with a saved login, while unlocked.
+# ---------------------------------------------------------------------------
+
+def _owner(request: Request) -> str:
+    return hashlib.sha256((request.cookies.get(COOKIE) or "").encode()).hexdigest()
+
+
+def _owner_alive(owner: str) -> bool:
+    now = time.time()
+    with _sessions_lock:
+        return any(hashlib.sha256(t.encode()).hexdigest() == owner and not _expired(s, now) for t, s in _sessions.items())
+
+
+@app.post("/api/terminal")
+async def terminal_open(request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    if not monitor.settings(conn)["terminal"]:
+        raise HTTPException(403, "The terminal is turned off in Settings > Locking and security")
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    did = _coerce(conn, "device_id", "fk:devices", body.get("device_id"))
+    dev = fetch_one(conn, "devices", did) if did else None
+    host, port = str(body.get("host") or "").strip(), int(body.get("port") or 22)
+    user, pw = str(body.get("username") or "").strip(), None
+    if body.get("credential_id"):
+        row = conn.execute("SELECT * FROM credentials WHERE id = ?", (body["credential_id"],)).fetchone()
+        if not row:
+            raise HTTPException(400, "That login doesn't exist any more")
+        user = user or row["username"] or ""
+        pw = _decrypt(s["dek"], row["password_enc"], "password")
+        if pw and pw.startswith("<<"):
+            pw = None
+    if not host or not user:
+        raise HTTPException(400, "Enter the address and pick a login (or a username)")
+    terminal.reap(_owner_alive)
+    try:
+        if body.get("trust_new_key"):
+            await asyncio.to_thread(remote.forget_host, host, port)
+        t = await asyncio.to_thread(terminal.start, _owner(request), f"{user}@{host}", host, port, user, pw,
+                                    int(body.get("cols") or 100), int(body.get("rows") or 30), bool(body.get("legacy")))
+    except terminal.TerminalError as e:
+        raise HTTPException(400, str(e))
+    audit(conn, request, "terminal-open", "devices" if dev else None, did, f"{dev['name'] + ': ' if dev else ''}{user}@{host}:{port}")
+    conn.commit()
+    return {"id": t.id, "label": t.label}
+
+
+def _term(request: Request, tid: str) -> "terminal.Session":
+    try:
+        return terminal.get(tid, _owner(request))
+    except terminal.TerminalError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/api/terminal/{tid}/stream")
+async def terminal_stream(tid: str, request: Request, after: int = 0, _s=Depends(require_session)):
+    """What the machine prints, as server-sent events (the page reconnects with ?after= if it drops)."""
+    t = _term(request, tid)
+    owner = _owner(request)
+    try:  # a browser that reconnects says what it already has
+        after = max(after, int(request.headers.get("last-event-id") or 0))
+    except ValueError:
+        pass
+
+    async def events():
+        last = after
+        yield "retry: 2000\n\n"
+        while True:
+            if await request.is_disconnected():
+                return
+            if not _owner_alive(owner):
+                t.end("HaRM was locked, so the terminal closed.")
+            chunks, ended = await asyncio.to_thread(t.since, last, 10)
+            for seq, text in chunks:
+                last = seq
+                yield f"id: {seq}\ndata: {json.dumps(text)}\n\n"
+            if ended:
+                yield f"event: end\ndata: {json.dumps(ended)}\n\n"
+                return
+            if not chunks:
+                yield ": still here\n\n"
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"})
+
+
+@app.post("/api/terminal/{tid}/input")
+async def terminal_input(tid: str, request: Request, _s=Depends(require_session)):
+    body = await body_json(request)
+    t = _term(request, tid)
+    try:
+        t.write(str(body.get("d") or "")[:65536])
+    except (terminal.TerminalError, OSError) as e:
+        raise HTTPException(410, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/terminal/{tid}/resize")
+async def terminal_resize(tid: str, request: Request, _s=Depends(require_session)):
+    body = await body_json(request)
+    try:
+        _term(request, tid).resize(int(body.get("cols") or 80), int(body.get("rows") or 24))
+    except (ValueError, OSError):
+        pass
+    return {"ok": True}
+
+
+@app.post("/api/terminal/{tid}/close")
+async def terminal_close(tid: str, request: Request, _s=Depends(require_session), conn=Depends(get_db)):
+    try:
+        t = terminal.get(tid, _owner(request))
+    except terminal.TerminalError:
+        return {"ok": True}
+    t.end("You closed the terminal.")
+    audit(conn, request, "terminal-close", None, None, t.label)
+    conn.commit()
+    return {"ok": True}
+
+
 @app.post("/api/devices/{did}/collect")
 async def collect_remote(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
     """Run the spec collector over SSH (or on this server) and return its output for the preview."""
@@ -2105,6 +2225,138 @@ def credential_reveal(cid: int, request: Request, s=Depends(require_session),
     conn.commit()
     return out
 
+
+# ---------------------------------------------------------------------------
+# Logins in and out (harm/vaultio.py): Bitwarden or Vaultwarden JSON, and changing a password on a machine.
+# ---------------------------------------------------------------------------
+
+def _bitwarden_items(conn, body: dict) -> list[dict]:
+    raw = body.get("data")
+    if isinstance(raw, str):
+        if len(raw) > 20_000_000:
+            raise HTTPException(400, "That file is too big")
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raise HTTPException(400, "That file isn't JSON. In Bitwarden: Tools > Export vault, file format .json")
+    try:
+        items = vaultio.parse_bitwarden(raw)
+    except vaultio.VaultIOError as e:
+        raise HTTPException(400, str(e))
+    vaultio.match_devices(items, fetch_list(conn, "devices", limit=5000))
+    have = {(r["label"].lower(), (r["username"] or "").lower()) for r in conn.execute("SELECT label, username FROM credentials")}
+    for i, it in enumerate(items):
+        it["i"] = i
+        it["duplicate"] = (it["label"].lower(), it["username"].lower()) in have
+    return items
+
+
+@app.post("/api/vault/bitwarden/preview")
+async def bitwarden_preview(request: Request, _s=Depends(require_session), conn=Depends(get_db)):
+    """What a Bitwarden export holds, with the device each login seems to belong to. Secrets stay out of the answer."""
+    items = _bitwarden_items(conn, await body_json(request))
+    return {"items": [{k: it[k] for k in ("i", "label", "username", "url", "folder", "device", "duplicate")}
+                      | {"has_password": bool(it["password"]), "has_totp": bool(it["totp"])} for it in items]}
+
+
+@app.post("/api/vault/bitwarden/import")
+async def bitwarden_import(request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    body = await body_json(request)
+    items = _bitwarden_items(conn, body)
+    picks = {int(p["i"]): p.get("device_id") for p in body.get("picks") or [] if isinstance(p, dict) and str(p.get("i", "")).isdigit()}
+    n = 0
+    for it in items:
+        if it["i"] not in picks:
+            continue
+        did = _coerce(conn, "device_id", "fk:devices", picks[it["i"]]) if picks[it["i"]] else None
+        sec = {"password": it["password"], "secret_notes": it["notes"]}
+        try:
+            sec["totp_secret"] = it["totp"]
+            enc = _encrypt_secrets(sec, s["dek"])
+        except HTTPException:  # a 2FA value HaRM can't use: keep it in the notes instead
+            sec = {"password": it["password"], "secret_notes": "\n".join(x for x in (it["notes"], f"2FA: {it['totp']}") if x)}
+            enc = _encrypt_secrets(sec, s["dek"])
+        cols = {"label": it["label"], "username": it["username"] or None,
+                "url": it["url"] or None, "device_id": did, **{k: v for k, v in enc.items() if v is not None}}
+        cols = {k: v for k, v in cols.items() if v is not None}
+        conn.execute(f"INSERT INTO credentials ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", list(cols.values()))
+        n += 1
+    audit(conn, request, "import", "credentials", None, f"Bitwarden: {n} logins")
+    conn.commit()
+    return {"imported": n}
+
+
+@app.post("/api/vault/bitwarden/export")
+async def bitwarden_export(request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Every login as a Bitwarden JSON file, after the master password is entered again."""
+    body = await body_json(request)
+    _check_rate(client_ip(request))
+    rec = db.get_meta(conn, "pw")
+    if not rec or crypto.unwrap_dek(str(body.get("password") or ""), json.loads(rec), "pw") is None:
+        _record_fail(client_ip(request))
+        audit(conn, request, "export_failed", "credentials")
+        conn.commit()
+        raise HTTPException(403, "That's not the master password")
+    creds = []
+    for r in conn.execute("SELECT c.*, d.name AS device_name FROM credentials c LEFT JOIN devices d ON d.id = c.device_id ORDER BY c.label"):
+        creds.append({**dict(r), **_secrets_of(s["dek"], r)})
+    audit(conn, request, "export", "credentials", None, f"Bitwarden JSON: {len(creds)} logins")
+    conn.commit()
+    return vaultio.to_bitwarden(creds)
+
+
+@app.post("/api/credentials/{cid}/change-on-machine")
+async def credential_change(cid: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Change this login's password on a Linux machine over SSH, then keep the new one here."""
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    row = conn.execute("SELECT * FROM credentials WHERE id = ?", (cid,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Not found")
+    body = await body_json(request)
+    new = str(body.get("new_password") or "")
+    why = vaultio.strong_enough(new)
+    if why:
+        raise HTTPException(400, why)
+    host, port = str(body.get("host") or "").strip(), int(body.get("port") or 22)
+    if not host:
+        raise HTTPException(400, "Enter the machine's address")
+    try:
+        script = vaultio.change_script(row["username"] or "")
+    except vaultio.VaultIOError as e:
+        raise HTTPException(400, str(e))
+    via = conn.execute("SELECT * FROM credentials WHERE id = ?", (body.get("via_credential_id") or cid,)).fetchone()
+    if not via or not via["username"]:
+        raise HTTPException(400, "Pick the login to connect with")
+    old = _decrypt(s["dek"], row["password_enc"], "password")
+    via_pw = _decrypt(s["dek"], via["password_enc"], "password")
+    try:
+        r = await asyncio.to_thread(remote.run_action, host, port, via["username"], via_pw, "script", script,
+                                    bool(body.get("sudo")), False, None, 60, vaultio.change_input(new))
+    except remote.RemoteError as e:
+        raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
+    problem = vaultio.change_result(r["output"])
+    if problem:
+        audit(conn, request, "password-change-failed", "credentials", cid, f"{row['label']} on {host}")
+        conn.commit()
+        raise HTTPException(400, problem)
+    # The machine has the new password now: keep it before anything else can go wrong.
+    notes = vaultio.previous_note(old, _decrypt(s["dek"], row["secret_notes_enc"], "secret_notes"))
+    enc = _encrypt_secrets({"password": new, "secret_notes": notes}, s["dek"])
+    conn.execute("UPDATE credentials SET password_enc = ?, secret_notes_enc = ?, last_rotated = date('now'), "
+                 "updated_at = datetime('now') WHERE id = ?", (enc["password_enc"], enc["secret_notes_enc"], cid))
+    audit(conn, request, "password-changed", "credentials", cid, f"{row['label']} ({row['username']}) on {host}")
+    did_note(conn, row["device_id"], f"Changed the password of {row['username']} on {host}.")
+    conn.commit()
+    works = None
+    if body.get("check", True):  # can the login sign in with it?
+        try:
+            t = await asyncio.to_thread(remote.run_action, host, port, row["username"], new, "script", "true\n", False, False,
+                                        "-o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive", 30)
+            works = t["ok"]
+        except remote.RemoteError:
+            works = False
+    return {"ok": True, "works": works}
 
 # ---------------------------------------------------------------------------
 # PC builder & parts library
@@ -2580,7 +2832,7 @@ def capabilities(request: Request, _s=Depends(require_session), conn=Depends(get
             "backups": [{"name": b.name, "size": b.stat().st_size} for b in backups], "backup_dir": str(BACKUP_DIR),
             "platform": "windows" if os.name == "nt" else "unix",
             **{k: v for k, v in monitor.settings(conn).items() if k in ("currency", "start_page", *monitor.NEW_ITEM_DEFAULTS)},
-            "ai": monitor.settings(conn)["ai_enabled"]}
+            "ai": monitor.settings(conn)["ai_enabled"], "terminal": monitor.settings(conn)["terminal"]}
 
 
 def _run_scan(path: str) -> dict:

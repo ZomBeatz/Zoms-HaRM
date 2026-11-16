@@ -106,7 +106,7 @@ When it's done, HaRM sits on your phone's home screen like an app. Long-press th
 - A server's iLO, iDRAC or IPMI port is checked too and shown under it.
 - Its **services** (Network tab) are checked once it answers: a web address must reply (anything below a 500 error), and a port must accept the connection. Each says **Answering** or **Not answering**.
 - In the rack drawing, a device that isn't answering is outlined in red and says **Offline**.
-- **📊 Uptime** shows how much of the last day, week or month each device and service answered, worst first. Docker containers count as the services (ports) they publish: add those to the Docker host's **Network** tab.
+- **📊 Uptime** shows how much of the last day, week or month each device and service answered, worst first. Docker containers count as the services (ports) they publish: **⋯ > Watch its web page** on the host's **Containers** tab adds one.
 - **New devices:** **⋯ > Watch for new devices** scans the networks you tick (leave the guest Wi-Fi out) and lists anything HaRM doesn't know at the top of the Status page, with **+ Add…** and **Ignore**. The first scan only learns what's there.
 - **Certificates:** for https services, HaRM notes when the certificate runs out and warns on **Home** 30 days before.
 - **Alerts** (**Settings > Status and actions > Alerts**): a message by ntfy (a free phone app), email or a webhook when a device or service stops answering, and when it's back. Choose how long to wait first, so a restart doesn't wake you. Press **Send a test** after setting it up. **Quiet hours** hold them overnight and send them together in the morning, and a certificate alert comes 14 days before one runs out. Their passwords are kept encrypted in `alerts.key` in the data folder (not in backups), because alerts are sent while HaRM is locked too.
@@ -150,6 +150,8 @@ The **⋯** button holds the less common actions: Import specs, check if it's on
 3. Add. Each item gets its original price, current value, the AI's sources, and its to-dos as tasks.
 
 Don't want AI in HaRM at all? Untick **Settings > AI Assist > Use AI features**: every AI button disappears, and HaRM refuses AI requests until you tick it again.
+
+**Docker containers:** a device's **Containers** tab reads its containers over SSH with a saved login: running or stopped, healthy, image, ports and whether a newer image is out. **Update** (pull and re-create with Docker Compose), **Restart**, **Stop**/**Start** and **Logs** are one click each; the **Status** page shows them on the server's tile.
 
 **Spare Parts:** everything on the shelf or inside devices. Install parts into devices and take them out again (**To spares**); quantities split automatically. A part added by mistake, by hand or by a scan, has **Delete** (with **Undo**), so it doesn't land in Spare Parts. Re-running **Import specs** can **Replace with this scan**, and every import can be undone.
 

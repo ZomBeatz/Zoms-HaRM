@@ -277,6 +277,31 @@ def seed_status(db_path: Path) -> None:
                                                                   (soon if r["name"] == "DSM" else later) if https else None))
         for state, ago in svc_history.get(r["name"], [("up", {"days": 9})]):
             conn.execute("INSERT INTO service_events (service_id, state, at) VALUES (?,?,?)", (r["id"], state, ts(**ago)))
+    # Docker on the docker VM and the plex VM, as last read: Plex and Nextcloud have newer images,
+    # and Paperless stopped.
+    def box(name, image, project, ports=(), state="running", health=None, started=ts(days=6)):
+        wd = f"/srv/{project}"
+        return {"name": name, "image": image, "image_id": "sha256:" + format(sum(map(ord, name)) * 7919, "012x"), "state": state,
+                "health": health, "started": started.replace(" ", "T") + "Z", "restarts": 0, "project": project,
+                "service": name, "workdir": wd, "configs": f"{wd}/compose.yml", "ports": list(ports)}
+    stacks = {
+        "docker": [box("portainer", "portainer/portainer-ce:2.21.4", "portainer", ["9443→9443/tcp"]),
+                   box("nextcloud", "nextcloud:29-apache", "nextcloud", ["8080→80/tcp"], health="healthy"),
+                   box("nextcloud-db", "mariadb:11.4", "nextcloud"),
+                   box("uptime-kuma", "louislam/uptime-kuma:1", "monitoring", ["3001→3001/tcp"], health="healthy"),
+                   box("paperless", "ghcr.io/paperless-ngx/paperless-ngx:2.13", "paperless", ["8000→8000/tcp"], state="exited")],
+        "plex": [box("plex", "lscr.io/linuxserver/plex:latest", "media", ["32400→32400/tcp"], health="healthy", started=ts(days=12)),
+                 box("tautulli", "lscr.io/linuxserver/tautulli:latest", "media", ["8181→8181/tcp"])],
+    }
+    updates = {"lscr.io/linuxserver/plex:latest": "update", "nextcloud:29-apache": "update"}
+    for vm_name, boxes in stacks.items():
+        row = conn.execute("SELECT d.id, i.ip FROM devices d JOIN interfaces i ON i.device_id = d.id WHERE d.name = ?", (vm_name,)).fetchone()
+        cred = conn.execute("SELECT id FROM credentials ORDER BY id LIMIT 1").fetchone()
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (f"docker_conf:{row['id']}", json.dumps(
+            {"host": row["ip"], "port": 22, "credential_id": cred["id"] if cred else None, "sudo": True})))
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (f"docker:{row['id']}", json.dumps(
+            {"at": ts(minutes=12), "checked_at": ts(minutes=12), "containers": boxes,
+             "updates": {b["image"]: updates.get(b["image"], "current") for b in boxes}})))
     # The new-device watch, on the home LAN only (not the guest Wi-Fi), found two things it doesn't know.
     lan = conn.execute("SELECT id FROM networks WHERE name = 'Home LAN'").fetchone()["id"]
     db_meta = lambda k, v: conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (k, v))

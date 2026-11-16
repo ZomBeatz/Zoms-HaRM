@@ -21,7 +21,7 @@ TMP = tempfile.mkdtemp(prefix="harm-unit-")
 os.environ.update(HARM_DB=os.path.join(TMP, "harm.db"), HARM_AUTO_BACKUP="0", HARM_MONITOR="0")
 sys.path.insert(0, str(ROOT))
 
-from harm import alerts, db, discover, main, monitor, netwatch, power  # noqa: E402
+from harm import alerts, db, discover, docker, main, monitor, netwatch, power  # noqa: E402
 
 db.init()
 results = []
@@ -257,6 +257,97 @@ def _():
         assert not [e for e in alerts.due(conn) if e["kind"] == "certificate"]
         assert [x["name"] for x in monitor.certs_expiring(conn, 30)] == [], "renewed: no warning on Home"
     finally:
+        conn.close()
+
+
+@test
+def _():
+    """docker: reading containers, update checks and the scripts sent (run against a stand-in docker)"""
+    import json as _json
+    import subprocess
+    fake = Path(TMP) / "bin"
+    fake.mkdir(exist_ok=True)
+    stack = Path(TMP) / "media stack"  # a Compose folder with a space in its name
+    stack.mkdir(exist_ok=True)
+    plex = {"name": "/plex", "image": "lscr.io/linuxserver/plex:latest", "image_id": "sha256:aaa", "state": "running",
+            "health": "healthy", "started": "2026-11-01T10:00:00Z", "restarts": 0, "project": "media", "service": "plex",
+            "workdir": str(stack), "configs": str(stack / "compose.yml"),
+            "ports": {"32400/tcp": [{"HostIp": "0.0.0.0", "HostPort": "32400"}], "1900/udp": None}}
+    old = {**plex, "name": "/old-thing", "state": "exited", "health": None, "project": "", "service": "", "workdir": "",
+           "configs": "", "image": "nginx:1.25", "ports": {}}
+    log = Path(TMP) / "docker.log"
+    (fake / "docker").write_text("#!/bin/sh\n"
+        f"echo \"$@\" >> '{log}'\n"
+        'case "$1" in\n'
+        "  ps) [ \"$2\" = \"-aq\" ] && printf 'a\\nb\\n'; [ \"$2\" = \"-a\" ] && printf 'lscr.io/linuxserver/plex:latest\\nnginx:1.25\\n'; [ \"$2\" = \"-q\" ] && echo a;;\n"
+        f"  inspect) [ \"$2\" = \"-f\" ] && echo sha256:aaa || printf '%s\\n%s\\n' '{_json.dumps(plex)}' '{_json.dumps(old)}';;\n"
+        "  image) echo 'lscr.io/linuxserver/plex@sha256:111 ';;\n"
+        "  buildx) case \"$6\" in *plex*) echo '\"sha256:222\"';; *) echo '';; esac;;\n"
+        "  compose) exit 0;;\n"
+        "esac\n")
+    (fake / "docker").chmod(0o755)
+    run = lambda script: subprocess.run(["sh", "-c", script], capture_output=True, text=True,
+                                        env={**os.environ, "PATH": f"{fake}:{os.environ['PATH']}"}).stdout
+    rows = docker.parse_list(run(docker.LIST_SCRIPT))
+    assert [r["name"] for r in rows] == ["old-thing", "plex"], rows
+    assert rows[1]["ports"] == ["32400→32400/tcp"] and rows[1]["health"] == "healthy", rows[1]
+    ups = docker.parse_check(run(docker.CHECK_SCRIPT))
+    assert ups == {"lscr.io/linuxserver/plex:latest": "update", "nginx:1.25": "unknown"}, ups
+    out = run(docker.op_script(rows[1], "update"))
+    assert "HARM_RESULT=same" in out and docker.op_result("update", out) == "Already up to date.", out
+    sent = log.read_text()
+    assert f"-p media -f {stack}/compose.yml pull plex" in sent and "up -d plex" in sent, sent  # quoted path arrived whole
+    assert "pulled-only" in docker.op_script(rows[0], "update")  # not Compose: download only
+    for bad in ("x; rm -rf /", "-v", "$(id)"):
+        try:
+            docker.op_script({**rows[1], "name": bad}, "restart")
+            raise AssertionError(f"accepted {bad!r}")
+        except docker.DockerError:
+            pass
+    try:
+        docker.parse_list("HARM_NO_DOCKER")
+        raise AssertionError("no error without docker")
+    except docker.DockerError as e:
+        assert "isn't installed" in str(e)
+    for op in docker.OPS:
+        assert subprocess.run(["sh", "-n", "-c", docker.op_script(rows[1], op)]).returncode == 0, op
+
+    # The endpoints, with SSH stood in by this shell (and the stand-in docker).
+    from starlette.requests import Request
+    sent = []
+
+    def fake_ssh(host, port, user, pw, mode, script, sudo=False, *a, **k):
+        sent.append((host, user, sudo))
+        p = subprocess.run(["sh", "-c", script], capture_output=True, text=True, env={**os.environ, "PATH": f"{fake}:{os.environ['PATH']}"})
+        return {"ok": p.returncode == 0, "exit_code": p.returncode, "output": p.stdout + p.stderr, "ms": 1}
+
+    def req(body):
+        async def receive():
+            return {"type": "http.request", "body": _json.dumps(body).encode()}
+        return Request({"type": "http", "method": "POST", "path": "/", "headers": [], "client": ("127.0.0.1", 1), "query_string": b""}, receive)
+
+    real, main.remote.run_action = main.remote.run_action, fake_ssh
+    did = sql("INSERT INTO devices (name) VALUES ('dockerhost')")
+    cid = sql("INSERT INTO credentials (label, username, device_id) VALUES ('ssh', 'admin', ?)", did)
+    conn, sess = db.connect(), {"dek": b"0" * 32}
+    try:
+        r = asyncio.run(main.docker_read(did, req({"host": "10.0.0.9", "credential_id": cid, "sudo": True}), sess, conn))
+        assert len(r["snap"]["containers"]) == 2 and sent[-1] == ("10.0.0.9", "admin", True), (r, sent)
+        r = asyncio.run(main.docker_check(did, req({}), sess, conn))
+        assert r["snap"]["updates"]["lscr.io/linuxserver/plex:latest"] == "update", r["snap"]
+        assert main.docker_summary(conn, did) == {"at": r["snap"]["at"], "total": 2, "problems": ["old-thing"], "updates": ["plex"]}
+        r = asyncio.run(main.docker_op(did, req({"name": "plex", "op": "update"}), sess, conn))
+        assert r["ok"] and r["message"] == "Already up to date." and len(r["snap"]["containers"]) == 2, r
+        r = asyncio.run(main.docker_op(did, req({"name": "plex", "op": "logs"}), sess, conn))
+        assert r["ok"], r
+        try:
+            asyncio.run(main.docker_op(did, req({"name": "nope; reboot", "op": "restart"}), sess, conn))
+            raise AssertionError("ran an operation on an unknown container")
+        except main.HTTPException as e:
+            assert e.status_code == 400
+        assert [x["action"] for x in conn.execute("SELECT action FROM audit WHERE entity_id = ? AND entity = 'devices' ORDER BY id", (did,))][:2] == ["docker-read", "docker-update"]
+    finally:
+        main.remote.run_action = real
         conn.close()
 
 

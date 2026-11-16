@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from . import __version__, ai, aiproviders, alerts, certs, collect, crypto, db, discover, monitor, netwatch, pcbuild, power, proxmox, remote, units
+from . import __version__, ai, aiproviders, alerts, certs, collect, crypto, db, discover, docker, monitor, netwatch, pcbuild, power, proxmox, remote, units
 from .models import ENTITIES, ENUMS, iface_order
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -1235,6 +1235,7 @@ def device_full(did: int, _s=Depends(require_session), conn=Depends(get_db)):
         "actions": fetch_list(conn, "actions", {"device_id": did}),
         "can_wake": _wake_targets(conn, did) is not None,
         "power": next((x for x in power.summary(conn)["supplies"] if x["id"] == did), None),
+        "docker": docker_summary(conn, did),
     }
 
 
@@ -1326,6 +1327,147 @@ def collect_targets(did: int, _s=Depends(require_session), conn=Depends(get_db))
             hosts.insert(0, h)
     return {"hosts": list(dict.fromkeys(hosts)), "credentials": creds, **remote.available(),
             "is_windows": bool(re.search(r"windows", dev["os"] or "", re.I))}
+
+
+# ---------------------------------------------------------------------------
+# Docker containers on a device (harm/docker.py). The last list read is kept, so the device page and
+# Status show it without connecting; reading again and every operation is one click, while unlocked.
+# ---------------------------------------------------------------------------
+
+def _docker_get(conn, did: int) -> tuple[dict, dict | None]:
+    def load(key):
+        try:
+            return json.loads(db.get_meta(conn, key) or "null")
+        except ValueError:
+            return None
+    return load(f"docker_conf:{did}") or {}, load(f"docker:{did}")
+
+
+async def _docker_run(conn, s, conf: dict, script: str, trust: bool = False) -> dict:
+    host, port = str(conf.get("host") or ""), int(conf.get("port") or 22)
+    row = conn.execute("SELECT * FROM credentials WHERE id = ?", (conf.get("credential_id"),)).fetchone() \
+        if conf.get("credential_id") else None
+    if not row or not row["username"]:
+        raise HTTPException(400, "Pick a saved login with a username for this device")
+    pw = _decrypt(s["dek"], row["password_enc"], "password")
+    if pw and pw.startswith("<<"):
+        pw = None
+    try:
+        if trust:
+            await asyncio.to_thread(remote.forget_host, host, port)
+        r = await asyncio.to_thread(remote.run_action, host, port, row["username"], pw, "script", script, bool(conf.get("sudo")))
+    except remote.RemoteError as e:
+        raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
+    try:
+        docker._check(r["output"])
+    except docker.DockerError as e:
+        raise HTTPException(400, str(e))
+    return r
+
+
+def _docker_save(conn, did: int, snap: dict) -> dict:
+    db.set_meta(conn, f"docker:{did}", json.dumps(snap))
+    return snap
+
+
+def docker_summary(conn, did: int) -> dict | None:
+    """For Status and Home: how many containers, which aren't running or healthy, and when it was read."""
+    _, snap = _docker_get(conn, did)
+    if not snap:
+        return None
+    bad = [c["name"] for c in snap.get("containers", []) if c["state"] != "running" or c.get("health") == "unhealthy"]
+    ups = sorted({c["name"] for c in snap.get("containers", []) if (snap.get("updates") or {}).get(c["image"]) == "update"})
+    return {"at": snap.get("at"), "total": len(snap.get("containers", [])), "problems": bad, "updates": ups}
+
+
+@app.get("/api/devices/{did}/docker")
+def docker_get(did: int, _s=Depends(require_session), conn=Depends(get_db)):
+    fetch_one(conn, "devices", did)
+    conf, snap = _docker_get(conn, did)
+    return {"conf": conf, "snap": snap}
+
+
+@app.post("/api/devices/{did}/docker/read")
+async def docker_read(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """List the containers (and remember how to reach this device's Docker)."""
+    dev = fetch_one(conn, "devices", did)
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    conf, snap = _docker_get(conn, did)
+    if "host" in body:
+        conf = {"host": str(body.get("host") or "").strip(), "port": int(body.get("port") or 22),
+                "credential_id": _coerce(conn, "credential_id", "fk:credentials", body.get("credential_id")),
+                "sudo": bool(body.get("sudo"))}
+    if not conf.get("host"):
+        raise HTTPException(400, "host: enter the address to reach it over SSH")
+    r = await _docker_run(conn, s, conf, docker.LIST_SCRIPT, bool(body.get("trust_new_key")))
+    db.set_meta(conn, f"docker_conf:{did}", json.dumps(conf))
+    snap = _docker_save(conn, did, {**(snap or {}), "at": monitor._now(), "containers": docker.parse_list(r["output"])})
+    audit(conn, request, "docker-read", "devices", did, f"{dev['name']}: {len(snap['containers'])} containers")
+    conn.commit()
+    return {"conf": conf, "snap": snap}
+
+
+@app.post("/api/devices/{did}/docker/check")
+async def docker_check(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Ask the registries whether each image has a newer version (nothing is downloaded)."""
+    fetch_one(conn, "devices", did)
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    conf, snap = _docker_get(conn, did)
+    if not conf or not snap:
+        raise HTTPException(400, "Read the containers first")
+    r = await _docker_run(conn, s, conf, docker.CHECK_SCRIPT + "echo HARM_LIST\n" + docker.LIST_SCRIPT)
+    check, _, listing = r["output"].partition("HARM_LIST")
+    snap = _docker_save(conn, did, {**snap, "at": monitor._now(), "containers": docker.parse_list(listing),
+                                    "updates": docker.parse_check(check), "checked_at": monitor._now()})
+    conn.commit()
+    return {"conf": conf, "snap": snap}
+
+
+@app.post("/api/devices/{did}/docker/op")
+async def docker_op(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """One operation on one container: update, restart, stop, start or logs. Then the list is read again."""
+    dev = fetch_one(conn, "devices", did)
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    conf, snap = _docker_get(conn, did)
+    op = str(body.get("op") or "")
+    c = next((x for x in (snap or {}).get("containers", []) if x["name"] == body.get("name")), None)
+    if not c or op not in docker.OPS:
+        raise HTTPException(400, "Unknown container or operation. Read the containers again")
+    try:
+        script = docker.op_script(c, op)
+    except docker.DockerError as e:
+        raise HTTPException(400, str(e))
+    if op == "logs":
+        r = await _docker_run(conn, s, conf, script)
+        return {"ok": r["ok"], "output": r["output"]}
+    r = await _docker_run(conn, s, conf, f"(\n{script})\nrc=$?\necho HARM_LIST\n{docker.LIST_SCRIPT}exit $rc\n")
+    out, _, listing = r["output"].partition("HARM_LIST")
+    snap = {**snap, "at": monitor._now(), "containers": docker.parse_list(listing)}
+    if op == "update" and r["ok"] and "HARM_RESULT=pulled-only" not in out:
+        snap["updates"] = {**(snap.get("updates") or {}), c["image"]: "current"}
+    _docker_save(conn, did, snap)
+    audit(conn, request, f"docker-{op}", "devices", did, f"{dev['name']}: {c['name']} ({'worked' if r['ok'] else 'failed'})")
+    conn.commit()
+    return {"ok": r["ok"], "message": docker.op_result(op, out) if r["ok"] else "", "output": out.strip(), "snap": snap}
+
+
+@app.post("/api/devices/{did}/docker/prune")
+async def docker_prune(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Delete images no container uses any more (left over after updates)."""
+    dev = fetch_one(conn, "devices", did)
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    conf, _ = _docker_get(conn, did)
+    r = await _docker_run(conn, s, conf, docker.PRUNE_SCRIPT)
+    audit(conn, request, "docker-prune", "devices", did, dev["name"])
+    conn.commit()
+    m = re.search(r"Total reclaimed space:\s*(.+)", r["output"])
+    return {"ok": r["ok"], "freed": m.group(1).strip() if m else "", "output": r["output"]}
 
 
 @app.post("/api/devices/{did}/collect")
@@ -2781,7 +2923,8 @@ def status_board(_s=Depends(require_session), conn=Depends(get_db)):
         if a["device_id"] and a["pinned"]:
             actions.setdefault(a["device_id"], []).append({"id": a["id"], "name": a["name"], "confirm": a["confirm"]})
     wakeable = {r[0] for r in conn.execute("SELECT DISTINCT device_id FROM interfaces WHERE mac IS NOT NULL AND mac != ''")}
-    rows = [_status_row(conn, d) | {"actions": actions.get(d["id"], []), "can_wake": d["id"] in wakeable} for d in with_ip]
+    rows = [_status_row(conn, d) | {"actions": actions.get(d["id"], []), "can_wake": d["id"] in wakeable,
+                                    "containers": docker_summary(conn, d["id"])} for d in with_ip]
     last = conn.execute("SELECT MAX(checked_at) FROM device_status").fetchone()[0]
     return {"devices": rows, "without_address": len(devices) - len(with_ip), "last_check": last,
             "checking": monitor._full_lock.locked(), **monitor.settings(conn)}

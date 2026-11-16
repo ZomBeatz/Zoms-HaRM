@@ -172,22 +172,24 @@ def parse_logs(output: str) -> dict:
     return {k: "\n".join(v[-12:]) for k, v in out.items()}
 
 
-async def run(host, port, user, pw, sudo, text, timeout=CHECK_TIMEOUT) -> dict:
-    return await asyncio.to_thread(remote.run_action, host, port, user, pw, "script", text, sudo, False, None, timeout)
+async def run(host, port, user, pw, sudo, text, timeout=CHECK_TIMEOUT, key=None) -> dict:
+    return await asyncio.to_thread(remote.run_action, host, port, user, pw, "script", text, sudo, False, None, timeout, key=key)
 
 
-async def check_one(conn, did: int, user: str, pw: str | None, conf: dict, limited_sudo: bool = False) -> tuple[dict, list[dict]]:
+async def check_one(conn, did: int, user: str, pw: str | None, conf: dict, limited_sudo: bool = False,
+                    key: str | None = None) -> tuple[dict, list[dict]]:
     """Check a machine (and read its containers). Returns the snapshot and the alerts it caused."""
     backups = load(conn, f"machine_backups:{did}", [])
     with_docker = load(conn, f"docker:{did}") is not None
-    r = await run(conf["host"], int(conf.get("port") or 22), user, pw, bool(conf.get("sudo")), script(backups, with_docker, limited_sudo))
+    r = await run(conf["host"], int(conf.get("port") or 22), user, pw, bool(conf.get("sudo")), script(backups, with_docker, limited_sudo),
+                  key=key)
     snap = store(conn, did, r["output"])
     logs = {}
     new_ct = [p["container"] for p in container_problems(load(conn, f"docker:{did}"))
               if p["key"] not in set(load(conn, f"machine_alerted:{did}", []))]
     if new_ct:
         try:
-            lr = await run(conf["host"], int(conf.get("port") or 22), user, pw, bool(conf.get("sudo")), logs_script(new_ct), 60)
+            lr = await run(conf["host"], int(conf.get("port") or 22), user, pw, bool(conf.get("sudo")), logs_script(new_ct), 60, key)
             logs = parse_logs(lr["output"])
         except remote.RemoteError:
             pass
@@ -234,6 +236,21 @@ def bg_get(conn, did: int) -> dict | None:
         return {"user": v["user"], "pw": v.get("pw"), "sudo": v.get("sudo", "none")}
     except (crypto.DecryptError, OSError, ValueError, KeyError):
         return None  # the key file was lost or replaced: turn it on again for that machine
+
+
+def bg_set_key(conn, priv: str | None) -> None:
+    """A copy of HaRM's SSH key for background checks (only once you choose it for a machine)."""
+    save(conn, "bg_ssh_key", crypto.b64e(crypto.seal(_key(), priv.encode(), AAD + b"ssh_key")) if priv else None)
+
+
+def bg_key(conn) -> str | None:
+    v = load(conn, "bg_ssh_key")
+    if not v:
+        return None
+    try:
+        return crypto.unseal(_key(), crypto.b64d(v), AAD + b"ssh_key").decode()
+    except (crypto.DecryptError, OSError, ValueError):
+        return None
 
 
 def bg_set_proxmox(conn, secret: str | None) -> None:
@@ -307,6 +324,7 @@ async def run_background() -> list[str]:
     conn = db.connect()
     events, done = [], []
     try:
+        key = bg_key(conn)
         for dev in devices_with_connection(conn):
             login = bg_get(conn, dev["id"])
             conf = connection(conn, dev["id"])
@@ -314,7 +332,7 @@ async def run_background() -> list[str]:
                 continue
             try:
                 _, ev = await check_one(conn, dev["id"], login["user"], login["pw"],
-                                        {**conf, "sudo": login["sudo"] == "all"}, login["sudo"] == "limited")
+                                        {**conf, "sudo": login["sudo"] == "all"}, login["sudo"] == "limited", key)
                 events += ev
                 done.append(dev["name"])
             except (remote.RemoteError, machine.MachineError) as e:

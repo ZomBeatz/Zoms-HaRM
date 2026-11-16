@@ -2,10 +2,10 @@
  * file, VNC, the Proxmox console of a VM, or its management page. Only HaRM's own terminal uses the
  * saved password; the others open apps on your computer, which ask for it themselves. */
 import { useEffect, useState } from 'react';
-import { GET } from '../api/client';
+import { api, GET } from '../api/client';
 import { S } from '../lib/state';
 import { downloadText, type Row } from '../lib/util';
-import { copy, modal, type ModalCtl } from '../ui/overlay';
+import { choose, copy, modal, toast, type ModalCtl } from '../ui/overlay';
 import { Btn, Spinner } from '../ui/bits';
 
 const isWindows = (d: Row) => /windows/i.test(`${d.os || ''} ${d.device_type || ''}`);
@@ -21,7 +21,10 @@ function Connect({ m, dev }: { m: ModalCtl; dev: Row }) {
   const [host, setHost] = useState('');
   const [port, setPort] = useState('22');
   const [cred, setCred] = useState('');
+  const [hasKey, setHasKey] = useState(false);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
+    GET('/ssh-key').then(k => setHasKey(!!k.key)).catch(() => {});
     GET(`/devices/${dev.id}/collect-targets`).then(x => {
       setT(x); setHost(x.hosts[0] || '');
       const ssh = x.credentials.find((c: Row) => /ssh|os/i.test(c.kind || '')) || x.credentials[0];
@@ -44,6 +47,16 @@ function Connect({ m, dev }: { m: ModalCtl; dev: Row }) {
   const pveUrl = pve && (guest
     ? `${pve}/?console=${dev.device_type === 'Container' ? 'lxc' : 'kvm'}&novnc=1&vmid=${encodeURIComponent(dev.vm_id)}&node=${encodeURIComponent(shortName(dev.host_name))}&resize=scale`
     : /proxmox/i.test(`${dev.os || ''} ${dev.device_type || ''} ${dev.tags || ''}`) ? `${pve}/?console=shell&xtermjs=1&node=${encodeURIComponent(shortName(dev.hostname) || dev.name)}` : '');
+  const keyOp = async (remove: boolean) => {
+    if (remove && await choose('Take HaRM’s key out?', `HaRM won’t be able to sign in to ${at} with its key any more, only with the saved password.`,
+      [['no', 'Cancel'], ['yes', 'Take it out', 'danger']]) !== 'yes') return;
+    setBusy(true);
+    try {
+      const r = await api('POST', `/devices/${dev.id}/ssh-key`, { host, port: p, credential_id: +cred, remove });
+      toast(remove ? `Took HaRM’s key out of ${at}` : r.works ? `Added. HaRM signs in to ${at} with its key now` : `Added to ${at}, but signing in with it didn’t work: the machine may not allow keys`, r.works === false ? 'bad' : 'ok');
+    } catch (e) { toast((e as Error).message, 'bad'); }
+    setBusy(false);
+  };
   const vnc = (dev.services || []).find((s: Row) => s.port >= 5900 && s.port <= 5999);
   return <div className="disc-form connect">
     <div className="inline">
@@ -58,12 +71,15 @@ function Connect({ m, dev }: { m: ModalCtl; dev: Row }) {
     <div className="connect-list">
       {S.caps?.terminal !== false ? <div><Btn label="⌨ Terminal in HaRM" cls="primary" disabled={!host || (!user && !!cred)} onClick={term} />
         <span className="muted small">SSH in this window, with the saved login. Closes when HaRM locks.</span></div> : null}
+      {hasKey && cred && user ? <div><Btn label="🗝 Add HaRM’s SSH key" disabled={busy || !host} onClick={() => keyOp(false)} />
+        <span className="muted small">{`Into ${user}’s authorized_keys, so HaRM signs in without the password. `}<a href="#" onClick={e => { e.preventDefault(); keyOp(true); }}>Take it out</a></span></div> : null}
       <div><a className="button" href={`ssh://${encodeURI(at)}${p !== 22 ? `:${p}` : ''}`}>↗ Open in my SSH app</a>
         <span className="muted small">If your computer has an app for ssh:// links.</span></div>
       <div><Btn label="📋 Copy SSH command" onClick={() => copy(sshCmd, `Copied: ${sshCmd}`)} /><span className="mono small">{sshCmd}</span></div>
       {isWindows(dev) || (dev.services || []).some((s: Row) => s.port === 3389) ? <div><Btn label="🖥 Remote desktop file (.rdp)" onClick={rdp} />
         <span className="muted small">Opens in Remote Desktop (Windows, Mac) or Remmina. It asks for the password itself.</span></div> : null}
-      {vnc ? <div><a className="button" href={`vnc://${host}:${vnc.port}`}>↗ VNC</a><span className="muted small">{`Port ${vnc.port}, in your VNC app.`}</span></div> : null}
+      {vnc ? <div>{S.caps?.terminal !== false ? <Btn label="🖥 Screen in HaRM (VNC)" onClick={() => go(`#/vnc?${new URLSearchParams({ d: String(dev.id), h: host, p: String(vnc.port), ...(cred ? { c: cred } : {}) })}`)} disabled={!host} /> : null}
+        <a className="button" href={`vnc://${host}:${vnc.port}`}>↗ VNC app</a><span className="muted small">{`Port ${vnc.port}. In HaRM’s page, or the VNC app on your computer.`}</span></div> : null}
       {pveUrl ? <div><a className="button" href={pveUrl} target="_blank" rel="noopener noreferrer">↗ Proxmox console</a>
         <span className="muted small">{guest ? 'The VM’s screen, in Proxmox (sign in to Proxmox if it asks).' : 'The node’s shell, in Proxmox.'}</span></div> : null}
       {dev.mgmt_url ? <div><a className="button" href={dev.mgmt_url} target="_blank" rel="noopener noreferrer">↗ Management page</a>

@@ -622,6 +622,45 @@ def _():
     assert vaultio.previous_note("old", "keep\nPrevious password (until 2020-01-01): older").splitlines()[0] == "keep"
 
 
+
+@test
+def _():
+    """SSH key: a key ssh can read, encrypted at rest, and authorized_keys edited once and put back"""
+    import subprocess
+    from harm import crypto, sshkey
+    priv, pub = sshkey.generate("zoms-harm@test")
+    assert pub.startswith("ssh-ed25519 ") and pub.endswith(" zoms-harm@test")
+    with sshkey.KeyFile(priv) as path:
+        assert (os.stat(path).st_mode & 0o777) == 0o600
+        if shutil.which("ssh-keygen"):  # ssh reads it, and it matches the public key
+            got = subprocess.run(["ssh-keygen", "-y", "-f", path], capture_output=True, text=True).stdout.split()
+            assert got[:2] == pub.split()[:2], got
+    assert not Path(path).exists()
+    conn = db.connect()
+    dek = crypto.new_dek()
+    sshkey.save(conn, dek, priv, pub)
+    assert sshkey.public(conn) == pub and sshkey.private(conn, dek) == priv and sshkey.private(conn, None) is None
+    assert priv not in (db.get_meta(conn, "ssh_key") or "") and sshkey.private(conn, crypto.new_dek()) is None
+    sshkey.remove(conn)
+    conn.close()
+    home = Path(TMP) / "keyhome"
+    home.mkdir()
+    (home / ".ssh").mkdir()
+    (home / ".ssh" / "authorized_keys").write_text("ssh-rsa AAAA other@laptop\n")
+    run = lambda sc: subprocess.run(["sh", "-c", sc], capture_output=True, text=True, env={**os.environ, "HOME": str(home)}).stdout
+    for _ in range(2):  # twice: still only one line
+        assert "HARM_RESULT=added" in run(sshkey.install_script(pub))
+    assert (home / ".ssh" / "authorized_keys").read_text() == f"ssh-rsa AAAA other@laptop\n{pub}\n"
+    assert "HARM_RESULT=removed" in run(sshkey.remove_script(pub))
+    assert (home / ".ssh" / "authorized_keys").read_text() == "ssh-rsa AAAA other@laptop\n"
+    for bad in ("ssh-ed25519 AAAA x\nssh-rsa evil", "ssh-rsa AAAA x"):
+        try:
+            sshkey.install_script(bad)
+            raise AssertionError("accepted a bad key")
+        except ValueError:
+            pass
+
+
 failed = [r for r in results if r]
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")

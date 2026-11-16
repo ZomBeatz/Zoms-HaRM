@@ -11,6 +11,7 @@ import { choose, modal, toast } from '../ui/overlay';
 import { A, Btn, Card, MenuButton, PageHead, Small, Spinner, Table } from '../ui/bits';
 import { fmtBytes, ProblemList } from './Machine';
 import { versionText } from './Containers';
+import { changeOnMachine } from '../dialogs/later';
 
 const PVE_WORDS: Record<string, [string, string]> = {
   start: ['Start', 'Started'], shutdown: ['Shut down', 'Shutting down'], reboot: ['Reboot', 'Rebooting'],
@@ -132,6 +133,14 @@ export default function Maintenance() {
         { label: 'Up for', get: m => m.uptime_s != null ? duration(m.uptime_s) : '' },
         { label: 'Checked', get: m => <span>{m.at ? timeAgo(m.at) : 'never'}{m.background ? <div className="muted small">also in the background</div> : null}</span>, sort: m => m.at || '' },
       ]} /></div></Card> : null}
+    {d.old_logins.length ? <Card title={`Old passwords · ${d.old_logins.length}`}>
+      <div className="table-wrap"><Table rows={d.old_logins as unknown as Row[]} cols={[
+        { label: 'Login', get: c => <span><A href="#/vault"><b>{c.label}</b></A><div className="muted small">{[c.username, c.kind].filter(Boolean).join(' · ')}</div></span>, sort: c => c.label },
+        { label: 'Device', get: c => c.device_id ? <A href={`#/devices/${c.device_id}`}>{c.device}</A> : '', sort: c => c.device || '' },
+        { label: 'Changed', get: c => <span>{timeAgo(c.last_rotated)}{c.no_date ? <div className="muted small">saved then; never marked as changed</div> : null}</span>, sort: c => c.last_rotated },
+        { label: '', nosort: true, get: c => c.username ? <Small label="🔑 Change on machine…" onClick={() => changeOnMachine(c, () => q.reload())} /> : null },
+      ]} /></div>
+      <p className="muted small">{`Logins whose password hasn’t changed in ${d.password_days >= 365 ? `${d.password_days / 365} year${d.password_days > 365 ? 's' : ''}` : `${d.password_days} days`}. `}<b>Change on machine</b> works for Linux users; for others, change it there and press <b>Edit</b> in the vault to save it. How old counts as old: <A href="#/settings?s=status">Settings</A>.</p></Card> : null}
     {backups.length ? <Card title="Backups">
       <ul className="plain-list">{backups.map(b => {
         const age = b.newest ? (Date.now() - new Date(b.newest.replace(' ', 'T') + 'Z').getTime()) / 3.6e6 : null;

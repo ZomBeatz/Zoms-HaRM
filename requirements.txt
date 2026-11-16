@@ -2,3 +2,4 @@ cryptography==50.0.2
 fastapi==0.143.0
 PyOTP==2.10.0
 uvicorn==0.54.0
+websockets==17.2

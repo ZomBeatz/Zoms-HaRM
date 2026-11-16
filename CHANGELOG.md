@@ -59,6 +59,8 @@
 - **⚙ Layout:** card size, group by device, place, list or state, sort, favorites first, and what each card shows. Kept on each device.
 - **Favorites** come first and show on **Home**. **Lists** ("Media", "Admin pages") sort services into groups; one can be in several.
 - **Edit card…:** an icon (or one guessed from the name), a color, and up to 8 buttons of your own: open a link or an app (`ssh://`, `smb://`, `rdp://`, `vnc://`), copy text, or run a saved action (which keeps its own "Ask before running").
+- **Results on the card:** an action button can show the last line its action printed ("2 streams", "backup 3 h ago"). It updates when you press it.
+- **Saved layouts:** **⚙ Layout > Save this layout as…** keeps the look and filters under a name, like "Wall tablet", to pick on any device.
 
 **Maintenance: health, updates and backups**
 - A machine's **Health** tab (**⋯ > Health and updates…**) reads it over SSH with a saved login: disk space, each drive's health (SMART), ZFS pools and RAID arrays, memory, waiting updates with security fixes marked, whether it needs a restart, and its containers. Drive health goes into each drive's **Health** field, matched by serial number.
@@ -74,11 +76,14 @@
 **Connecting to your machines**
 - **🔌 Connect** on a device: a **terminal in HaRM** signed in with the saved login, **Open in my SSH app**, **Copy SSH command**, a **Remote Desktop file** (.rdp) for Windows, a **VNC** link, the **Proxmox console** of a VM or node, and the **management page** (iDRAC, iLO).
 - The terminal only works while HaRM is unlocked, closes when it locks, after 30 minutes without typing or when you leave the page, and at most 4 are open. Opening and closing are in the audit log; nothing typed is stored. Turn it off in **Settings > Locking and security**.
+- **Screen in HaRM (VNC):** a machine's screen in HaRM's page, relayed through HaRM, for machines with a VNC port. It only goes to the device's own addresses and VNC ports, and closes when HaRM locks.
+- **HaRM's SSH key** (**Settings > Locking and security**): one key for this HaRM, its private part encrypted with your master password. **🗝 Add HaRM's SSH key** in **🔌 Connect** puts it on a machine (and **Take it out** removes it), and HaRM then signs in with it. Background checks can use it instead of a stored password.
 
 **Logins and Bitwarden**
 - **Import from Bitwarden** (or Vaultwarden) on the vault's **⋯** menu: pick the .json export, see each login with the device it seems to be for, untick any you don't want, and import. Passwords never show in the preview.
 - **Export for Bitwarden** asks for your master password again and saves a file Bitwarden and Vaultwarden can import.
 - **🔑 Change on machine…** on a Linux login sets a new password on the machine over SSH, saves it in HaRM, keeps the old one in the login's secret notes, and checks the new one signs in.
+- **Old passwords** on **Maintenance**: logins not changed in a year (or 3 months to 2 years, in **Settings > Status and actions**), each with **Change on machine**. **Home** links to them.
 
 **Cleaning up parts**
 - **Delete** on any part of a device removes it outright (added by mistake, by hand or by a scan), with **Undo**. It doesn't go to Spare Parts. **Remove** is now **To spares**, with **Delete it instead** in it.

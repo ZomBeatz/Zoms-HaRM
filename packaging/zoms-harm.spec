@@ -19,7 +19,7 @@ a = Analysis(
         (str(ROOT / "launcher" / "check.svg"), "launcher"),
     ],
     # uvicorn loads harm.main by name, so list it (and the server packages) for PyInstaller to follow.
-    hiddenimports=["harm_launcher", "harm.main", "pyotp", *collect_submodules("harm"), *collect_submodules("uvicorn")],
+    hiddenimports=["harm_launcher", "harm.main", "pyotp", *collect_submodules("harm"), *collect_submodules("uvicorn"), *collect_submodules("websockets")],
     excludes=["tkinter", "PySide6.QtWebEngineCore", "PySide6.Qt3DCore", "PySide6.QtQuick", "PySide6.QtQml"],
     noarchive=False,
 )

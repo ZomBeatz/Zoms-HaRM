@@ -87,7 +87,8 @@ export interface Maintenance {
     backups: BackupCheck[]; background: boolean; docker_at: string | null }[];
   containers: { device_id: number; device: string; name: string; image: string; project: string; now?: string; new?: string }[];
   proxmox: { at: string; guests: PveGuest[]; backups: Record<string, { ctime: number; storage: string; size: number }>; backups_error: string } | null;
-  proxmox_problems: Problem[]; proxmox_ready: boolean;
+  proxmox_problems: Problem[]; proxmox_ready: boolean; password_days: number;
+  old_logins: { id: number; label: string; username: string | null; kind: string | null; device_id: number | null; device: string | null; last_rotated: string; no_date: number }[];
   background: { on: boolean; hours: number; last: { at: string; machines: string[] } | null; next: string | null; proxmox: boolean };
 }
 export interface MaintenanceSummary { problems: Problem[]; updates: number; security: number; containers: number; reboot: number }

@@ -671,6 +671,31 @@ def _():
             pass
 
 
+
+@test
+def _():
+    """screens: what Find screens reads, what it advises, and setup scripts the shell accepts"""
+    import subprocess
+    from harm import screens
+    v = screens.parse("os=Linux\nlisten=5900 127.0.0.1\nlisten=5901 0.0.0.0\nlisten=5901 [::]\n"
+                      "session=Type=x11 Class=user State=active Desktop=xfce\nxdisplay=0\npm=apt-get\nsystemd=yes\nharm=active")
+    assert v["ports"] == [{"port": 5900, "local": True}, {"port": 5901, "local": False}] and v["can_setup"] and v["harm"] == "active", v
+    assert screens.free_port(v) == 5902
+    way = screens.parse("os=Linux\nsession=Type=wayland Class=user State=active Desktop=GNOME\nxdisplay=0\npm=apt-get\nsystemd=yes")
+    assert not way["can_setup"] and way["kind"] == "wayland" and "Remote Desktop" in way["advice"], way
+    assert screens.parse("os=Linux\npm=dnf\nsystemd=yes")["kind"] == "headless"
+    assert screens.parse("os=Darwin")["kind"] == "mac"
+    assert screens.parse("os=Linux\nxdisplay=0")["kind"] == "other"  # no systemd or package manager
+    pw = screens.new_password()
+    assert len(pw) == 8 and pw.isalnum()
+    for pm in ("apt-get", "dnf", "zypper", "pacman", "apk"):
+        sc = screens.setup_script(5901, 0, pm)
+        assert "-localhost" in sc and "-rfbport 5901" in sc and "-display :0" in sc
+        assert subprocess.run(["sh", "-n"], input=sc, text=True, capture_output=True).returncode == 0, pm
+    for sc in (screens.REMOVE, screens.CHECK):
+        assert subprocess.run(["sh", "-n"], input=sc, text=True, capture_output=True).returncode == 0
+
+
 failed = [r for r in results if r]
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")

@@ -81,6 +81,8 @@ export default function Terminal({ q }: { q: URLSearchParams }) {
   const again = (t = false) => { setEnded(''); setKeyChanged(false); setTrust(t); setRun(n => n + 1); };
   return <div className="term-page">
     <PageHead title={<span className="mono">{label}</span>} sub={<span>Terminal · closes when HaRM locks · {q.get('d') ? <A href={`#/devices/${q.get('d')}`}>Back to the device</A> : null}</span>}>
+      {q.get('c') ? <Small label="📁 Files" title="Browse, upload and download files on this machine" onClick={() => {
+        location.hash = `#/files?${new URLSearchParams([...q.entries()].filter(([k]) => ['d', 'h', 'p', 'c', 'legacy'].includes(k)))}`; }} /> : null}
       <Small label="⧉ New window" title="Opens another terminal in its own window" onClick={() => { window.open(location.href, '_blank', 'noopener,width=1000,height=640'); }} />
       {ended ? <Btn label="⟳ Connect again" cls="primary" onClick={() => again()} /> : <Small label="✕ Close" onClick={() => { history.length > 1 ? history.back() : (location.hash = '#/dashboard'); }} />}
     </PageHead>

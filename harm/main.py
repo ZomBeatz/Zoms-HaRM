@@ -7,6 +7,7 @@ import io
 import ipaddress
 import json
 import os
+import queue
 import re
 import secrets
 import shutil
@@ -26,7 +27,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from . import __version__, ai, aiproviders, alerts, certs, collect, crypto, db, discover, docker, machine, monitor, netwatch, pcbuild, power, proxmox, remote, sshkey, terminal, units, upkeep, vaultio, vnc
+from . import __version__, ai, aiproviders, alerts, certs, collect, crypto, db, discover, docker, files, machine, monitor, netwatch, pcbuild, power, proxmox, remote, screens, sshkey, terminal, units, upkeep, vaultio, vnc
 from .models import ENTITIES, ENUMS, iface_order
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -765,6 +766,7 @@ def auth_logout(request: Request, response: Response):
         with _sessions_lock:
             _sessions.pop(token, None)
         terminal.close_owner(_owner(request))
+        files.close_owner(_owner(request))
     response.delete_cookie(COOKIE, path="/")
     return {"ok": True}
 
@@ -1327,7 +1329,7 @@ def collect_targets(did: int, _s=Depends(require_session), conn=Depends(get_db))
         h = c["url"] and (_url_host(c["url"]) if "://" in c["url"] else c["url"].split(":")[0])
         if h and h not in hosts and re.search(r"ssh|os", c["kind"] or "", re.I):
             hosts.insert(0, h)
-    return {"hosts": list(dict.fromkeys(hosts)), "credentials": creds, **remote.available(),
+    return {"hosts": list(dict.fromkeys(hosts)), "credentials": creds, **remote.available(), "screen": _screen_saved(conn, did),
             "is_windows": bool(re.search(r"windows", dev["os"] or "", re.I))}
 
 
@@ -1866,6 +1868,92 @@ def _vnc_ports(conn, did: int) -> set[int]:
     return ports | set(range(5900, 6000))
 
 
+def _screen_saved(conn, did: int) -> dict | None:
+    """The screen sharing HaRM set up on this device: {port, credential_id, host}."""
+    v = upkeep.load(conn, f"screen:{did}")
+    return v if isinstance(v, dict) else None
+
+
+async def _screens_check(conn, s, did: int, body: dict) -> tuple[dict, str, int, str, str | None]:
+    host, port = str(body.get("host") or "").strip(), int(body.get("port") or 22)
+    if host not in collect_targets(did, s, conn)["hosts"]:
+        raise HTTPException(400, "That isn't one of this device's addresses (add it on its Network tab)")
+    user, pw = _machine_login(conn, s, {"credential_id": body.get("credential_id")})
+    try:
+        if body.get("trust_new_key"):
+            await asyncio.to_thread(remote.forget_host, host, port)
+        r = await asyncio.to_thread(remote.run_action, host, port, user, pw, "script", screens.CHECK, False, False, None, 60,
+                                    key=_hkey(conn, s))
+    except remote.RemoteError as e:
+        raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
+    if not r["ok"] and "os=" not in r["output"]:
+        raise HTTPException(400, "The machine didn't answer the check: " + (r["output"].strip().splitlines() or ["no answer"])[-1][:300])
+    return screens.parse(r["output"]), host, port, user, pw
+
+
+@app.post("/api/devices/{did}/screens")
+async def screens_find(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Find screens (read-only): the VNC ports the machine listens on, and whether HaRM can set one up."""
+    fetch_one(conn, "devices", did)
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    v, *_ = await _screens_check(conn, s, did, await body_json(request))
+    return {**v, "saved": _screen_saved(conn, did)}
+
+
+@app.post("/api/devices/{did}/screens/setup")
+async def screens_setup(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Install x11vnc as a service on 127.0.0.1 only, with a password kept in the vault (or take it out)."""
+    dev = fetch_one(conn, "devices", did)
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    remove = bool(body.get("remove"))
+    saved = _screen_saved(conn, did)
+    v, host, port, user, pw = await _screens_check(conn, s, did, body)
+    if not remove and not v["can_setup"]:
+        raise HTTPException(400, v["advice"])
+    sudo = user != "root"
+    if remove:
+        script, extra = screens.REMOVE, ""
+    else:
+        vport = saved["port"] if saved and v["harm"] else screens.free_port(v)
+        vpw = screens.new_password()
+        script, extra = screens.setup_script(vport, (v["displays"] or [0])[0], v["pm"]), vpw + "\n"
+    try:
+        r = await asyncio.to_thread(remote.run_action, host, port, user, pw, "script", script, sudo, False, None, 900, extra,
+                                    _hkey(conn, s))
+    except remote.RemoteError as e:
+        raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
+    want = "HARM_RESULT=removed" if remove else "HARM_RESULT=ok"
+    if want not in r["output"]:
+        tail = [x for x in r["output"].strip().splitlines() if not x.startswith("HARM_RESULT")]
+        audit(conn, request, "screen-setup-failed", "devices", did, f"{dev['name']}: {host}")
+        conn.commit()
+        raise HTTPException(400, ("Taking it out" if remove else "Setting it up") + " didn't work: " + (" ".join(tail[-3:]) or "no answer")[:500])
+    if remove:
+        if saved and saved.get("credential_id"):
+            conn.execute("DELETE FROM credentials WHERE id = ?", (saved["credential_id"],))
+        db.set_meta(conn, f"screen:{did}", None)
+        audit(conn, request, "screen-removed", "devices", did, f"{dev['name']}: {host}")
+        did_note(conn, did, f"Took out HaRM's screen sharing (x11vnc) on {host}.")
+        conn.commit()
+        return {"ok": True}
+    enc = _encrypt_secrets({"password": vpw}, s["dek"])
+    cid = saved and saved.get("credential_id")
+    if cid and conn.execute("SELECT 1 FROM credentials WHERE id = ?", (cid,)).fetchone():
+        conn.execute("UPDATE credentials SET password_enc = ?, url = ?, last_rotated = date('now'), updated_at = datetime('now') "
+                     "WHERE id = ?", (enc["password_enc"], f"vnc://127.0.0.1:{vport}", cid))
+    else:
+        cid = conn.execute("INSERT INTO credentials (label, kind, url, device_id, password_enc) VALUES (?, 'Console', ?, ?, ?)",
+                           (f"VNC screen ({dev['name']})", f"vnc://127.0.0.1:{vport}", did, enc["password_enc"])).lastrowid
+    upkeep.save(conn, f"screen:{did}", {"port": vport, "credential_id": cid, "host": host})
+    audit(conn, request, "screen-setup", "devices", did, f"{dev['name']}: x11vnc on {host}, port {vport} (only on the machine)")
+    did_note(conn, did, f"Set up screen sharing (x11vnc) on {host}, port {vport}, only reachable through SSH. Its password is in the vault.")
+    conn.commit()
+    return {"ok": True, "port": vport, "credential_id": cid}
+
+
 @app.post("/api/vnc")
 async def vnc_open(request: Request, s=Depends(require_session), conn=Depends(get_db)):
     """A one-minute ticket for the page to open a VNC screen on one of this device's addresses."""
@@ -2020,6 +2108,169 @@ async def terminal_close(tid: str, request: Request, _s=Depends(require_session)
     t.end("You closed the terminal.")
     audit(conn, request, "terminal-close", None, None, t.label)
     conn.commit()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Files on a machine (harm/files.py): browse, upload, download, edit, and a command in a folder.
+# ---------------------------------------------------------------------------
+
+def _fs(request: Request, sid: str) -> "files.Session":
+    try:
+        return files.get(sid, _owner(request))
+    except files.FilesError as e:
+        raise HTTPException(404, str(e))
+
+
+def _fs_error(e: "files.FilesError") -> HTTPException:
+    return HTTPException(409 if e.code == "hostkey" else 400, str(e))
+
+
+def _fs_path(p) -> str:
+    p = str(p or "").strip()
+    if not p.startswith("/") or "\0" in p or len(p) > 4096:
+        raise HTTPException(400, "That isn't a full path on the machine")
+    return p
+
+
+@app.post("/api/files")
+async def files_open(request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    if not monitor.settings(conn)["terminal"]:
+        raise HTTPException(403, "The terminal and files in HaRM are turned off in Settings > Locking and security")
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    did = _coerce(conn, "device_id", "fk:devices", body.get("device_id"))
+    dev = fetch_one(conn, "devices", did) if did else None
+    host, port = str(body.get("host") or "").strip(), int(body.get("port") or 22)
+    user, pw = _machine_login(conn, s, {"credential_id": body.get("credential_id")})
+    files.start_reaper(_owner_alive)
+    files.reap(_owner_alive)
+    try:
+        if body.get("trust_new_key"):
+            await asyncio.to_thread(remote.forget_host, host, port)
+        f = await asyncio.to_thread(files.start, _owner(request), f"{user}@{host}", host, port, user, pw, _hkey(conn, s),
+                                    bool(body.get("legacy")))
+    except files.FilesError as e:
+        raise _fs_error(e)
+    audit(conn, request, "files-open", "devices" if dev else None, did, f"{dev['name'] + ': ' if dev else ''}{user}@{host}:{port}")
+    conn.commit()
+    return {"id": f.id, "label": f.label, "home": f.home, "user": user, "sudo_password": f.has_password}
+
+
+@app.get("/api/files/{sid}/list")
+async def files_list(sid: str, request: Request, path: str = "", sudo: bool = False, _s=Depends(require_session)):
+    f = _fs(request, sid)
+    try:
+        return await asyncio.to_thread(f.listdir, _fs_path(path) if path else "", sudo)
+    except files.FilesError as e:
+        raise _fs_error(e)
+
+
+@app.get("/api/files/{sid}/download")
+async def files_download(sid: str, request: Request, path: str, sudo: bool = False, _s=Depends(require_session), conn=Depends(get_db)):
+    f = _fs(request, sid)
+    path = _fs_path(path)
+    fd, tmp = tempfile.mkstemp(prefix="harm-dl-", dir=remote.SSH_DIR if remote.SSH_DIR.exists() else None)
+    try:
+        with os.fdopen(fd, "wb") as out:
+            await asyncio.to_thread(f.download, path, out.write, sudo)
+    except files.FilesError as e:
+        os.unlink(tmp)
+        raise _fs_error(e)
+    audit(conn, request, "files-download", None, None, f"{f.label}: {path}" + (" (sudo)" if sudo else ""))
+    conn.commit()
+    return FileResponse(tmp, filename=path.rsplit("/", 1)[-1] or "download", media_type="application/octet-stream",
+                        background=BackgroundTask(os.unlink, tmp))
+
+
+@app.put("/api/files/{sid}/upload")
+async def files_upload(sid: str, request: Request, path: str, sudo: bool = False, _s=Depends(require_session), conn=Depends(get_db)):
+    """The request body is the file, sent on to the machine in pieces as it arrives."""
+    f = _fs(request, sid)
+    path = _fs_path(path)
+    pieces: queue.Queue = queue.Queue(maxsize=4)
+
+    def chunks():
+        while (x := pieces.get()) is not None:
+            yield x
+    job = asyncio.get_running_loop().run_in_executor(None, f.upload, path, chunks(), sudo)
+
+    async def feed(x) -> bool:  # False once the machine side has stopped (it failed)
+        while not job.done():
+            try:
+                pieces.put_nowait(x)
+                return True
+            except queue.Full:
+                await asyncio.sleep(0.05)
+        return False
+    buf = b""
+    async for data in request.stream():
+        buf += data
+        while len(buf) >= files.UPLOAD_CHUNK:
+            if not await feed(buf[:files.UPLOAD_CHUNK]):
+                break
+            buf = buf[files.UPLOAD_CHUNK:]
+        if job.done():
+            break
+    if buf:
+        await feed(buf)
+    await feed(None)
+    try:
+        size = await job
+    except files.FilesError as e:
+        raise _fs_error(e)
+    audit(conn, request, "files-upload", None, None, f"{f.label}: {path} ({size} bytes)" + (" (sudo)" if sudo else ""))
+    conn.commit()
+    return {"ok": True, "size": size}
+
+
+@app.post("/api/files/{sid}/do")
+async def files_do(sid: str, request: Request, _s=Depends(require_session), conn=Depends(get_db)):
+    """read, write (a text file), mkdir, rename, delete, run (a command in a folder)."""
+    f = _fs(request, sid)
+    body = await body_json(request)
+    op, sudo = body.get("op"), bool(body.get("sudo"))
+    path = _fs_path(body.get("path"))
+    try:
+        if op == "read":
+            return {"text": await asyncio.to_thread(f.read_text, path, sudo)}
+        if op == "write":
+            data = str(body.get("text") or "").encode()
+            await asyncio.to_thread(f.upload, path, [data] if data else [], sudo)
+            detail = f"saved {path}"
+            r = {"ok": True}
+        elif op == "mkdir":
+            await asyncio.to_thread(f.mkdir, path, sudo)
+            detail, r = f"new folder {path}", {"ok": True}
+        elif op == "rename":
+            to = _fs_path(body.get("to"))
+            await asyncio.to_thread(f.rename, path, to, sudo)
+            detail, r = f"renamed {path} to {to}", {"ok": True}
+        elif op == "delete":
+            await asyncio.to_thread(f.delete, path, sudo)
+            detail, r = f"deleted {path}", {"ok": True}
+        elif op == "run":
+            cmd = str(body.get("command") or "").strip()
+            if not cmd:
+                raise HTTPException(400, "Type a command")
+            r = await asyncio.to_thread(f.command, path, cmd, sudo)
+            detail = f"ran in {path}: {cmd[:200]}"
+        else:
+            raise HTTPException(400, "Unknown operation")
+    except files.FilesError as e:
+        raise _fs_error(e)
+    audit(conn, request, f"files-{op}", None, None, f"{f.label}: {detail}" + (" (sudo)" if sudo else ""))
+    conn.commit()
+    return r
+
+
+@app.post("/api/files/{sid}/close")
+async def files_close(sid: str, request: Request, _s=Depends(require_session)):
+    try:
+        files.get(sid, _owner(request)).end("You closed it.")
+    except files.FilesError:
+        pass
     return {"ok": True}
 
 
@@ -2414,6 +2665,7 @@ async def ssh_key_make(request: Request, s=Depends(require_session), conn=Depend
 @app.delete("/api/ssh-key")
 def ssh_key_delete(request: Request, s=Depends(require_session), conn=Depends(get_db)):
     sshkey.remove(conn)
+    sshkey.drop_next(conn)
     upkeep.bg_set_key(conn, None)
     audit(conn, request, "ssh-key-deleted")
     conn.commit()
@@ -2444,6 +2696,89 @@ def ssh_key_targets(s=Depends(require_session), conn=Depends(get_db)):
                     "credential_id": c["id"], "login": c["label"], "username": c["username"],
                     "added": sshkey.has(conn, d["id"], c["username"], t["hosts"][0], port)})
     return out
+
+
+def _place_login(conn, s, pl: dict) -> str | None:
+    """The saved password for a place's user on its device, if HaRM has one (used if the key doesn't work)."""
+    for r in conn.execute("SELECT password_enc FROM credentials WHERE device_id = ? AND username = ? AND password_enc IS NOT NULL",
+                          (pl["device_id"], pl["user"])):
+        pw = _decrypt(s["dek"], r["password_enc"], "password")
+        if pw and not pw.startswith("<<"):
+            return pw
+    return None
+
+
+@app.post("/api/ssh-key/next")
+def ssh_key_next(s=Depends(require_session), conn=Depends(get_db)):
+    """Start swapping to a new key: it's made now, put on each machine, and takes over at the end."""
+    if not sshkey.public(conn):
+        raise HTTPException(400, "Make HaRM's SSH key first")
+    name = re.sub(r"[^A-Za-z0-9._-]+", "-", monitor.settings(conn)["site_name"] or "").strip("-")[:40]
+    n = sshkey.make_next(conn, s["dek"], f"zoms-harm{'@' + name if name else ''}")
+    conn.commit()
+    devs = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM devices")}
+    todo = [{"place": p, **sshkey.place_parts(p), "device": devs.get(sshkey.place_parts(p)["device_id"], "(deleted)"),
+             "done": p in n["places"]} for p in sshkey.places(conn)]
+    return {"public": n["public"], "places": todo}
+
+
+@app.post("/api/ssh-key/next/place")
+async def ssh_key_next_place(request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """On one machine: add the new key, check it lets HaRM in, then take the old one out."""
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    place = str(body.get("place") or "")
+    if place not in sshkey.places(conn):
+        raise HTTPException(400, "HaRM's key isn't on that machine")
+    got, old_priv, old_pub = sshkey.next_private(conn, s["dek"]), _hkey(conn, s), sshkey.public(conn)
+    if not got or not old_priv:
+        raise HTTPException(400, "Start again: the new key isn't there any more")
+    new_priv, new_pub = got
+    pl = sshkey.place_parts(place)
+    pw = _place_login(conn, s, pl)
+    only_key = "-o IdentitiesOnly=yes -o PreferredAuthentications=publickey"
+
+    def step(script, key, opts=None):
+        return remote.run_action(pl["host"], pl["port"], pl["user"], None if opts else pw, "script", script, False, False,
+                                 opts, 60, key=key)
+    try:
+        if body.get("trust_new_key"):
+            await asyncio.to_thread(remote.forget_host, pl["host"], pl["port"])
+        r = await asyncio.to_thread(step, sshkey.install_script(new_pub), old_priv)
+        if "HARM_RESULT=added" not in r["output"]:
+            raise HTTPException(400, "The machine didn't take the new key: " + (r["output"].strip().splitlines() or ["no answer"])[-1][:300])
+        t = await asyncio.to_thread(step, "true\n", new_priv, only_key)
+        if not t["ok"]:
+            raise HTTPException(400, "The new key is on it, but signing in with it didn't work, so the old one stays")
+        await asyncio.to_thread(step, sshkey.remove_script(old_pub), new_priv, only_key)
+    except remote.RemoteError as e:
+        raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
+    sshkey.next_mark(conn, place)
+    did_note(conn, pl["device_id"], f"Swapped HaRM's SSH key for a new one in {pl['user']}'s authorized_keys on {pl['host']}.")
+    conn.commit()
+    return {"ok": True}
+
+
+@app.post("/api/ssh-key/next/finish")
+def ssh_key_next_finish(request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    before = len(sshkey.places(conn))
+    priv = sshkey.finish_next(conn, s["dek"])
+    if not priv:
+        raise HTTPException(400, "There's no new key to finish with")
+    if upkeep.load(conn, "bg_ssh_key") is not None:
+        upkeep.bg_set_key(conn, priv)
+    n = len(sshkey.places(conn))
+    audit(conn, request, "ssh-key-new", None, None, f"{sshkey.public(conn).split()[-1]}: swapped on {n} of {before} machines")
+    conn.commit()
+    return {"key": sshkey.info(conn), "background": upkeep.load(conn, "bg_ssh_key") is not None}
+
+
+@app.delete("/api/ssh-key/next")
+def ssh_key_next_drop(s=Depends(require_session), conn=Depends(get_db)):
+    sshkey.drop_next(conn)
+    conn.commit()
+    return {"ok": True}
 
 
 @app.post("/api/devices/{did}/ssh-key")

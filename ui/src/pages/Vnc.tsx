@@ -51,7 +51,7 @@ export default function Vnc({ q }: { q: URLSearchParams }) {
       } catch (e) { setState((e as Error).message); setKeyChanged(/host key changed/i.test((e as Error).message)); }
     })();
     return () => { closed = true; rfb.current?.disconnect(); rfb.current = null; };
-  }, [run]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [run, q.toString()]);  // eslint-disable-line react-hooks/exhaustive-deps
   const again = (t = false) => { if (saved.current === 'sent') saved.current = 'refused'; setTrust(t); setRun(n => n + 1); };
   const send = () => { rfb.current?.sendCredentials({ username: user, password: pw }); setPw(''); setAsk(null); };
   return <div className="term-page">

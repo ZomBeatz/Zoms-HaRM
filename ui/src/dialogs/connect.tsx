@@ -7,6 +7,7 @@ import { S } from '../lib/state';
 import { downloadText, type Row } from '../lib/util';
 import { choose, copy, modal, toast, type ModalCtl } from '../ui/overlay';
 import { Btn, Spinner } from '../ui/bits';
+import { screensDialog } from './screens';
 
 const isWindows = (d: Row) => /windows/i.test(`${d.os || ''} ${d.device_type || ''}`);
 const shortName = (n?: string | null) => (n || '').split('.')[0];
@@ -33,6 +34,7 @@ function Connect({ m, dev }: { m: ModalCtl; dev: Row }) {
       setT(x); setHost(x.hosts[0] || '');
       const ssh = x.credentials.find((c: Row) => /ssh|os/i.test(c.kind || '')) || x.credentials[0];
       if (ssh) { setCred(String(ssh.id)); setPort(portOf(ssh)); }
+      if (x.screen?.port) setVncP(String(x.screen.port));
     }).catch(() => setT({ hosts: [], credentials: [] }));
     GET('/discover/config').then(c => setPve(c.proxmox?.url || '')).catch(() => {});
   }, [dev.id]);
@@ -66,7 +68,12 @@ function Connect({ m, dev }: { m: ModalCtl; dev: Row }) {
   const canSsh = !!(cred && user) && !isWindows(dev);
   const vncPort = vncSvc?.port || (canSsh ? +vncP || 5900 : 0);
   const ssh = canSsh && viaSsh;
-  const screen = () => go(`#/vnc?${new URLSearchParams({ d: String(dev.id), h: host, p: String(vncPort), ...(cred ? { c: cred } : {}), ...(ssh ? { s: String(p) } : {}) })}`);
+  // The password of a screen HaRM set up (Find screens > Set up) is in its own vault entry.
+  const vc: Record<string, string> = t.screen?.credential_id && +vncPort === t.screen.port ? { vc: String(t.screen.credential_id) } : {};
+  const screen = () => go(`#/vnc?${new URLSearchParams({ d: String(dev.id), h: host, p: String(vncPort), ...(cred ? { c: cred } : {}), ...(ssh ? { s: String(p) } : {}), ...vc })}`);
+  const filesUrl = `#/files?${new URLSearchParams({ d: String(dev.id), h: host, p: String(p), c: cred })}`;
+  const find = () => screensDialog({ dev, host, port: p, cred: +cred, user, saved: t.screen,
+    open: (vp: number, vcred?: number) => go(`#/vnc?${new URLSearchParams({ d: String(dev.id), h: host, p: String(vp), c: cred, s: String(p), ...(vcred ? { vc: String(vcred) } : {}) })}`) });
   return <div className="disc-form connect">
     <div className="inline">
       <label className="disc-field"><span>Address</span>
@@ -80,6 +87,8 @@ function Connect({ m, dev }: { m: ModalCtl; dev: Row }) {
     <div className="connect-list">
       {S.caps?.terminal !== false ? <div><Btn label="⌨ Terminal in HaRM" cls="primary" disabled={!host || (!user && !!cred)} onClick={term} />
         <span className="muted small">SSH in this window, with the saved login. Closes when HaRM locks.</span></div> : null}
+      {S.caps?.terminal !== false && canSsh ? <div><Btn label="📁 Files" disabled={!host} onClick={() => go(filesUrl)} />
+        <span className="muted small">Browse, upload, download and edit files, and run commands in a folder.</span></div> : null}
       {hasKey && cred && user ? <div><Btn label="🗝 Add HaRM’s SSH key" disabled={busy || !host} onClick={() => keyOp(false)} />
         <span className="muted small">{`Into ${user}’s authorized_keys, so HaRM signs in without the password. `}<a href="#" onClick={e => { e.preventDefault(); keyOp(true); }}>Take it out</a></span></div> : null}
       <div><a className="button" href={`ssh://${encodeURI(at)}${p !== 22 ? `:${p}` : ''}`}>↗ Open in my SSH app</a>
@@ -92,7 +101,8 @@ function Connect({ m, dev }: { m: ModalCtl; dev: Row }) {
         {vncSvc ? null : <input aria-label="VNC port" title="VNC port on the machine (5900 is display :0, 5901 is :1)" value={vncP} onChange={e => setVncP(e.target.value)} inputMode="numeric" style={{ width: 70 }} />}
         <span className="muted small">{vncSvc ? `Port ${vncPort}. ` : 'VNC port on the machine. '}
           {canSsh ? <label className="check inline-check"><input type="checkbox" checked={viaSsh} disabled={!vncSvc} onChange={e => setViaSsh(e.target.checked)} />{`Through SSH as ${user} (encrypted)`}</label>
-            : 'Not encrypted: pick an SSH login to send it through SSH.'}</span></div> : null}
+            : 'Not encrypted: pick an SSH login to send it through SSH.'}
+          {canSsh ? <>{' '}<a href="#" onClick={e => { e.preventDefault(); find(); }}>🔍 Find screens</a></> : null}</span></div> : null}
       {pveUrl ? <div><a className="button" href={pveUrl} target="_blank" rel="noopener noreferrer">↗ Proxmox console</a>
         <span className="muted small">{guest ? 'The VM’s screen, in Proxmox (sign in to Proxmox if it asks).' : 'The node’s shell, in Proxmox.'}</span></div> : null}
       {dev.mgmt_url ? <div><a className="button" href={dev.mgmt_url} target="_blank" rel="noopener noreferrer">↗ Management page</a>

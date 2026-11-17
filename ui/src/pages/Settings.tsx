@@ -9,7 +9,7 @@ import { A, Badge, Btn, Card, KV, PageHead, Small, type Kid } from '../ui/bits';
 import { formDialog } from '../ui/form';
 import { editAlerts, editNetwatch, testAlerts } from '../dialogs/watch';
 import { AiSettingsCard } from '../dialogs/ai';
-import { addKeyDialog } from '../dialogs/sshkey';
+import { addKeyDialog, swapKeyDialog } from '../dialogs/sshkey';
 import { installApp, phoneAppHelp } from '../dialogs/phone';
 import { showRecoveryCode } from '../app/Auth';
 import { lockNow } from '../app/session';
@@ -473,8 +473,14 @@ function SshKeyCard() {
   useEffect(() => { GET('/ssh-key').then(setK).catch(() => setK({ key: null })); }, []);
   if (!k) return null;
   const make = async (replace: boolean) => {
-    if (replace && await choose('Make a new SSH key?', 'Machines that have the old key stop letting HaRM in with it, until you add the new one (Add to my machines, or 🔌 Connect > Add HaRM’s SSH key). Take the old one out of them too.',
-      [['no', 'Cancel'], ['yes', 'Make a new key', 'primary']]) !== 'yes') return;
+    if (replace) {
+      const how = await choose('Make a new SSH key?', <>
+        <p><b>Swap on my machines</b>: HaRM puts the new key on each machine that has the current one, checks it works, and takes the old one out. Nothing stops working.</p>
+        <p><b>Just make a new one</b>: machines with the current key stop letting HaRM in with it until you add the new one. Take the old one out of them yourself.</p></>,
+        [['no', 'Cancel'], ['new', 'Just make a new one'], ['swap', '⟳ Swap on my machines', 'primary']]);
+      if (how === 'swap') return swapKeyDialog(setK);
+      if (how !== 'new') return;
+    }
     try { setK(await api('POST', '/ssh-key', { replace })); toast(replace ? 'New key made. Add it to your machines again' : 'Key made. Now add it to your machines'); }
     catch (e) { toast((e as Error).message, 'bad'); }
   };

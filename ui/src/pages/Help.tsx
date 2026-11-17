@@ -110,7 +110,7 @@ const HELP: [string, string, () => Kid, { keyboard?: boolean }?][] = [
     <><B>Reveal</B> shows a login for 60 seconds. Every reveal is recorded in the <A href="#/audit">Audit Log</A>.</>,
     'Set “Last rotated” and Home reminds you about logins older than a year.',
     <><B>Bitwarden: </B>the Vault’s <B>⋯</B> menu imports Bitwarden’s or Vaultwarden’s plain .json export (you see each login and its device before anything is saved; delete the file afterwards) and exports for Bitwarden (it asks for your master password again).</>,
-    <><B>Old passwords </B>are listed on <A href="#/maintenance">Maintenance</A>, with <B>Change on machine</B>. How old counts as old is in Settings &gt; Status and actions.</>,
+    <><B>Old passwords </B>are listed on <A href="#/maintenance">Maintenance</A>, with <B>Change on machine</B>, and <B>Change them all</B> to do them one after another. How old counts as old is in Settings &gt; Status and actions.</>,
     <><B>🔑 Change on machine… </B>on a Linux login sets a new password over SSH with chpasswd, saves it, keeps the old one in its secret notes and checks the new one signs in. Update anything else that uses the old one.</>,
   ]} />],
   ['forms', 'Forms, unsaved changes and drafts', () => <L items={[
@@ -260,10 +260,12 @@ const HELP: [string, string, () => Kid, { keyboard?: boolean }?][] = [
   ['connect', 'Connecting to a machine', () => <>
     <p>Open a device and press <B>🔌 Connect</B>: a terminal in HaRM with the saved login, your own SSH app or a copied <C>ssh</C> command, a Remote Desktop file for Windows, its screen over VNC (in HaRM or your VNC app), the Proxmox console of a VM or node, or the management page (iDRAC, iLO).</p>
     <L items={[
-      <><B>HaRM’s SSH key: </B>make one in <A href="#/settings">Settings &gt; Locking and security</A>, then <B>🗝 Add to my machines…</B> there puts it on every machine with a saved SSH login (or <B>🗝 Add HaRM’s SSH key</B> in Connect, for one). HaRM then signs in with it, and background checks can use it instead of a stored password. The private key is encrypted with your master password.</>,
+      <><B>HaRM’s SSH key: </B>make one in <A href="#/settings">Settings &gt; Locking and security</A>, then <B>🗝 Add to my machines…</B> there puts it on every machine with a saved SSH login (or <B>🗝 Add HaRM’s SSH key</B> in Connect, for one). HaRM then signs in with it, and background checks can use it instead of a stored password. The private key is encrypted with your master password. <B>⟳ New key… &gt; Swap on my machines</B> replaces it everywhere.</>,
       <><B>Screen in HaRM: </B>VNC through HaRM. With a login picked it goes <B>through SSH</B>, encrypted, and reaches VNC that only listens on the machine (pick its port: 5900 is display :0). Without one, it needs a VNC port (5900–5999) on the Network tab and isn’t encrypted. If the machine asks for a VNC password, HaRM uses the picked login’s (that’s in the audit log) or asks you.</>,
-      'The terminal only works while HaRM is unlocked, and closes when it locks, after 30 minutes without typing, or when you leave the page. At most 4 are open at once.',
-      <>Opening and closing one is recorded in the <A href="#/audit">Audit Log</A>; what you type is never stored. Turn it off in <A href="#/settings">Settings &gt; Locking and security</A>.</>,
+      <><B>🔍 Find screens: </B>lists the VNC servers on the machine. VNC needs one running there; on a Linux desktop with X11, <B>Set up screen sharing</B> installs x11vnc, shared only through SSH, with its password in the vault. Wayland desktops and Macs get directions for their own screen sharing.</>,
+      <><B>📁 Files: </B>browse the machine’s folders, upload (or drop files), download, edit text files, new folder, rename and delete. <B>Use sudo</B> does it as root. The box at the bottom runs one command in the folder you’re in (up to 2 minutes, nothing interactive).</>,
+      'The terminal and files only work while HaRM is unlocked, and close when it locks, after 30 minutes unused, or when you leave the page. At most 4 of each are open at once.',
+      <>Opening and closing one is recorded in the <A href="#/audit">Audit Log</A>, and so are file uploads, downloads, changes and commands; what you type in the terminal is never stored. Turn it off in <A href="#/settings">Settings &gt; Locking and security</A>.</>,
       'It needs the ssh program on the computer running HaRM (built into Windows, macOS and most Linux).',
     ]} />
   </>],

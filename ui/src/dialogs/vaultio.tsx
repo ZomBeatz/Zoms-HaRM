@@ -151,3 +151,75 @@ function Change({ m, cred, after }: { m: ModalCtl; cred: Row; after?: After }) {
     <div className="actions"><Btn label="Cancel" onClick={() => m.close(true)} /><Btn label={busy ? 'Changing…' : '🔑 Change password'} cls="primary" disabled={busy || !host || pw.length < 12} onClick={go} /></div>
   </form>;
 }
+
+/* ------------------------------------------------------------------ change many (Maintenance > Old passwords) */
+
+/* Each login on its device's first address (or the address saved with it), one after another, each
+ * with its own new password, the same way as Change on machine. */
+export function changeManyOnMachines(creds: Row[], after?: After) {
+  modal('Change old passwords on the machines', (m: ModalCtl) => <ChangeMany m={m} creds={creds} after={after} />, { wide: true });
+}
+
+type Res = { ok: boolean; text: string };
+
+function ChangeMany({ m, creds, after }: { m: ModalCtl; creds: Row[]; after?: After }) {
+  const [rows, setRows] = useState<Row[] | null>(null);
+  const [pick, setPick] = useState<Set<number>>(new Set());
+  const [res, setRes] = useState<Record<number, Res | 'busy'>>({});
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    (async () => {
+      const out: Row[] = [];
+      for (const c of creds.filter(x => x.device_id && x.username)) {
+        try {
+          const t = await GET(`/devices/${c.device_id}/collect-targets`);
+          if (t.is_windows || !t.hosts.length) continue;
+          const saved = t.credentials.find((x: Row) => x.id === c.id);
+          const port = (String(saved?.url || '').split('://').pop()!.match(/:(\d{1,5})(\/|$)/) || [])[1] || '22';
+          out.push({ ...c, host: t.hosts[0], port: +port });
+        } catch { /* skip it */ }
+      }
+      setRows(out); setPick(new Set(out.map(x => x.id)));
+    })();
+  }, [creds]);
+  if (!rows) return <div className="muted"><Spinner /> Loading…</div>;
+  if (!rows.length) return <p className="muted">None of these logins can be changed here: it needs a username and a Linux device with an address.</p>;
+  const all = async () => {
+    setBusy(true);
+    let good = 0;
+    const todo = rows.filter(x => pick.has(x.id));
+    for (const x of todo) {
+      setRes(r => ({ ...r, [x.id]: 'busy' }));
+      let out: Res;
+      try {
+        const r = await api('POST', `/credentials/${x.id}/change-on-machine`, { host: x.host, port: x.port, via_credential_id: x.id,
+          sudo: x.username !== 'root', new_password: genPassword(24) });
+        out = { ok: true, text: r.works === false ? 'Changed and saved. Signing in with it over SSH didn’t work: check it now (maybe it only allows keys)' : 'Changed and saved' };
+        good++;
+      } catch (e) { out = { ok: false, text: (e as Error).message }; }
+      setRes(r => ({ ...r, [x.id]: out }));
+    }
+    setBusy(false);
+    after?.();
+    toast(`Changed ${good} of ${todo.length}`, good === todo.length ? 'ok' : 'bad');
+  };
+  const toggle = (id: number, on: boolean) => setPick(p => { const n = new Set(p); if (on) n.add(id); else n.delete(id); return n; });
+  return <div className="disc-form">
+    <p>HaRM signs in to each machine with the login, sets a new random password (24 characters) with <span className="mono">chpasswd</span>, and saves it here. Each old password is kept in that login’s secret notes.</p>
+    <p className="warn-text small">Anything else that signs in with these passwords (scripts, backup jobs, other apps, a password manager) stops working until you update it.</p>
+    <ul className="plain-list key-targets">{rows.map(x => {
+      const r = res[x.id];
+      return <li key={x.id}>
+        <label className="check"><input type="checkbox" checked={pick.has(x.id)} disabled={busy || (r !== 'busy' && !!r?.ok)} onChange={e => toggle(x.id, e.target.checked)} />
+          <span><b>{x.label}</b> <span className="mono small">{`${x.username}@${x.host}${x.port !== 22 ? `:${x.port}` : ''}`}</span>
+            <span className="muted small">{` · ${x.device}`}</span></span></label>
+        {r === 'busy' ? <div className="muted small"><Spinner /> Changing…</div>
+          : r ? <div className={`small ${r.ok ? 'ok-text' : 'warn-text'}`}>{r.ok ? '✓ ' : '✗ '}{r.text}</div> : null}
+      </li>;
+    })}</ul>
+    <div className="inline">
+      <Btn label={busy ? 'Changing…' : `🔑 Change ${pick.size} password${pick.size === 1 ? '' : 's'}`} cls="primary" disabled={busy || !pick.size} onClick={all} />
+      <Btn label="Close" disabled={busy} onClick={() => m.close(true)} />
+    </div>
+  </div>;
+}

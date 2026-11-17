@@ -81,6 +81,14 @@ def has(conn, did: int, user: str, host: str, port: int) -> str | None:
     return places(conn).get(_place(did, user, host, port))
 
 
+def place_parts(place: str) -> dict:
+    """"3|root@10.0.0.5:22" -> {device_id, user, host, port}."""
+    did, _, rest = place.partition("|")
+    user, _, hp = rest.partition("@")
+    host, _, port = hp.rpartition(":")
+    return {"device_id": int(did), "user": user, "host": host, "port": int(port)}
+
+
 def private(conn, dek: bytes | None) -> str | None:
     v = _load(conn)
     if not v or not dek:
@@ -100,6 +108,60 @@ def rewrap(conn, old: bytes, new: bytes) -> None:
     priv = private(conn, old)
     if priv:
         save(conn, new, priv, public(conn), places(conn))
+
+
+# --------------------------------------------------------------------------- swapping for a new key
+
+NEXT = "ssh_key_next"
+
+
+def make_next(conn, dek: bytes, comment: str) -> dict:
+    """A new key waiting to take over: it goes on each machine first, then replaces the current one."""
+    v = _load_next(conn)
+    if not v:
+        priv, pub = generate(comment)
+        v = {"pub": pub, "priv": crypto.b64e(crypto.seal(dek, priv.encode(), AAD)), "places": {}}
+        db.set_meta(conn, NEXT, json.dumps(v))
+    return {"public": v["pub"], "places": v["places"]}
+
+
+def _load_next(conn) -> dict | None:
+    try:
+        return json.loads(db.get_meta(conn, NEXT) or "null")
+    except ValueError:
+        return None
+
+
+def next_private(conn, dek: bytes | None) -> tuple[str, str] | None:
+    v = _load_next(conn)
+    if not v or not dek:
+        return None
+    try:
+        return crypto.unseal(dek, crypto.b64d(v["priv"]), AAD).decode(), v["pub"]
+    except (crypto.DecryptError, ValueError, KeyError):
+        return None
+
+
+def next_mark(conn, place: str) -> None:
+    v = _load_next(conn)
+    if v:
+        v["places"][place] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        db.set_meta(conn, NEXT, json.dumps(v))
+
+
+def finish_next(conn, dek: bytes) -> str | None:
+    """The new key becomes HaRM's key, on the machines it reached. Returns the new private key."""
+    got = next_private(conn, dek)
+    if not got:
+        return None
+    priv, pub = got
+    save(conn, dek, priv, pub, _load_next(conn)["places"])
+    db.set_meta(conn, NEXT, None)
+    return priv
+
+
+def drop_next(conn) -> None:
+    db.set_meta(conn, NEXT, None)
 
 
 # --------------------------------------------------------------------------- the key on disk, briefly

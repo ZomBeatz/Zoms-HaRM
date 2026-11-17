@@ -146,7 +146,8 @@ def fake_vnc():
 
 
 def fake_sshd(tmp: str, pub: str) -> tuple[subprocess.Popen, int] | None:
-    """An sshd of our own on a spare port, letting in only HaRM's key (None if this computer can't run one)."""
+    """An sshd of our own on a spare port, letting in only HaRM's key (None if this computer can't run one).
+    Commands run with HOME set to a folder of its own, so the tests never touch this computer's ~/.ssh."""
     import socket
     sshd = shutil.which("sshd") or "/usr/sbin/sshd"
     if not os.path.exists(sshd) or not shutil.which("ssh-keygen"):
@@ -154,13 +155,15 @@ def fake_sshd(tmp: str, pub: str) -> tuple[subprocess.Popen, int] | None:
     d = Path(tmp) / "sshd"
     d.mkdir()
     subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(d / "host")], check=True)
-    (d / "keys").write_text(pub + "\n")
+    (d / "home" / ".ssh").mkdir(parents=True)
+    (d / "home" / ".ssh" / "authorized_keys").write_text(pub + "\n")
     with socket.socket() as so:
         so.bind(("127.0.0.1", 0))
         port = so.getsockname()[1]
-    (d / "config").write_text(f"Port {port}\nListenAddress 127.0.0.1\nHostKey {d / 'host'}\nAuthorizedKeysFile {d / 'keys'}\n"
+    (d / "config").write_text(f"Port {port}\nListenAddress 127.0.0.1\nHostKey {d / 'host'}\nAuthorizedKeysFile {d / 'home' / '.ssh' / 'authorized_keys'}\n"
                               f"PidFile {d / 'pid'}\nUsePAM no\nStrictModes no\nPasswordAuthentication no\n"
-                              "KbdInteractiveAuthentication no\nAllowTcpForwarding yes\nLogLevel ERROR\n")
+                              "KbdInteractiveAuthentication no\nAllowTcpForwarding yes\nLogLevel ERROR\n"
+                              f"ForceCommand env HOME={d / 'home'} sh -c \"$SSH_ORIGINAL_COMMAND\"\n")
     p = subprocess.Popen([sshd, "-D", "-e", "-f", str(d / "config")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(50):
         try:
@@ -172,6 +175,12 @@ def fake_sshd(tmp: str, pub: str) -> tuple[subprocess.Popen, int] | None:
             time.sleep(0.1)
     p.kill()
     return None
+
+
+def raw_put(c: Client, path: str, data: bytes) -> dict:
+    code, body, _ = c.raw("PUT", "/api" + path, data=data, headers={"Content-Type": "application/octet-stream"})
+    assert code == 200, (code, body[:300])
+    return json.loads(body)
 
 
 def main():
@@ -1010,12 +1019,95 @@ Let me know if you need anything else!"""
             t = next(x for x in c.call("GET", "/ssh-key/targets") if x["credential_id"] == cr["id"])
             assert t["port"] == sport and t["host"] == "127.0.0.1" and not t["added"], t
         finally:
-            sshd.kill()
-            vs.close()
-            c.call("DELETE", f"/credentials/{cr['id']}")
-            c.call("DELETE", "/ssh-key")
-            for x in made:
-                c.call("DELETE", f"/services/{x['id']}")
+            S["ssh"] = {"sshd": sshd, "port": sport, "cred": cr, "made": made, "vnc": vs,
+                        "home": Path(tmp) / "sshd" / "home", "did": did}
+
+    def over_ssh(fn):  # the tests below need the stand-in sshd
+        def run_it():
+            if not S.get("ssh"):
+                print("    (skipped: no sshd here)")
+                return
+            fn(S["ssh"])
+        return run_it
+
+    @test("files on a machine: list, upload, download, edit, rename, delete, a command, and only for this browser")
+    @over_ssh
+    def _(x):
+        f = c.call("POST", "/files", {"device_id": x["did"], "host": "127.0.0.1", "port": x["port"], "credential_id": x["cred"]["id"]})
+        sid, home = f["id"], f["home"]
+        assert home == str(x["home"].resolve()), f
+        d = home + "/harm test"
+        c.call("POST", f"/files/{sid}/do", {"op": "mkdir", "path": d})
+        blob = os.urandom(3_000_000)
+        assert raw_put(c, f"/files/{sid}/upload?" + urllib.parse.urlencode({"path": d + "/blob.bin"}), blob)["size"] == len(blob)
+        code, got, h = c.raw("GET", f"/api/files/{sid}/download?" + urllib.parse.urlencode({"path": d + "/blob.bin"}))
+        assert code == 200 and got == blob and "blob.bin" in h.get("content-disposition", ""), code
+        c.call("POST", f"/files/{sid}/do", {"op": "write", "path": d + "/notes.txt", "text": "hello\nthere\n"})
+        assert c.call("POST", f"/files/{sid}/do", {"op": "read", "path": d + "/notes.txt"})["text"] == "hello\nthere\n"
+        c.call("POST", f"/files/{sid}/do", {"op": "read", "path": d + "/blob.bin"}, expect=400)  # too big / not text
+        (x["home"] / "harm test" / "run.sh").write_text("echo hi\n")
+        (x["home"] / "harm test" / "run.sh").chmod(0o750)
+        c.call("POST", f"/files/{sid}/do", {"op": "write", "path": d + "/run.sh", "text": "echo hello\n"})
+        assert (x["home"] / "harm test" / "run.sh").stat().st_mode & 0o777 == 0o750  # editing keeps its permissions
+        c.call("POST", f"/files/{sid}/do", {"op": "delete", "path": d + "/run.sh"})
+        c.call("POST", f"/files/{sid}/do", {"op": "rename", "path": d + "/notes.txt", "to": d + "/blob.bin"}, expect=400)  # taken
+        c.call("POST", f"/files/{sid}/do", {"op": "rename", "path": d + "/notes.txt", "to": d + "/renamed.txt"})
+        ls = c.call("GET", f"/files/{sid}/list?" + urllib.parse.urlencode({"path": d}))
+        assert ls["path"] == d and sorted((e["name"], e["type"], e["size"]) for e in ls["entries"]) == \
+            [("blob.bin", "f", len(blob)), ("renamed.txt", "f", 12)], ls
+        r = c.call("POST", f"/files/{sid}/do", {"op": "run", "path": d, "command": "ls | wc -l; cat; echo oops >&2; exit 3"})
+        assert r["exit_code"] == 3 and r["output"].split() == ["2", "oops"], r
+        c.call("GET", f"/files/{sid}/list?path=/nowhere/at/all", expect=400)
+        c.call("GET", f"/files/{sid}/list?path=relative", expect=400)
+        c.call("POST", f"/files/{sid}/do", {"op": "delete", "path": home}, expect=400)  # never the home folder
+        c.call("POST", f"/files/{sid}/do", {"op": "delete", "path": d})
+        assert not (x["home"] / "harm test").exists()
+        Client().call("GET", f"/files/{sid}/list", expect=401)
+        acts = [a["action"] for a in c.call("GET", "/audit")[:12]]
+        assert {"files-open", "files-upload", "files-download", "files-run", "files-delete"} <= set(acts), acts
+        c.call("POST", f"/files/{sid}/close", {})
+        c.call("GET", f"/files/{sid}/list", expect=404)
+
+    @test("HaRM's key on all machines, then swapped for a new one everywhere")
+    @over_ssh
+    def _(x):
+        keys = x["home"] / ".ssh" / "authorized_keys"
+        old = c.call("GET", "/ssh-key")["key"]["public"]
+        t = next(y for y in c.call("GET", "/ssh-key/targets") if y["credential_id"] == x["cred"]["id"])
+        r = c.call("POST", f"/devices/{x['did']}/ssh-key", {"host": t["host"], "port": t["port"], "credential_id": t["credential_id"]})
+        assert r["works"] and keys.read_text().count(old) == 1, r
+        assert next(y for y in c.call("GET", "/ssh-key/targets") if y["credential_id"] == x["cred"]["id"])["added"]
+        n = c.call("POST", "/ssh-key/next")
+        assert n["public"] != old and len(n["places"]) == 1 and not n["places"][0]["done"], n
+        assert c.call("GET", "/ssh-key")["key"]["public"] == old  # the old key stays HaRM's until the end
+        c.call("POST", "/ssh-key/next/place", {"place": n["places"][0]["place"]})
+        assert n["public"] in keys.read_text() and old not in keys.read_text()
+        assert c.call("POST", "/ssh-key/next")["places"][0]["done"]
+        k = c.call("POST", "/ssh-key/next/finish")["key"]
+        assert k["public"] == n["public"]
+        c.call("POST", "/ssh-key/next/finish", expect=400)
+        f = c.call("POST", "/files", {"device_id": x["did"], "host": "127.0.0.1", "port": x["port"], "credential_id": x["cred"]["id"]})
+        c.call("POST", f"/files/{f['id']}/close", {})  # signs in with the new key
+        assert next(y for y in c.call("GET", "/ssh-key/targets") if y["credential_id"] == x["cred"]["id"])["added"]
+
+    @test("find screens: reads the machine over SSH and says what it can do")
+    @over_ssh
+    def _(x):
+        v = c.call("POST", f"/devices/{x['did']}/screens", {"host": "127.0.0.1", "port": x["port"], "credential_id": x["cred"]["id"]})
+        assert v["os"] == "Linux" and isinstance(v["ports"], list) and v["kind"] in ("x11", "wayland", "headless", "other"), v
+        assert v["can_setup"] == (v["kind"] == "x11") and (v["can_setup"] or v["advice"]), v
+        c.call("POST", f"/devices/{x['did']}/screens", {"host": "10.255.255.1", "port": x["port"], "credential_id": x["cred"]["id"]}, expect=400)
+        assert "screen" in c.call("GET", f"/devices/{x['did']}/collect-targets")
+
+    @test("(the stand-in sshd is stopped)")
+    @over_ssh
+    def _(x):
+        x["sshd"].kill()
+        x["vnc"].close()
+        c.call("DELETE", f"/credentials/{x['cred']['id']}")
+        c.call("DELETE", "/ssh-key")
+        for y in x["made"]:
+            c.call("DELETE", f"/services/{y['id']}")
 
     @test("old passwords: listed on Maintenance and Home, by the age in Settings")
     def _():

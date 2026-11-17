@@ -39,6 +39,14 @@ export const parseSizeGB = (t: string | null | undefined) => {
 };
 export const STORAGE_CATS = /^(HDD|SSD|NVMe SSD|USB \/ Flash)$/;
 
+/* Sizes as drives and file managers show them (1 KB = 1000 bytes). */
+export const fmtBytes = (n: number | null | undefined) => {
+  if (n == null) return '';
+  for (const [unit, d] of [['TB', 1e12], ['GB', 1e9], ['MB', 1e6], ['KB', 1e3]] as const) {
+    if (n >= d) { const v = n / d; return `${v < 100 ? +v.toFixed(1) : Math.round(v)} ${unit}`; }
+  }
+  return `${n} B`;
+};
 export const fmtMs = (ms: number | null | undefined) => ms == null ? '' : ms < 1 ? 'under 1 ms' : `${Math.round(ms)} ms`;
 /* The server's timestamps are UTC without a zone ("2026-10-31 14:30:00"); a few carry one ("…T14:30:00+00:00"). */
 export const utcDate = (ts: string) => { const t = String(ts).replace(' ', 'T'); return new Date(/(Z|[+-]\d\d:?\d\d)$/i.test(t) ? t : t + 'Z'); };

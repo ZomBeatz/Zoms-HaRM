@@ -2,6 +2,18 @@
 
 ## 0.3.3
 
+**Files on a machine**
+- **📁 Files** in **🔌 Connect** (and on the terminal page) opens a file browser for the machine: folders with size, date, permissions and owner, **⬆ Upload** (or drop files on it), **⬇ Download**, **+ Folder**, **+ File**, rename or move, and delete.
+- Click a text file (up to 1 MB) to open it in an editor; **Save** (or Ctrl+S) writes it back, keeping its permissions.
+- **Use sudo** lists, opens and changes things as root, for files like `/etc` configs.
+- A command box at the bottom runs one command in the folder you're in and shows what it printed, without opening a terminal.
+- It uses one SSH connection with the saved login (or HaRM's key), only while HaRM is unlocked, and closes when HaRM locks, after 30 minutes unused or when you leave the page. Uploads, downloads, changes and commands are in the audit log.
+
+**Screens: find them, or set one up**
+- **🔍 Find screens** (next to the screen in **🔌 Connect**) looks at the machine over SSH and lists the VNC servers it runs, including ones only open on the machine itself.
+- On a Linux desktop with X11, **🔧 Set up screen sharing** installs **x11vnc** as a service that shares the desktop on the machine only, so it's reached through HaRM's SSH connection, with a new VNC password saved in the vault. **Take it out** removes it again.
+- Wayland desktops (GNOME, KDE, Sway), Macs and machines without a desktop get directions for their own screen sharing instead.
+
 **The screen through SSH**
 - **🖥 Screen in HaRM (VNC)** can go **through SSH**: HaRM signs in to the machine with the picked login (or its own SSH key) and reaches VNC on the machine itself, so the screen is encrypted all the way. It's on whenever a login with a username is picked.
 - That also works for VNC servers that only listen on the machine (like `x11vnc -localhost`), which HaRM couldn't reach before: pick the VNC port (5900 is display :0, 5901 is :1) in **🔌 Connect**.
@@ -11,6 +23,10 @@
 **HaRM's SSH key on all your machines**
 - **Settings > Locking and security > HaRM's SSH key > 🗝 Add to my machines…** lists every device with a saved SSH or OS login, and adds the key to all the ones you tick, one after another, with ✓ or the reason for each.
 - It remembers where the key was added (**added 3d ago**), so those start unticked. A new key starts with none.
+- **⟳ New key… > Swap on my machines** puts a new key on every machine that has the current one, checks HaRM can sign in with it, then takes the old one out. **Use the new key** switches at the end, so nothing stops working along the way.
+
+**Change old passwords in one go**
+- **Maintenance > Old passwords > 🔑 Change them all…** sets a new random password on each machine (with `chpasswd`, like **Change on machine**), one after another, saves each in the vault, and shows ✓ or the reason for each.
 
 **Smaller things**
 - **🔌 Connect** takes the SSH port from the login's address (like `10.0.0.5:2222`).

@@ -1028,6 +1028,23 @@ body.wall .wall-exit:hover { opacity: 1; }
 .svc-result { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .key-line { overflow-wrap: anywhere; word-break: break-all; flex: 1 1 280px; }
 .key-targets { max-height: 50vh; overflow-y: auto; }
+/* Files on a machine */
+.files-page { display: flex; flex-direction: column; gap: 8px; min-height: calc(100dvh / var(--zoom, 1) - 120px); border-radius: var(--radius); }
+.files-page.drop { outline: 2px dashed var(--accent); outline-offset: 4px; }
+.files-bar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.files-bar input.mono { flex: 1 1 260px; min-width: 0; }
+.files-crumbs { overflow-wrap: anywhere; color: var(--muted); }
+.files-list { flex: 1; min-height: 160px; }
+.files-list tr.files-dir td:first-child { font-weight: 600; }
+.files-name { overflow-wrap: anywhere; }
+.files-ups progress { width: 140px; vertical-align: middle; }
+.files-shell { border-top: 1px solid var(--line); padding-top: 8px; }
+.files-shell form { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.files-shell form input { flex: 1 1 260px; min-width: 0; }
+.files-log { max-height: 34vh; overflow: auto; background: var(--zb-bg); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px; margin-bottom: 8px; }
+.files-log pre { margin: 2px 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.files-cmd { color: var(--accent); }
+.files-text { width: 100%; min-height: 60vh; resize: vertical; font-size: 13px; tab-size: 4; white-space: pre; }
 .key-targets > li > div { margin-left: 26px; }
 .connect-list { display: grid; gap: 10px; margin-top: 8px; }
 .connect-list > div { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }

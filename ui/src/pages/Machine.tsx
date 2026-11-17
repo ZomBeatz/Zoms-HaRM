@@ -5,18 +5,12 @@
 import { useEffect, useState } from 'react';
 import { api, GET } from '../api/client';
 import type { BackupCheck, Disk, MachineLabel, MachineView, Problem, Volume } from '../api/types';
-import { duration, timeAgo, type Row } from '../lib/util';
+import { duration, fmtBytes, timeAgo, type Row } from '../lib/util';
 import { choose, modal, toast, type ModalCtl } from '../ui/overlay';
 import { Bar, Btn, Card, MenuButton, Small, Spinner, Table } from '../ui/bits';
 import { Connect } from './Containers';
 
-export const fmtBytes = (n: number | null | undefined) => {
-  if (n == null) return '';
-  for (const [u, d] of [['TB', 1e12], ['GB', 1e9], ['MB', 1e6]] as const) {
-    if (n >= d) { const v = n / d; return `${v < 100 ? +v.toFixed(1) : Math.round(v)} ${u}`; }
-  }
-  return `${n} B`;
-};
+export { fmtBytes };
 const LEVEL: Record<string, string> = { bad: 'bad', warn: 'warn', info: 'info' };
 export const ProblemList = ({ items, showDevice = false }: { items: Problem[]; showDevice?: boolean }) =>
   items.length ? <ul className="plain-list">{items.map(p => <li key={(p.device_id || '') + p.key}>

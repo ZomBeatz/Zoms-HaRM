@@ -19,5 +19,6 @@ export const connectDialog = (dev: Row) => load(() => import('./connect')).then(
 export const importBitwarden = (after?: After) => load(() => import('./vaultio')).then(m => m.importBitwarden(after));
 export const exportBitwarden = () => load(() => import('./vaultio')).then(m => m.exportBitwarden());
 export const changeOnMachine = (cred: Row, after?: After) => load(() => import('./vaultio')).then(m => m.changeOnMachine(cred, after));
+export const changeManyOnMachines = (creds: Row[], after?: After) => load(() => import('./vaultio')).then(m => m.changeManyOnMachines(creds, after));
 export const installApp = () => load(() => import('./phone')).then(m => m.installApp());
 export const phoneAppHelp = () => load(() => import('./phone')).then(m => m.phoneAppHelp());

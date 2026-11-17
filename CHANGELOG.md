@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.3
+
+**The screen through SSH**
+- **🖥 Screen in HaRM (VNC)** can go **through SSH**: HaRM signs in to the machine with the picked login (or its own SSH key) and reaches VNC on the machine itself, so the screen is encrypted all the way. It's on whenever a login with a username is picked.
+- That also works for VNC servers that only listen on the machine (like `x11vnc -localhost`), which HaRM couldn't reach before: pick the VNC port (5900 is display :0, 5901 is :1) in **🔌 Connect**.
+- Clear reasons when it can't connect: the login was refused, the machine's SSH key changed (with **Trust the new key and connect**), or nothing answers on that VNC port.
+- If the machine refuses the saved login's password as its VNC password, **Connect again** asks you for it instead.
+
+**HaRM's SSH key on all your machines**
+- **Settings > Locking and security > HaRM's SSH key > 🗝 Add to my machines…** lists every device with a saved SSH or OS login, and adds the key to all the ones you tick, one after another, with ✓ or the reason for each.
+- It remembers where the key was added (**added 3d ago**), so those start unticked. A new key starts with none.
+
+**Smaller things**
+- **🔌 Connect** takes the SSH port from the login's address (like `10.0.0.5:2222`).
+- "Made …" under HaRM's SSH key showed a broken date.
+
 ## 0.3.2
 
 **See what's online: the Status page**

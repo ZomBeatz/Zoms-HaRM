@@ -40,8 +40,8 @@ export const parseSizeGB = (t: string | null | undefined) => {
 export const STORAGE_CATS = /^(HDD|SSD|NVMe SSD|USB \/ Flash)$/;
 
 export const fmtMs = (ms: number | null | undefined) => ms == null ? '' : ms < 1 ? 'under 1 ms' : `${Math.round(ms)} ms`;
-/* The server's timestamps are UTC without a zone ("2026-10-31 14:30:00"). */
-export const utcDate = (ts: string) => new Date(String(ts).replace(' ', 'T') + 'Z');
+/* The server's timestamps are UTC without a zone ("2026-10-31 14:30:00"); a few carry one ("…T14:30:00+00:00"). */
+export const utcDate = (ts: string) => { const t = String(ts).replace(' ', 'T'); return new Date(/(Z|[+-]\d\d:?\d\d)$/i.test(t) ? t : t + 'Z'); };
 export const clock = (ts: string) => utcDate(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: FMT.clock === 'auto' ? undefined : FMT.clock === '12' });
 
 export function timeAgo(ts: string | null | undefined, now = Date.now()) {

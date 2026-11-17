@@ -1883,13 +1883,23 @@ async def vnc_open(request: Request, s=Depends(require_session), conn=Depends(ge
         raise HTTPException(400, "That isn't one of this device's addresses (add it on its Network tab)")
     if port not in _vnc_ports(conn, did):
         raise HTTPException(400, "VNC opens on ports 5900 to 5999, or a service on this device named VNC")
+    ssh = None
+    if body.get("ssh_port"):  # through SSH: sign in, and check VNC answers on the machine itself
+        user, pw = _machine_login(conn, s, {"credential_id": body.get("credential_id")})
+        ssh = {"port": int(body["ssh_port"]), "user": user, "password": pw, "key": _hkey(conn, s)}
+        try:
+            if body.get("trust_new_key"):
+                await asyncio.to_thread(remote.forget_host, host, ssh["port"])
+            await asyncio.to_thread(remote.probe_vnc, host, ssh["port"], user, pw, ssh["key"], port)
+        except remote.RemoteError as e:
+            raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
     try:
-        t = vnc.ticket(_owner(request), host, port, f"{dev['name']} ({host}:{port})")
+        t = vnc.ticket(_owner(request), host, port, f"{dev['name']} ({host}:{port})", ssh)
     except vnc.VNCError as e:
         raise HTTPException(400, str(e))
-    audit(conn, request, "vnc-open", "devices", did, f"{dev['name']}: {host}:{port}")
+    audit(conn, request, "vnc-open", "devices", did, f"{dev['name']}: {host}:{port}" + (f" through SSH as {ssh['user']}" if ssh else ""))
     conn.commit()
-    return {"ticket": t, "label": f"{dev['name']} · {host}:{port}"}
+    return {"ticket": t, "label": f"{dev['name']} · {host}:{port}", "ssh": bool(ssh)}
 
 
 @app.websocket("/api/vnc/ws")
@@ -1905,7 +1915,7 @@ async def vnc_socket(ws: WebSocket, t: str = ""):
         return
     asked = [p.strip() for p in (ws.headers.get("sec-websocket-protocol") or "").split(",") if p.strip()]
     await ws.accept(subprotocol="binary" if "binary" in asked else None)
-    await vnc.relay(ws, v["host"], v["port"], owner, _owner_alive)
+    await vnc.relay(ws, v, owner, _owner_alive)
 
 
 @app.post("/api/terminal")
@@ -2410,6 +2420,32 @@ def ssh_key_delete(request: Request, s=Depends(require_session), conn=Depends(ge
     return {"key": None, "background": False}
 
 
+def _ssh_port(url: str | None) -> int:
+    """The port in a login's address (ssh://host:2222 or host:2222), else 22."""
+    m = re.search(r":(\d{1,5})(?:/|$)", (url or "").split("://")[-1])
+    return int(m.group(1)) if m and 0 < int(m.group(1)) < 65536 else 22
+
+
+@app.get("/api/ssh-key/targets")
+def ssh_key_targets(s=Depends(require_session), conn=Depends(get_db)):
+    """Machines HaRM's key could go on: each device with a saved SSH (or OS) login that has a
+    username and password, at its first address. Windows machines are left out (no authorized_keys script)."""
+    out = []
+    for d in conn.execute("SELECT id, name FROM devices ORDER BY name COLLATE NOCASE"):
+        t = collect_targets(d["id"], s, conn)
+        if t["is_windows"] or not t["hosts"]:
+            continue
+        c = next((c for c in t["credentials"] if c["username"] and c["has_password"]
+                  and re.search(r"ssh|os", c["kind"] or "", re.I)), None)
+        if not c:
+            continue
+        port = _ssh_port(c["url"])
+        out.append({"device_id": d["id"], "device": d["name"], "host": t["hosts"][0], "port": port,
+                    "credential_id": c["id"], "login": c["label"], "username": c["username"],
+                    "added": sshkey.has(conn, d["id"], c["username"], t["hosts"][0], port)})
+    return out
+
+
 @app.post("/api/devices/{did}/ssh-key")
 async def ssh_key_machine(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
     """Add HaRM's public key to a login's authorized_keys on the machine (or take it out), then check it."""
@@ -2443,6 +2479,7 @@ async def ssh_key_machine(did: int, request: Request, s=Depends(require_session)
             works = t["ok"]
         except remote.RemoteError:
             works = False
+    sshkey.mark(conn, did, user, host, port, not remove)
     what = "Took HaRM's SSH key out of" if remove else "Added HaRM's SSH key to"
     audit(conn, request, "ssh-key-removed" if remove else "ssh-key-added", "devices", did, f"{dev['name']}: {user}@{host}")
     did_note(conn, did, f"{what} {user}'s authorized_keys on {host}.")

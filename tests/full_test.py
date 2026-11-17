@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -26,7 +27,8 @@ PW = "correct horse battery"
 
 class Client:
     def __init__(self):
-        self.op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        self.jar = http.cookiejar.CookieJar()
+        self.op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar))
 
     def raw(self, m, p, body=None, headers=None, data=None):
         h = {"X-HaRM": "1", "Origin": BASE}
@@ -125,6 +127,53 @@ def fake_proxmox():
     return srv
 
 
+def fake_vnc():
+    """A stand-in VNC server: says hello as RFB 3.8, which is all the relay tests need."""
+    import socket
+    import threading
+    srv = socket.create_server(("127.0.0.1", 0))
+
+    def serve():
+        while True:
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                return
+            conn.sendall(b"RFB 003.008\n")
+            conn.close()
+    threading.Thread(target=serve, daemon=True).start()
+    return srv
+
+
+def fake_sshd(tmp: str, pub: str) -> tuple[subprocess.Popen, int] | None:
+    """An sshd of our own on a spare port, letting in only HaRM's key (None if this computer can't run one)."""
+    import socket
+    sshd = shutil.which("sshd") or "/usr/sbin/sshd"
+    if not os.path.exists(sshd) or not shutil.which("ssh-keygen"):
+        return None
+    d = Path(tmp) / "sshd"
+    d.mkdir()
+    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(d / "host")], check=True)
+    (d / "keys").write_text(pub + "\n")
+    with socket.socket() as so:
+        so.bind(("127.0.0.1", 0))
+        port = so.getsockname()[1]
+    (d / "config").write_text(f"Port {port}\nListenAddress 127.0.0.1\nHostKey {d / 'host'}\nAuthorizedKeysFile {d / 'keys'}\n"
+                              f"PidFile {d / 'pid'}\nUsePAM no\nStrictModes no\nPasswordAuthentication no\n"
+                              "KbdInteractiveAuthentication no\nAllowTcpForwarding yes\nLogLevel ERROR\n")
+    p = subprocess.Popen([sshd, "-D", "-e", "-f", str(d / "config")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(50):
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+            return p, port
+        except OSError:
+            if p.poll() is not None:
+                return None
+            time.sleep(0.1)
+    p.kill()
+    return None
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="harm-full-")
     env = {**os.environ, "HARM_DB": os.path.join(tmp, "harm.db"), "HARM_AUTO_BACKUP": "0", "HARM_IDLE_MINUTES": "30",
@@ -138,7 +187,7 @@ def main():
                 break
             except Exception:
                 time.sleep(0.2)
-        run(Client())
+        run(Client(), tmp)
     finally:
         server.terminate()
         server.wait(10)
@@ -152,7 +201,7 @@ def main():
     sys.exit(1 if failed or tracebacks else 0)
 
 
-def run(c: Client):
+def run(c: Client, tmp: str):
     S = {}
 
     print("Auth & security")
@@ -924,6 +973,49 @@ Let me know if you need anything else!"""
                 raise AssertionError(f"the relay opened for {origin}")
             except (ConnectionClosed, InvalidStatus):
                 pass
+
+    @test("VNC through SSH: signs in with HaRM's key, reaches VNC on the machine itself, explains failures")
+    def _():
+        import getpass
+        from websockets.sync.client import connect as ws_connect
+        did = S["up"]["id"]
+        pub = c.call("POST", "/ssh-key", {})["key"]["public"]
+        vs = fake_vnc()
+        vport = vs.getsockname()[1]
+        made = [c.call("POST", "/services", {"device_id": did, "name": "VNC", "port": vport})]  # its port counts as VNC
+        started = fake_sshd(tmp, pub)
+        if not started:
+            print("    (no sshd here: the SSH part is skipped)")
+            c.call("DELETE", "/ssh-key")
+            c.call("DELETE", f"/services/{made[0]['id']}")
+            return
+        sshd, sport = started
+        cr = c.call("POST", "/credentials", {"label": "SSH test", "kind": "SSH", "username": getpass.getuser(),
+                                             "password": "test-password-123", "device_id": did, "url": f"127.0.0.1:{sport}"})
+        try:
+            base = {"device_id": did, "host": "127.0.0.1", "port": vport, "ssh_port": sport, "credential_id": cr["id"]}
+            r = c.call("POST", "/vnc", base)
+            assert r["ssh"], r
+            cookie = "; ".join(f"{k.name}={k.value}" for k in c.jar)
+            with ws_connect(f"ws://127.0.0.1:{PORT}/api/vnc/ws?t={r['ticket']}", origin=BASE, open_timeout=10,
+                            additional_headers={"Cookie": cookie}, subprotocols=["binary"]) as w:
+                assert w.recv(timeout=20) == b"RFB 003.008\n"
+            with socket.socket() as so:  # a port nothing listens on, named VNC
+                so.bind(("127.0.0.1", 0))
+                free = so.getsockname()[1]
+            made.append(c.call("POST", "/services", {"device_id": did, "name": "VNC spare", "port": free}))
+            err = c.call("POST", "/vnc", {**base, "port": free}, expect=400)
+            assert "nothing answers" in err["detail"], err
+            assert any(a["action"] == "vnc-open" and "through SSH" in a["detail"] for a in c.call("GET", "/audit")[:10])
+            t = next(x for x in c.call("GET", "/ssh-key/targets") if x["credential_id"] == cr["id"])
+            assert t["port"] == sport and t["host"] == "127.0.0.1" and not t["added"], t
+        finally:
+            sshd.kill()
+            vs.close()
+            c.call("DELETE", f"/credentials/{cr['id']}")
+            c.call("DELETE", "/ssh-key")
+            for x in made:
+                c.call("DELETE", f"/services/{x['id']}")
 
     @test("old passwords: listed on Maintenance and Home, by the age in Settings")
     def _():

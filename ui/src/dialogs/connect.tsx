@@ -10,6 +10,8 @@ import { Btn, Spinner } from '../ui/bits';
 
 const isWindows = (d: Row) => /windows/i.test(`${d.os || ''} ${d.device_type || ''}`);
 const shortName = (n?: string | null) => (n || '').split('.')[0];
+/* The port in a login's address (ssh://host:2222 or host:2222), else 22. */
+const portOf = (c?: Row) => (String(c?.url || '').split('://').pop()!.match(/:(\d{1,5})(\/|$)/) || [])[1] || '22';
 
 export function connectDialog(dev: Row) {
   modal(`Connect to ${dev.name}`, (m: ModalCtl) => <Connect m={m} dev={dev} />);
@@ -23,12 +25,14 @@ function Connect({ m, dev }: { m: ModalCtl; dev: Row }) {
   const [cred, setCred] = useState('');
   const [hasKey, setHasKey] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [viaSsh, setViaSsh] = useState(true);
+  const [vncP, setVncP] = useState('5900');
   useEffect(() => {
     GET('/ssh-key').then(k => setHasKey(!!k.key)).catch(() => {});
     GET(`/devices/${dev.id}/collect-targets`).then(x => {
       setT(x); setHost(x.hosts[0] || '');
       const ssh = x.credentials.find((c: Row) => /ssh|os/i.test(c.kind || '')) || x.credentials[0];
-      if (ssh) setCred(String(ssh.id));
+      if (ssh) { setCred(String(ssh.id)); setPort(portOf(ssh)); }
     }).catch(() => setT({ hosts: [], credentials: [] }));
     GET('/discover/config').then(c => setPve(c.proxmox?.url || '')).catch(() => {});
   }, [dev.id]);
@@ -57,14 +61,19 @@ function Connect({ m, dev }: { m: ModalCtl; dev: Row }) {
     } catch (e) { toast((e as Error).message, 'bad'); }
     setBusy(false);
   };
-  const vnc = (dev.services || []).find((s: Row) => s.port >= 5900 && s.port <= 5999);
+  const vncSvc = (dev.services || []).find((s: Row) => s.port >= 5900 && s.port <= 5999);
+  // Through SSH needs a login with a username; then VNC that only listens on the machine works too (port 5900).
+  const canSsh = !!(cred && user) && !isWindows(dev);
+  const vncPort = vncSvc?.port || (canSsh ? +vncP || 5900 : 0);
+  const ssh = canSsh && viaSsh;
+  const screen = () => go(`#/vnc?${new URLSearchParams({ d: String(dev.id), h: host, p: String(vncPort), ...(cred ? { c: cred } : {}), ...(ssh ? { s: String(p) } : {}) })}`);
   return <div className="disc-form connect">
     <div className="inline">
       <label className="disc-field"><span>Address</span>
         <input list="cn-hosts" value={host} onChange={e => setHost(e.target.value)} />
         <datalist id="cn-hosts">{t.hosts.map((h: string) => <option key={h} value={h} />)}</datalist></label>
       <label className="disc-field"><span>Port</span><input value={port} onChange={e => setPort(e.target.value)} inputMode="numeric" style={{ width: 80 }} /></label>
-      <label className="disc-field"><span>Login</span><select value={cred} onChange={e => setCred(e.target.value)}>
+      <label className="disc-field"><span>Login</span><select value={cred} onChange={e => { setCred(e.target.value); setPort(portOf(t.credentials.find((x: Row) => String(x.id) === e.target.value))); }}>
         <option value="">None (this computer’s SSH key)</option>
         {t.credentials.map((x: Row) => <option key={x.id} value={x.id}>{`${x.label}${x.username ? ` (${x.username})` : ''}`}</option>)}</select></label>
     </div>
@@ -78,8 +87,12 @@ function Connect({ m, dev }: { m: ModalCtl; dev: Row }) {
       <div><Btn label="📋 Copy SSH command" onClick={() => copy(sshCmd, `Copied: ${sshCmd}`)} /><span className="mono small">{sshCmd}</span></div>
       {isWindows(dev) || (dev.services || []).some((s: Row) => s.port === 3389) ? <div><Btn label="🖥 Remote desktop file (.rdp)" onClick={rdp} />
         <span className="muted small">Opens in Remote Desktop (Windows, Mac) or Remmina. It asks for the password itself.</span></div> : null}
-      {vnc ? <div>{S.caps?.terminal !== false ? <Btn label="🖥 Screen in HaRM (VNC)" onClick={() => go(`#/vnc?${new URLSearchParams({ d: String(dev.id), h: host, p: String(vnc.port), ...(cred ? { c: cred } : {}) })}`)} disabled={!host} /> : null}
-        <a className="button" href={`vnc://${host}:${vnc.port}`}>↗ VNC app</a><span className="muted small">{`Port ${vnc.port}. In HaRM’s page, or the VNC app on your computer.`}</span></div> : null}
+      {vncPort ? <div>{S.caps?.terminal !== false ? <Btn label="🖥 Screen in HaRM (VNC)" onClick={screen} disabled={!host} /> : null}
+        {vncSvc ? <a className="button" href={`vnc://${host}:${vncPort}`}>↗ VNC app</a> : null}
+        {vncSvc ? null : <input aria-label="VNC port" title="VNC port on the machine (5900 is display :0, 5901 is :1)" value={vncP} onChange={e => setVncP(e.target.value)} inputMode="numeric" style={{ width: 70 }} />}
+        <span className="muted small">{vncSvc ? `Port ${vncPort}. ` : 'VNC port on the machine. '}
+          {canSsh ? <label className="check inline-check"><input type="checkbox" checked={viaSsh} disabled={!vncSvc} onChange={e => setViaSsh(e.target.checked)} />{`Through SSH as ${user} (encrypted)`}</label>
+            : 'Not encrypted: pick an SSH login to send it through SSH.'}</span></div> : null}
       {pveUrl ? <div><a className="button" href={pveUrl} target="_blank" rel="noopener noreferrer">↗ Proxmox console</a>
         <span className="muted small">{guest ? 'The VM’s screen, in Proxmox (sign in to Proxmox if it asks).' : 'The node’s shell, in Proxmox.'}</span></div> : null}
       {dev.mgmt_url ? <div><a className="button" href={dev.mgmt_url} target="_blank" rel="noopener noreferrer">↗ Management page</a>

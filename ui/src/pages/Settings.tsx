@@ -9,6 +9,7 @@ import { A, Badge, Btn, Card, KV, PageHead, Small, type Kid } from '../ui/bits';
 import { formDialog } from '../ui/form';
 import { editAlerts, editNetwatch, testAlerts } from '../dialogs/watch';
 import { AiSettingsCard } from '../dialogs/ai';
+import { addKeyDialog } from '../dialogs/sshkey';
 import { installApp, phoneAppHelp } from '../dialogs/phone';
 import { showRecoveryCode } from '../app/Auth';
 import { lockNow } from '../app/session';
@@ -472,9 +473,9 @@ function SshKeyCard() {
   useEffect(() => { GET('/ssh-key').then(setK).catch(() => setK({ key: null })); }, []);
   if (!k) return null;
   const make = async (replace: boolean) => {
-    if (replace && await choose('Make a new SSH key?', 'Machines that have the old key stop letting HaRM in with it, until you add the new one (🔌 Connect > Add HaRM’s SSH key). Take the old one out of them too.',
+    if (replace && await choose('Make a new SSH key?', 'Machines that have the old key stop letting HaRM in with it, until you add the new one (Add to my machines, or 🔌 Connect > Add HaRM’s SSH key). Take the old one out of them too.',
       [['no', 'Cancel'], ['yes', 'Make a new key', 'primary']]) !== 'yes') return;
-    try { setK(await api('POST', '/ssh-key', { replace })); toast(replace ? 'New key made' : 'Key made. Now add it to your machines with 🔌 Connect'); }
+    try { setK(await api('POST', '/ssh-key', { replace })); toast(replace ? 'New key made. Add it to your machines again' : 'Key made. Now add it to your machines'); }
     catch (e) { toast((e as Error).message, 'bad'); }
   };
   const del = async () => {
@@ -483,11 +484,11 @@ function SshKeyCard() {
     try { setK(await api('DELETE', '/ssh-key')); toast('Key deleted'); } catch (e) { toast((e as Error).message, 'bad'); }
   };
   return <Card title="HaRM’s SSH key"><div>
-    <p className="muted small">One key for this HaRM. Add its public key to a machine (a device’s <b>🔌 Connect</b>) and HaRM signs in with it instead of a password: for checks, actions and the terminal, and for background checks without a stored password. The private key is encrypted with your master password and never leaves HaRM.</p>
+    <p className="muted small">One key for this HaRM. Add its public key to your machines (<b>Add to my machines</b>, or a device’s <b>🔌 Connect</b>) and HaRM signs in with it instead of a password: for checks, actions and the terminal, and for background checks without a stored password. The private key is encrypted with your master password and never leaves HaRM.</p>
     {k.key ? <>
       <div className="inline"><code className="mono small key-line">{k.key.public}</code><Small label="📋 Copy" onClick={() => copy(k.key.public, 'Public key copied')} /></div>
       <p className="muted small">{`Made ${timeAgo(k.key.created)}${k.background ? ' · background checks have a copy' : ''}`}</p>
-      <div className="inline"><Btn label="⟳ New key…" onClick={() => make(true)} /><Btn label="Delete…" onClick={del} /></div>
+      <div className="inline"><Btn label="🗝 Add to my machines…" cls="primary" onClick={addKeyDialog} /><Btn label="⟳ New key…" onClick={() => make(true)} /><Btn label="Delete…" onClick={del} /></div>
     </> : <Btn label="🗝 Make a key" cls="primary" onClick={() => make(false)} />}
   </div></Card>;
 }

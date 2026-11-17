@@ -1027,6 +1027,8 @@ body.wall .wall-exit:hover { opacity: 1; }
 .notice.warn { padding: 10px 12px; margin-bottom: 10px; border: 1px solid var(--warn); border-radius: var(--radius-sm); }
 .svc-result { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .key-line { overflow-wrap: anywhere; word-break: break-all; flex: 1 1 280px; }
+.key-targets { max-height: 50vh; overflow-y: auto; }
+.key-targets > li > div { margin-left: 26px; }
 .connect-list { display: grid; gap: 10px; margin-top: 8px; }
 .connect-list > div { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 /* xterm adds these as a <style> element, which the security policy refuses; the same rules from here. */

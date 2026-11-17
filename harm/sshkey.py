@@ -48,9 +48,37 @@ def public(conn) -> str | None:
     return v["pub"] if v else None
 
 
-def save(conn, dek: bytes, priv: str, pub: str) -> None:
+def save(conn, dek: bytes, priv: str, pub: str, places: dict | None = None) -> None:
+    """A new key starts with no places: machines only have the key it replaced."""
     db.set_meta(conn, META, json.dumps({"pub": pub, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                                        "priv": crypto.b64e(crypto.seal(dek, priv.encode(), AAD))}))
+                                        "priv": crypto.b64e(crypto.seal(dek, priv.encode(), AAD)),
+                                        "places": places or {}}))
+
+
+def _place(did: int, user: str, host: str, port: int) -> str:
+    return f"{did}|{user}@{host}:{port}"
+
+
+def places(conn) -> dict:
+    """Where this key was added: "device|user@host:port" -> when."""
+    v = _load(conn)
+    return (v or {}).get("places") or {}
+
+
+def mark(conn, did: int, user: str, host: str, port: int, added: bool) -> None:
+    v = _load(conn)
+    if not v:
+        return
+    at = v.setdefault("places", {})
+    if added:
+        at[_place(did, user, host, port)] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    else:
+        at.pop(_place(did, user, host, port), None)
+    db.set_meta(conn, META, json.dumps(v))
+
+
+def has(conn, did: int, user: str, host: str, port: int) -> str | None:
+    return places(conn).get(_place(did, user, host, port))
 
 
 def private(conn, dek: bytes | None) -> str | None:
@@ -71,7 +99,7 @@ def rewrap(conn, old: bytes, new: bytes) -> None:
     """After the master key changes (a new master password keeps the same key, so this is rarely needed)."""
     priv = private(conn, old)
     if priv:
-        save(conn, new, priv, public(conn))
+        save(conn, new, priv, public(conn), places(conn))
 
 
 # --------------------------------------------------------------------------- the key on disk, briefly

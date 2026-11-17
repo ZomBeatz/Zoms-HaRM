@@ -641,6 +641,16 @@ def _():
     sshkey.save(conn, dek, priv, pub)
     assert sshkey.public(conn) == pub and sshkey.private(conn, dek) == priv and sshkey.private(conn, None) is None
     assert priv not in (db.get_meta(conn, "ssh_key") or "") and sshkey.private(conn, crypto.new_dek()) is None
+    sshkey.mark(conn, 7, "root", "10.0.0.5", 22, True)
+    assert sshkey.has(conn, 7, "root", "10.0.0.5", 22) and not sshkey.has(conn, 7, "root", "10.0.0.5", 2222)
+    new = crypto.new_dek()
+    sshkey.rewrap(conn, dek, new)  # same key, so it's still on the same machines
+    assert sshkey.private(conn, new) == priv and sshkey.has(conn, 7, "root", "10.0.0.5", 22)
+    sshkey.mark(conn, 7, "root", "10.0.0.5", 22, False)
+    assert sshkey.places(conn) == {}
+    sshkey.mark(conn, 7, "root", "10.0.0.5", 22, True)
+    sshkey.save(conn, new, *sshkey.generate("zoms-harm@test"))  # a new key isn't on any machine yet
+    assert sshkey.places(conn) == {}
     sshkey.remove(conn)
     conn.close()
     home = Path(TMP) / "keyhome"

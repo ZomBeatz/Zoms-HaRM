@@ -13,6 +13,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -83,7 +84,8 @@ def _ssh(host, port, user, password, command, stdin_text, extra=(), timeout=TIME
         return _ssh_run(host, port, user, password, command, stdin_text, extra, timeout, key_path)
 
 
-def _ssh_run(host, port, user, password, command, stdin_text, extra, timeout, key_path):
+def _ssh_args(port, user, password, extra, key_path) -> tuple[list[str], dict]:
+    """The ssh command line (without the host) and its environment, for one sign-in."""
     args = ["ssh", "-T", "-p", str(port), "-l", user,
             "-o", "StrictHostKeyChecking=accept-new", "-o", f"UserKnownHostsFile={KNOWN_HOSTS}",
             "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15", "-o", "LogLevel=ERROR",
@@ -94,6 +96,11 @@ def _ssh_run(host, port, user, password, command, stdin_text, extra, timeout, ke
         env.update(SSH_ASKPASS=str(_askpass()), SSH_ASKPASS_REQUIRE="force", HARM_SSH_PW=password)
     else:
         args += ["-o", "BatchMode=yes"]
+    return args, env
+
+
+def _ssh_run(host, port, user, password, command, stdin_text, extra, timeout, key_path):
+    args, env = _ssh_args(port, user, password, extra, key_path)
     args += [host, command]
     try:
         return subprocess.run(args, input=stdin_text, capture_output=True, text=True, errors="replace",
@@ -307,3 +314,56 @@ def run_action(host: str, port: int, user: str, password: str | None, mode: str,
         raise RemoteError("sudo refused the password. Untick “Run with sudo”, or use an account that can sudo", "sudo")
     return {"ok": p.returncode == 0, "exit_code": p.returncode, "output": _clip((p.stdout or "") + err),
             "ms": int((time.monotonic() - t0) * 1000)}
+
+
+# --------------------------------------------------------------------------- a port on the machine, through SSH
+
+def forward(host: str, port: int, user: str, password: str | None, key_path: str | None, target: int,
+            legacy: bool = False) -> subprocess.Popen:
+    """ssh -W: the process's stdin and stdout become a connection to `target` on the machine itself
+    (127.0.0.1 there), encrypted by SSH. Used to reach VNC that only listens on the machine."""
+    if not available()["ssh"]:
+        raise RemoteError("The ssh client isn't installed on the HaRM server (package openssh-client)")
+    check_target(host, port, user)
+    if not 0 < int(target) < 65536:
+        raise RemoteError("Port must be 1 to 65535", "host")
+    args, env = _ssh_args(port, user, password, legacy_options() if legacy else [], key_path)
+    args += ["-W", f"127.0.0.1:{int(target)}", host]
+    try:
+        return subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                bufsize=0, env=env, start_new_session=True, creationflags=_NO_WINDOW)
+    except OSError as e:
+        raise RemoteError(f"Could not start ssh: {e}")
+
+
+def probe_vnc(host: str, port: int, user: str, password: str | None, key: str | None, target: int,
+              timeout: int = 25) -> None:
+    """Sign in over SSH and check a VNC server answers on `target` on the machine, so the page gets a
+    clear reason before it opens the screen. Raises RemoteError (code "hostkey" when the key changed)."""
+    from .sshkey import KeyFile
+    with KeyFile(key) as key_path:
+        p = forward(host, port, user, password, key_path, target)
+        timer = threading.Timer(timeout, p.kill)
+        timer.start()
+        try:
+            got = b""
+            while len(got) < 12:
+                part = p.stdout.read(12 - len(got))
+                if not part:
+                    break
+                got += part
+        finally:
+            timer.cancel()
+            p.kill()
+            err = p.stderr.read().decode(errors="replace")
+            p.wait()
+    if got.startswith(b"RFB "):
+        return
+    low = err.lower()
+    if "open failed" in low or "connect failed" in low or "forwarding failed" in low:
+        raise RemoteError(f"SSH worked, but nothing answers on VNC port {target} on the machine itself. "
+                          "Is its VNC server running?", "vnc")
+    if not err.strip():
+        raise RemoteError("The machine didn't answer in time" if not got else
+                          f"Port {target} on the machine answered, but not as VNC", "vnc")
+    raise _explain(subprocess.CompletedProcess(p.args, p.returncode, "", err), "The connection")

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { b32decode, badgeClass, duration, forHowLong, parseSizeGB, slotKindOf, splitTokens, timeAgo, toggleToken, totpNow, fmtGB } from './util';
+import { b32decode, badgeClass, duration, forHowLong, parseSizeGB, slotKindOf, splitTokens, timeAgo, toggleToken, totpNow, fmtGB, lineDiff } from './util';
 import { parseLabel } from './labels';
 import { csvCell, exportCSV, exportMarkdown } from './export';
 
@@ -90,5 +90,19 @@ describe('export', () => {
     expect(md).toContain('- **Make / model:** Dell R730');
     expect(md).toContain('**Storage:** 8 TB raw (2 drives)');
     expect(md).toContain('| eno1 |  | 10.0.0.5 | AA:BB:CC:DD:EE:FF |  |  |');
+  });
+});
+
+describe('changes in a file', () => {
+  it('shows only the lines around a change', () => {
+    const a = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'].join('\n');
+    const b = ['a', 'b', 'c', 'd', 'E', 'f', 'g', 'h', 'i', 'j', 'k'].join('\n');
+    const h = lineDiff(a, b, 1);
+    expect(h).toEqual([[[' ', 'd'], ['-', 'e'], ['+', 'E'], [' ', 'f']], [[' ', 'j'], ['+', 'k']]]);
+    expect(lineDiff(a, a)).toEqual([]);
+  });
+  it('lines up moved and added lines', () => {
+    const h = lineDiff('x\ny\nz', 'x\nnew\ny\nz', 0);
+    expect(h).toEqual([[['+', 'new']]]);
   });
 });

@@ -52,6 +52,7 @@ Want HaRM always on, on a home server, NAS or mini PC? There are two ways. Both 
 - **Data** (database, certificates, daily backups) is in `./data` next to the compose file.
 - **Changing the address** later: edit `HARM_CERT_NAMES` and run `docker compose up -d`. The certificate is re-issued, and phones keep trusting it.
 - **Updating:** `docker compose pull && docker compose up -d`. Your `data` folder is kept.
+- **🌐 Web page through SSH** uses ports 8078 to 8087: the `docker-compose.yml` publishes them. With an older one, add `- "8078-8087:8078-8087"` under `ports:`.
 - **Network discovery** (scan / MAC addresses) needs host networking. In `docker-compose.yml`, remove `ports:` and uncomment `network_mode: host`. The UniFi, Proxmox and router-list imports work either way.
 - **Behind your own reverse proxy** (Caddy, Traefik, Nginx Proxy Manager)? Set `HARM_TLS: "0"` and let the proxy handle HTTPS.
 
@@ -161,7 +162,13 @@ Don't want AI in HaRM at all? Untick **Settings > AI Assist > Use AI features**:
 
 **Connect** (🔌 on a device's page): a terminal in HaRM signed in with the saved login, your own SSH app, a copied `ssh` command, a Remote Desktop file for Windows, the machine's screen over VNC (in HaRM, through SSH so it's encrypted, or your VNC app), the Proxmox console, or the management page. The terminal and screen only work while HaRM is unlocked and close when it locks; turn them off in **Settings > Locking and security**.
 
-**Files** (📁 in **🔌 Connect**): browse the machine's folders, upload (or drop files), download, edit text files, make folders, rename and delete, with **Use sudo** for system files, and a box that runs a command in the folder. **🔍 Find screens** lists the VNC servers a machine runs; on a Linux desktop with X11, **Set up screen sharing** installs x11vnc, shared only through SSH, with its password in the vault.
+**Files** (📁 in **🔌 Connect**): browse the machine's folders, upload (or drop files), download (a folder as a **.zip**), copy to another machine (**⇄**), compare a file with the one on another machine (**≠**), edit text files (you see what changed before it saves), make folders, rename and delete, with **Use sudo** for system files, and a box that runs a command in the folder. Tick several to zip, copy or delete them together. It works on Windows machines with OpenSSH Server too (PowerShell in the command box).
+
+**Screens:** **🔍 Find screens** lists the VNC servers a machine runs, and **Set up screen sharing** adds one with its password in the vault: x11vnc on X11 desktops and wayvnc on Sway or Hyprland (both shared only through SSH), or GNOME's own. KDE on Wayland, Macs and machines without a desktop get directions. **📋 Clipboard** on the screen sends text to the machine's clipboard or types it.
+
+**🌐 Web page through SSH** (in **🔌 Connect**) opens a page that only answers on the machine itself, like Cockpit on port 9090, in a new tab. HaRM opens one of its own ports (8078 to 8087) for it, only for your browser, until it locks or you close it. A service card with an address like `http://localhost:9000` opens that way by itself.
+
+**⌨ Run on machines** (on **Devices** and **Actions**) runs one command on many machines at once and shows each one's output; **⚡ Save as action…** keeps it as an action on each. **★ Saved** next to any command box keeps the commands you use often, encrypted.
 
 **HaRM's SSH key:** make one in **Settings > Locking and security**, then **🗝 Add to my machines…** there puts it on every device with a saved SSH login at once (or **🗝 Add HaRM's SSH key** in one device's **🔌 Connect**), in that login's `authorized_keys`. HaRM then signs in with the key, and background checks can use it instead of a stored password. The private key is encrypted with your master password; **Take it out** removes it from a machine. **⟳ New key… > Swap on my machines** replaces it everywhere without anything stopping working.
 
@@ -233,7 +240,8 @@ HaRM has these steps built in too: **Help & Guide > Troubleshooting**, the **Sho
 
 - Logins are encrypted (AES-256-GCM) with a key that only your master password or recovery code unlocks. Nobody can read them from a copied database.
 - HaRM locks itself after 30 minutes idle (change it in **Settings > Locking and security**). Optional two-factor login is in **Settings**.
-- Every change, sign-in, password reveal, action run, terminal and export is recorded in the **Audit Log**.
+- Every change, sign-in, password reveal, action run, terminal, file change, command and export is recorded in the **Audit Log**.
+- A **web page through SSH** only lets in the browser that opened it (by its address), and closes when HaRM locks. Computers that reach HaRM from the same address (like several behind one VPN or router) could reach it too while it's open.
 - The **terminal in HaRM** only works while HaRM is unlocked and never stores what you type. Logins leave HaRM only in an **Export for Bitwarden**, which asks for the master password again.
 - **Actions** run commands on your machines with your saved logins, so they only work while HaRM is unlocked. Their results are encrypted like your logins. HaRM never allows SSH settings that could run a program on its own computer.
 - Proxmox and UniFi certificates are remembered the first time HaRM connects. If one changes, HaRM asks before sending its token again.

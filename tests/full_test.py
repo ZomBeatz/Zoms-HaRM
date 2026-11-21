@@ -186,7 +186,7 @@ def raw_put(c: Client, path: str, data: bytes) -> dict:
 def main():
     tmp = tempfile.mkdtemp(prefix="harm-full-")
     env = {**os.environ, "HARM_DB": os.path.join(tmp, "harm.db"), "HARM_AUTO_BACKUP": "0", "HARM_IDLE_MINUTES": "30",
-           "HARM_MONITOR": "0"}
+           "HARM_MONITOR": "0", "HARM_TUNNEL_PORTS": "18190-18199"}
     server = subprocess.Popen([sys.executable, "-m", "uvicorn", "harm.main:app", "--port", str(PORT)],
                               cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=open(os.path.join(tmp, "err.log"), "w"))
     try:
@@ -1099,6 +1099,115 @@ Let me know if you need anything else!"""
         c.call("POST", f"/devices/{x['did']}/screens", {"host": "10.255.255.1", "port": x["port"], "credential_id": x["cred"]["id"]}, expect=400)
         assert "screen" in c.call("GET", f"/devices/{x['did']}/collect-targets")
 
+    @test("files: a folder as a .zip, and copied to another machine (here, another folder) through HaRM")
+    @over_ssh
+    def _(x):
+        import io
+        import zipfile
+        src = x["home"] / "zip src"
+        (src / "sub").mkdir(parents=True)
+        (src / "a.txt").write_text("alpha\n")
+        (src / "sub" / "b.sh").write_text("echo b\n")
+        (src / "sub" / "b.sh").chmod(0o750)
+        (src / "link").symlink_to("a.txt")
+        login = {"device_id": x["did"], "host": "127.0.0.1", "port": x["port"], "credential_id": x["cred"]["id"]}
+        one, two = c.call("POST", "/files", login), c.call("POST", "/files", login)
+        home = one["home"]
+        code, body, h = c.raw("GET", f"/api/files/{one['id']}/zip?" + urllib.parse.urlencode({"path": home + "/zip src"}))
+        assert code == 200 and "zip%20src.zip" in h.get("content-disposition", ""), (code, h)
+        z = zipfile.ZipFile(io.BytesIO(body))
+        assert sorted(z.namelist()) == ["zip src/", "zip src/a.txt", "zip src/sub/", "zip src/sub/b.sh"], z.namelist()
+        assert z.read("zip src/sub/b.sh") == b"echo b\n" and h.get("x-harm-skipped") == "1", h  # the link is left out
+        code, body, h = c.raw("GET", f"/api/files/{one['id']}/zip?" + urllib.parse.urlencode(
+            [("path", home + "/zip src"), ("names", "a.txt"), ("names", "sub")]))  # several things in a folder
+        assert code == 200 and "zip%20src.zip" in h.get("content-disposition", ""), (code, h)
+        assert sorted(zipfile.ZipFile(io.BytesIO(body)).namelist()) == ["a.txt", "sub/", "sub/b.sh"]
+        assert c.raw("GET", f"/api/files/{one['id']}/zip?" + urllib.parse.urlencode([("path", home), ("names", "../x")]))[0] == 400
+        r = c.call("POST", f"/files/{one['id']}/copy", {"to": two["id"], "folder": home, "names": ["zip src"], "dest": home + "/copied"})
+        got = x["home"] / "copied" / "zip src"
+        assert r["size"] > 0 and (got / "sub" / "b.sh").read_text() == "echo b\n" and (got / "link").is_symlink(), r
+        assert (got / "sub" / "b.sh").stat().st_mode & 0o777 == 0o750  # permissions come along
+        c.call("POST", f"/files/{one['id']}/copy", {"to": two["id"], "folder": home, "names": ["../etc"], "dest": home}, expect=400)
+        c.call("POST", f"/files/{one['id']}/copy", {"to": two["id"], "folder": home, "names": ["nothing here"], "dest": home + "/copied"}, expect=400)
+        c.call("POST", f"/files/{one['id']}/copy", {"to": "not-a-browser", "folder": home, "names": ["zip src"], "dest": home}, expect=404)
+        assert {"files-zip", "files-copy"} <= {a["action"] for a in c.call("GET", "/audit")[:10]}
+        for f in (one, two):
+            c.call("POST", f"/files/{f['id']}/close", {})
+        shutil.rmtree(src)
+        shutil.rmtree(x["home"] / "copied")
+
+    @test("run on machines: one command, its output and exit code, audited")
+    @over_ssh
+    def _(x):
+        t = next(y for y in c.call("GET", "/run/targets") if y["device_id"] == x["did"])
+        assert t["port"] == x["port"] and t["credential_id"] == x["cred"]["id"] and t["logins"], t
+        r = c.call("POST", f"/devices/{x['did']}/run", {"host": t["host"], "port": t["port"], "credential_id": t["credential_id"],
+                                                        "command": "echo hi\necho oops >&2\nexit 2"})
+        assert r["exit_code"] == 2 and not r["ok"] and "hi" in r["output"] and "oops" in r["output"], r
+        c.call("POST", f"/devices/{x['did']}/run", {"host": "10.255.255.1", "port": t["port"], "credential_id": t["credential_id"], "command": "true"}, expect=400)
+        c.call("POST", f"/devices/{x['did']}/run", {"host": t["host"], "port": t["port"], "credential_id": t["credential_id"], "command": "  "}, expect=400)
+        a = c.call("GET", "/audit")[0]
+        assert a["action"] == "run-command" and "echo hi …" in a["detail"] and "exit 2" in a["detail"], a
+
+    @test("a web page on the machine, through SSH: only while open, then gone")
+    @over_ssh
+    def _(x):
+        import http.server
+        import ssl
+        import threading
+
+        class Page(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"harm-web-ok " + self.path.encode())
+
+            def log_message(self, *a):
+                pass
+        web = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Page)
+        threading.Thread(target=web.serve_forever, daemon=True).start()
+        wport = web.server_address[1]
+        base = {"device_id": x["did"], "host": "127.0.0.1", "port": x["port"], "credential_id": x["cred"]["id"], "target_port": wport}
+        try:
+            t = c.call("POST", "/tunnels", base)
+            assert 18190 <= t["port"] <= 18199 and t["target"] == f"127.0.0.1:{wport}", t
+            ctx = ssl.create_default_context()
+            ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
+            url = f"{t['scheme']}://127.0.0.1:{t['port']}/hello"
+            for _ in range(3):  # each page load is its own connection, all on one SSH sign-in
+                assert urllib.request.urlopen(url, timeout=10, context=ctx).read() == b"harm-web-ok /hello"
+            assert [y["id"] for y in c.call("GET", "/tunnels")] == [t["id"]]
+            assert Client().call("GET", "/tunnels", expect=401)
+            with socket.socket() as so:
+                so.bind(("127.0.0.1", 0))
+                free = so.getsockname()[1]
+            err = c.call("POST", "/tunnels", {**base, "target_port": free}, expect=400)
+            assert "nothing answers" in err["detail"], err
+            c.call("POST", "/tunnels", {**base, "target_port": 0}, expect=400)
+            c.call("POST", "/tunnels", {**base, "host": "10.255.255.1"}, expect=400)
+            c.call("DELETE", f"/tunnels/{t['id']}")
+            assert c.call("GET", "/tunnels") == []
+            time.sleep(0.3)
+            try:
+                urllib.request.urlopen(url, timeout=3, context=ctx)
+                raise AssertionError("still open after closing")
+            except (urllib.error.URLError, ConnectionError, OSError):
+                pass
+            assert {"web-open", "web-close"} <= {a["action"] for a in c.call("GET", "/audit")[:10]}
+            # A service only its machine answers on (localhost): its card opens it through SSH, once.
+            sv = c.call("POST", "/services", {"device_id": x["did"], "name": "Local page", "url": f"http://localhost:{wport}/inside?x=1"})
+            t = c.call("POST", f"/services/{sv['id']}/tunnel", {})
+            assert t["target"] == f"127.0.0.1:{wport}" and t["path"] == "/inside?x=1", t
+            assert urllib.request.urlopen(f"{t['scheme']}://127.0.0.1:{t['port']}{t['path']}", timeout=10, context=ctx).read() == b"harm-web-ok /inside?x=1"
+            assert c.call("POST", f"/services/{sv['id']}/tunnel", {})["id"] == t["id"]  # reused while it's open
+            bare = c.call("POST", "/services", {"device_id": x["did"], "name": "No port"})
+            c.call("POST", f"/services/{bare['id']}/tunnel", {}, expect=400)
+            c.call("DELETE", f"/tunnels/{t['id']}")
+            for y in (sv, bare):
+                c.call("DELETE", f"/services/{y['id']}")
+        finally:
+            web.shutdown()
+
     @test("(the stand-in sshd is stopped)")
     @over_ssh
     def _(x):
@@ -1108,6 +1217,20 @@ Let me know if you need anything else!"""
         c.call("DELETE", "/ssh-key")
         for y in x["made"]:
             c.call("DELETE", f"/services/{y['id']}")
+
+    @test("saved commands: kept encrypted, blank ones dropped")
+    def _():
+        import sqlite3
+        r = c.call("PUT", "/snippets", {"snippets": [{"name": "Disk", "command": "df -h /\r\n", "sudo": False},
+                                                       {"name": "", "command": "uptime"}, {"name": "Blank", "command": "  "},
+                                                       {"name": "Updates", "command": "apt list --upgradable", "sudo": True}]})
+        assert [(y["name"], y["command"], y["sudo"]) for y in r] == [("Disk", "df -h /", False), ("uptime", "uptime", False),
+                                                                    ("Updates", "apt list --upgradable", True)], r
+        assert c.call("GET", "/snippets") == r and all(y["id"] for y in r)
+        raw = sqlite3.connect(os.path.join(tmp, "harm.db")).execute("SELECT value FROM meta WHERE key = 'snippets'").fetchone()[0]
+        assert "upgradable" not in raw  # encrypted
+        Client().call("GET", "/snippets", expect=401)
+        assert c.call("PUT", "/snippets", {"snippets": []}) == [] and c.call("GET", "/snippets") == []
 
     @test("old passwords: listed on Maintenance and Home, by the age in Settings")
     def _():

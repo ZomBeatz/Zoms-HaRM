@@ -9,6 +9,7 @@ export default function Actions() {
   const back = q.reload;
   return <>
     <PageHead title="Actions" sub="Commands you send to your devices with one click: quiet the fans, update, restart.">
+      <Btn label="⌨ Run on machines" onClick={() => { location.hash = '#/run'; }} />
       <Btn label="+ New action" onClick={() => editAction({}, back)} cls="primary" /><HelpLink s="actions" />
     </PageHead>
     {q.data.length ? <Card title={`Your actions · ${q.data.length}`}><ActionsTable rows={q.data} after={back} /></Card>

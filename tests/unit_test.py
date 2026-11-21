@@ -682,7 +682,31 @@ def _():
     assert v["ports"] == [{"port": 5900, "local": True}, {"port": 5901, "local": False}] and v["can_setup"] and v["harm"] == "active", v
     assert screens.free_port(v) == 5902
     way = screens.parse("os=Linux\nsession=Type=wayland Class=user State=active Desktop=GNOME\nxdisplay=0\npm=apt-get\nsystemd=yes")
-    assert not way["can_setup"] and way["kind"] == "wayland" and "Remote Desktop" in way["advice"], way
+    assert not way["can_setup"] and way["kind"] == "wayland" and "gnome-remote-desktop" in way["advice"], way
+    base = "os=Linux\nme=gabe\npm=apt-get\nsystemd=yes\n"
+    g = screens.parse(base + "session=Type=wayland Class=user State=active Desktop=GNOME Name=gabe\ngrdctl=vnc")
+    assert g["can_setup"] and g["how"] == "gnome", g
+    g = screens.parse(base + "session=Type=wayland Class=user State=active Desktop=GNOME Name=gabe\ngrdctl=novnc")
+    assert not g["can_setup"] and ".rdp" in g["advice"], g
+    sway = screens.parse(base + "session=Type=wayland Class=user State=active Desktop= Name=gabe\ncomp=sway\nwsock=wayland-1\nwayvnc=wayvnc: 0.8.0")
+    assert sway["can_setup"] and sway["how"] == "wayvnc" and sway["wayvnc"] == [0, 8] and sway["wsock"] == ["wayland-1"], sway
+    other = screens.parse(base.replace("me=gabe", "me=admin") + "session=Type=wayland Class=user State=active Desktop=sway Name=gabe\nwsock=wayland-1")
+    assert not other["can_setup"] and "login for gabe" in other["advice"], other
+    kde = screens.parse(base + "session=Type=wayland Class=user State=active Desktop=KDE Name=gabe")
+    assert not kde["can_setup"] and "krfb" in kde["advice"], kde
+    assert screens.parse(base + "harmuser=active")["harm"] == "active"
+    ws = screens.wayvnc_script(5901, "wayland-1")
+    assert "address=127.0.0.1" in ws and "port=5901" in ws and "WAYLAND_DISPLAY=wayland-1" in ws and "rsa_private_key_file" in ws
+    try:
+        screens.wayvnc_script(5901, "wayland-1; rm -rf ~")
+        raise AssertionError("a bad socket name got in")
+    except ValueError:
+        pass
+    for sc in (ws, screens.WAYVNC_REMOVE, screens.GNOME_SETUP, screens.GNOME_REMOVE, screens.install_script("pacman", "wayvnc")):
+        assert subprocess.run(["sh", "-n"], input=sc, text=True, capture_output=True).returncode == 0, sc[:80]
+    vline = next(x for x in ws.splitlines() if x.startswith("set -- "))  # reads wayvnc's version
+    got = subprocess.run(["sh", "-c", vline.replace("wayvnc -V", "echo 'wayvnc: 0.9.1'") + '; echo "$1 $2"'], capture_output=True, text=True).stdout
+    assert got.split() == ["0", "9"], got
     assert screens.parse("os=Linux\npm=dnf\nsystemd=yes")["kind"] == "headless"
     assert screens.parse("os=Darwin")["kind"] == "mac"
     assert screens.parse("os=Linux\nxdisplay=0")["kind"] == "other"  # no systemd or package manager
@@ -694,6 +718,24 @@ def _():
         assert subprocess.run(["sh", "-n"], input=sc, text=True, capture_output=True).returncode == 0, pm
     for sc in (screens.REMOVE, screens.CHECK):
         assert subprocess.run(["sh", "-n"], input=sc, text=True, capture_output=True).returncode == 0
+
+
+@test
+def _():
+    """files on Windows: paths both ways, PowerShell quoting, tar's command line, a short fixed ssh command"""
+    from harm import files
+    assert files.win_path("/") == "" and files.win_path("/C:") == "C:\\" and files.win_path("/C:/Users/a b/") == "C:\\Users\\a b"
+    assert files.from_win("C:\\") == "/C:" and files.from_win("D:\\Data\\x") == "/D:/Data/x"
+    assert files.psq("it's") == "'it''s'" and files.psq("a\u2019b") == "'a\u2019\u2019b'"
+    assert files._win_args("C:\\", ["a b", "-x"]) == '-C "C:\\." ".\\a b" ".\\-x"'
+    assert len(files.PS_COMMAND) < 1000 and files.PS_COMMAND.startswith("powershell ")
+    import base64
+    boot = base64.b64decode(files.PS_COMMAND.split()[-1]).decode("utf-16-le")
+    assert "ReadLine" in boot and "scriptblock" in boot
+    for script in (files._PS_HEAD, files._PS_LIST):  # every brace and bracket closes (the try opens in the head)
+        whole = files._PS_HEAD + files._PS_LIST + files._PS_TAIL if script is files._PS_LIST else files._PS_HEAD + files._PS_TAIL
+        for a, b in ("{}", "()", "[]"):
+            assert whole.count(a) == whole.count(b), (a, whole.count(a), whole.count(b))
 
 
 failed = [r for r in results if r]

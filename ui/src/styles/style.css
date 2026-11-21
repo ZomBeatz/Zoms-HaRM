@@ -1035,7 +1035,13 @@ body.wall .wall-exit:hover { opacity: 1; }
 .files-bar input.mono { flex: 1 1 260px; min-width: 0; }
 .files-crumbs { overflow-wrap: anywhere; color: var(--muted); }
 .files-list { flex: 1; min-height: 160px; }
-.files-list tr.files-dir td:first-child { font-weight: 600; }
+.files-list tr.files-dir td:nth-child(2) { font-weight: 600; }
+.files-list tr.files-ticked td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.files-list td:first-child { width: 28px; }
+.files-sel { gap: 8px; align-items: center; flex-wrap: wrap; }
+.files-sel input[type=search] { flex: 0 1 220px; min-width: 0; }
+.files-compare-path { flex: 1 1 260px; }
+.files-compare-path input { width: 100%; }
 .files-name { overflow-wrap: anywhere; }
 .files-ups progress { width: 140px; vertical-align: middle; }
 .files-shell { border-top: 1px solid var(--line); padding-top: 8px; }
@@ -1045,6 +1051,39 @@ body.wall .wall-exit:hover { opacity: 1; }
 .files-log pre { margin: 2px 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .files-cmd { color: var(--accent); }
 .files-text { width: 100%; min-height: 60vh; resize: vertical; font-size: 13px; tab-size: 4; white-space: pre; }
+.files-diff { max-height: 60vh; overflow: auto; background: var(--zb-bg); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px; outline: none; }
+.files-diff p { margin: 0 0 6px; }
+.files-hunk { border-bottom: 1px dashed var(--line); padding: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.files-hunk:last-child { border-bottom: 0; }
+.files-hunk .add { background: color-mix(in srgb, var(--ok) 16%, transparent); }
+.files-hunk .del { background: color-mix(in srgb, var(--bad) 16%, transparent); }
+/* Run on machines */
+.run-grid { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: 16px; align-items: start; }
+.run-machines .key-targets { max-height: 46vh; overflow: auto; margin-top: 8px; }
+.run-machines .key-targets select { margin-left: 26px; max-width: calc(100% - 26px); }
+.run-command { display: flex; flex-direction: column; gap: 8px; }
+.run-command textarea { width: 100%; resize: vertical; }
+.run-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin: 18px 0 8px; }
+.run-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.run-result { padding: 10px 12px; border-left: 3px solid var(--line); min-width: 0; }
+.run-result.ok { border-left-color: var(--ok); }
+.run-result.bad { border-left-color: var(--bad); }
+.run-result-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+.run-result-head > a { margin-right: auto; }
+.run-output { margin: 0; max-height: 40vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--zb-bg); border-radius: var(--radius-sm); padding: 6px 8px; }
+@media (max-width: 760px) { .run-grid { grid-template-columns: 1fr; } .run-results { grid-template-columns: 1fr; } }
+/* Saved commands */
+.snippets { display: grid; gap: 12px; }
+.snippets li { display: grid; gap: 4px; }
+.snippets .inline input:not([type]) { flex: 1 1 200px; }
+.snippets textarea { width: 100%; resize: vertical; }
+/* The screen's clipboard */
+.vnc-clip { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
+.vnc-clip-part { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.vnc-clip textarea { width: 100%; resize: vertical; }
+.vnc-clip pre { margin: 0; max-height: 8em; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--zb-bg); border-radius: var(--radius-sm); padding: 6px 8px; }
+@media (max-width: 760px) { .vnc-clip { grid-template-columns: 1fr; } }
+.connect-web ul { flex-basis: 100%; margin: 0; }
 .key-targets > li > div { margin-left: 26px; }
 .connect-list { display: grid; gap: 10px; margin-top: 8px; }
 .connect-list > div { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
@@ -1052,3 +1091,4 @@ body.wall .wall-exit:hover { opacity: 1; }
 .xterm .xterm-scrollable-element > .scrollbar > .slider { background: color-mix(in srgb, var(--text) 20%, transparent); }
 .xterm .xterm-scrollable-element > .scrollbar > .slider:hover { background: color-mix(in srgb, var(--text) 40%, transparent); }
 .xterm .xterm-scrollable-element > .scrollbar > .slider.active { background: color-mix(in srgb, var(--text) 50%, transparent); }
+button.sm.on { border-color: var(--accent); color: var(--accent); }

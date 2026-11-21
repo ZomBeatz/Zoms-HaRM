@@ -14,6 +14,6 @@ COPY harm ./harm
 COPY docker/entrypoint.sh docker/healthcheck.py ./
 RUN chmod 755 entrypoint.sh
 VOLUME ["/data"]
-EXPOSE 8077
+EXPOSE 8077 8078-8087
 HEALTHCHECK --interval=30s --timeout=6s --start-period=20s --retries=3 CMD ["python", "/app/healthcheck.py"]
 ENTRYPOINT ["/app/entrypoint.sh"]

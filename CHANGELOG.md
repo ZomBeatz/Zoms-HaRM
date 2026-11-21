@@ -2,9 +2,32 @@
 
 ## 0.3.3
 
+**A machine's web page, through SSH**
+- **🌐 Web page through SSH** in **🔌 Connect** opens a page that only answers on the machine itself (Cockpit on 9090, a database admin, a router's page behind it with **Another address…**) in a new tab, encrypted.
+- HaRM signs in once with the saved login (or its own key) and opens one of its own ports (8078 to 8087) for that page, only for the browser that asked, with HaRM's own HTTPS certificate.
+- It closes when HaRM locks, after 30 minutes unused, or with **Close** next to it in **🔌 Connect**. Opening and closing are in the audit log.
+- With Docker, publish ports 8078-8087 too (the new `docker-compose.yml` does). Set `HARM_TUNNEL_PORTS` to use other ports.
+
+**Services that only answer on their machine**
+- A service card whose address only works on the machine itself (`http://localhost:9000`, `127.0.0.1`) opens it through SSH to its device with **🌐 Open ↗**. Any other card can too, with **⋯ > 🌐 Open through SSH**. A page that's open already is reused.
+
+**Run a command on many machines**
+- **⌨ Run on machines** (on **Devices**, **Actions**, and **🔌 Connect > Run a command**) runs one command on every machine you tick, each with its saved SSH login, 4 at a time, and shows each machine's output and exit code side by side.
+- **Run with sudo**, a login per machine when a device has more than one, and **Trust the new key and run** when a machine's SSH key changed. HaRM remembers which machines you ticked. Every run is in the audit log.
+- **⚡ Save as action…** keeps the command as an action on each machine you ticked, with its own button.
+
+**Saved commands**
+- **★ Saved** next to the command boxes (the terminal, Files, Run on machines) keeps the commands you use often: **Save this command…**, pick one to fill it in (in the terminal it's typed in for you to press Enter), and **Edit saved commands…** to rename, reorder or delete them.
+- They're kept encrypted in HaRM's database, like the vault.
+
 **Files on a machine**
 - **📁 Files** in **🔌 Connect** (and on the terminal page) opens a file browser for the machine: folders with size, date, permissions and owner, **⬆ Upload** (or drop files on it), **⬇ Download**, **+ Folder**, **+ File**, rename or move, and delete.
-- Click a text file (up to 1 MB) to open it in an editor; **Save** (or Ctrl+S) writes it back, keeping its permissions.
+- Click a text file (up to 1 MB) to open it in an editor. **Save…** (or Ctrl+S) first shows what you changed, line by line; **Save** then writes it back, keeping its permissions. If the file changed on the machine since you opened it, HaRM asks before replacing it.
+- **⬇ .zip** downloads a folder as a .zip (links are left out: a .zip can't hold them).
+- **⇄** copies a file or folder to another machine (or another folder), straight through HaRM, keeping permissions and dates. HaRM keeps no copy.
+- Tick several files and folders to download them as one .zip, copy them or delete them together. **Find in this folder** narrows the list by name.
+- **≠** compares a text file with the same file on another machine (or another file), line by line.
+- **Windows machines** with OpenSSH Server get Files too: drives, upload, download, .zip, copy, compare and edit (keeping Windows line endings), with PowerShell in the command box.
 - **Use sudo** lists, opens and changes things as root, for files like `/etc` configs.
 - A command box at the bottom runs one command in the folder you're in and shows what it printed, without opening a terminal.
 - It uses one SSH connection with the saved login (or HaRM's key), only while HaRM is unlocked, and closes when HaRM locks, after 30 minutes unused or when you leave the page. Uploads, downloads, changes and commands are in the audit log.
@@ -12,7 +35,13 @@
 **Screens: find them, or set one up**
 - **🔍 Find screens** (next to the screen in **🔌 Connect**) looks at the machine over SSH and lists the VNC servers it runs, including ones only open on the machine itself.
 - On a Linux desktop with X11, **🔧 Set up screen sharing** installs **x11vnc** as a service that shares the desktop on the machine only, so it's reached through HaRM's SSH connection, with a new VNC password saved in the vault. **Take it out** removes it again.
-- Wayland desktops (GNOME, KDE, Sway), Macs and machines without a desktop get directions for their own screen sharing instead.
+- On **Sway, Hyprland** and other wlroots desktops it sets up **wayvnc** (0.7 or newer) the same way, as the desktop user's own service, with a username and password.
+- On **GNOME** it turns on GNOME's own screen sharing over VNC with a new password (GNOME shares it on the network; HaRM still opens it through SSH). Where GNOME only offers RDP, it says how to use that.
+- KDE on Wayland asks on its own screen before sharing, so HaRM gives directions for Krfb there. So do Macs and machines without a desktop.
+- The screen HaRM set up opens with its saved password, and when nothing answers on a VNC port the screen page offers **🔍 Find screens**.
+
+**The screen's clipboard**
+- **📋 Clipboard** on the screen page sends text to the machine's clipboard (then paste it there), or **⌨ Type it** as keystrokes, which also works on login screens. Text copied on the machine shows there too, with **Copy**.
 
 **The screen through SSH**
 - **🖥 Screen in HaRM (VNC)** can go **through SSH**: HaRM signs in to the machine with the picked login (or its own SSH key) and reaches VNC on the machine itself, so the screen is encrypted all the way. It's on whenever a login with a username is picked.
@@ -31,6 +60,7 @@
 **Smaller things**
 - **🔌 Connect** takes the SSH port from the login's address (like `10.0.0.5:2222`).
 - "Made …" under HaRM's SSH key showed a broken date.
+- Pages through SSH and file browsers no longer leave an ssh connection running after HaRM stops.
 
 ## 0.3.2
 

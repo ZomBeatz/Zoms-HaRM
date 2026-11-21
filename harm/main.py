@@ -1,6 +1,7 @@
 """Zom's HaRM: Hardware and Rack Manager. FastAPI application."""
 
 import asyncio
+import base64
 import csv
 import hashlib
 import io
@@ -19,15 +20,15 @@ import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 import pyotp
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from . import __version__, ai, aiproviders, alerts, certs, collect, crypto, db, discover, docker, files, machine, monitor, netwatch, pcbuild, power, proxmox, remote, screens, sshkey, terminal, units, upkeep, vaultio, vnc
+from . import __version__, ai, aiproviders, alerts, certs, collect, crypto, db, discover, docker, files, machine, monitor, netwatch, pcbuild, power, proxmox, remote, screens, sshkey, terminal, tunnels, units, upkeep, vaultio, vnc
 from .models import ENTITIES, ENUMS, iface_order
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -147,6 +148,8 @@ async def lifespan(_app):
     stop.set()
     for t in tasks:
         t.cancel()
+    tunnels.close_all()
+    files.close_all()
 
 
 app = FastAPI(title=APP_NAME, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
@@ -767,6 +770,7 @@ def auth_logout(request: Request, response: Response):
             _sessions.pop(token, None)
         terminal.close_owner(_owner(request))
         files.close_owner(_owner(request))
+        tunnels.close_owner(_owner(request))
     response.delete_cookie(COOKIE, path="/")
     return {"ok": True}
 
@@ -1898,12 +1902,17 @@ async def screens_find(did: int, request: Request, s=Depends(require_session), c
     if DEMO:
         raise HTTPException(501, DEMO_NO_NETWORK)
     v, *_ = await _screens_check(conn, s, did, await body_json(request))
-    return {**v, "saved": _screen_saved(conn, did)}
+    saved = _screen_saved(conn, did)
+    if saved and saved.get("how") == "gnome":  # GNOME's own sharing: on while its port answers
+        v["harm"] = "active" if any(p["port"] == saved["port"] for p in v["ports"]) else "stopped"
+    return {**v, "saved": saved}
 
 
 @app.post("/api/devices/{did}/screens/setup")
 async def screens_setup(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
-    """Install x11vnc as a service on 127.0.0.1 only, with a password kept in the vault (or take it out)."""
+    """Set up screen sharing, with a password kept in the vault (or take it out): x11vnc as a service on
+    127.0.0.1 only (X11), wayvnc as the desktop user's service on 127.0.0.1 only (Sway and other wlroots
+    desktops), or GNOME's own (on the network, as GNOME does it)."""
     dev = fetch_one(conn, "devices", did)
     if DEMO:
         raise HTTPException(501, DEMO_NO_NETWORK)
@@ -1913,18 +1922,31 @@ async def screens_setup(did: int, request: Request, s=Depends(require_session), 
     v, host, port, user, pw = await _screens_check(conn, s, did, body)
     if not remove and not v["can_setup"]:
         raise HTTPException(400, v["advice"])
-    sudo = user != "root"
+    how = ((saved or {}).get("how") or "x11vnc") if remove else v["how"]
+    program = {"x11vnc": "x11vnc", "wayvnc": "wayvnc", "gnome": "GNOME Remote Desktop"}[how]
+    sudo = how == "x11vnc" and user != "root"  # wayvnc and GNOME's run as the desktop's own user
     if remove:
-        script, extra = screens.REMOVE, ""
+        script, extra = {"x11vnc": screens.REMOVE, "wayvnc": screens.WAYVNC_REMOVE, "gnome": screens.GNOME_REMOVE}[how], ""
     else:
-        vport = saved["port"] if saved and v["harm"] else screens.free_port(v)
+        vport = 5900 if how == "gnome" else saved["port"] if saved and v["harm"] else screens.free_port(v)
         vpw = screens.new_password()
-        script, extra = screens.setup_script(vport, (v["displays"] or [0])[0], v["pm"]), vpw + "\n"
+        extra = vpw + "\n"
+        script = (screens.setup_script(vport, (v["displays"] or [0])[0], v["pm"]) if how == "x11vnc"
+                  else screens.wayvnc_script(vport, v["wsock"][0]) if how == "wayvnc" else screens.GNOME_SETUP)
     try:
+        if how == "wayvnc" and not remove and not v["wayvnc"]:  # installing needs root; the rest doesn't
+            r = await asyncio.to_thread(remote.run_action, host, port, user, pw, "script", screens.install_script(v["pm"], "wayvnc"),
+                                        user != "root", False, None, 900, "", _hkey(conn, s))
+            if "HARM_RESULT=installed" not in r["output"]:
+                tail = r["output"].strip().splitlines()
+                raise HTTPException(400, "Installing wayvnc didn't work: " + (" ".join(tail[-3:]) or "no answer")[:500])
         r = await asyncio.to_thread(remote.run_action, host, port, user, pw, "script", script, sudo, False, None, 900, extra,
                                     _hkey(conn, s))
     except remote.RemoteError as e:
         raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
+    if "HARM_RESULT=old" in r["output"]:
+        raise HTTPException(400, "This machine's wayvnc is older than 0.7, and older ones can't ask for a password the "
+                                 "browser understands. Update wayvnc (or the system), then set it up again.")
     want = "HARM_RESULT=removed" if remove else "HARM_RESULT=ok"
     if want not in r["output"]:
         tail = [x for x in r["output"].strip().splitlines() if not x.startswith("HARM_RESULT")]
@@ -1935,23 +1957,130 @@ async def screens_setup(did: int, request: Request, s=Depends(require_session), 
         if saved and saved.get("credential_id"):
             conn.execute("DELETE FROM credentials WHERE id = ?", (saved["credential_id"],))
         db.set_meta(conn, f"screen:{did}", None)
-        audit(conn, request, "screen-removed", "devices", did, f"{dev['name']}: {host}")
-        did_note(conn, did, f"Took out HaRM's screen sharing (x11vnc) on {host}.")
+        audit(conn, request, "screen-removed", "devices", did, f"{dev['name']}: {program} on {host}")
+        did_note(conn, did, f"Took out HaRM's screen sharing ({program}) on {host}.")
         conn.commit()
         return {"ok": True}
     enc = _encrypt_secrets({"password": vpw}, s["dek"])
+    vuser = screens.WAYVNC_USER if how == "wayvnc" else None
+    url = f"vnc://{host if how == 'gnome' else '127.0.0.1'}:{vport}"
     cid = saved and saved.get("credential_id")
     if cid and conn.execute("SELECT 1 FROM credentials WHERE id = ?", (cid,)).fetchone():
-        conn.execute("UPDATE credentials SET password_enc = ?, url = ?, last_rotated = date('now'), updated_at = datetime('now') "
-                     "WHERE id = ?", (enc["password_enc"], f"vnc://127.0.0.1:{vport}", cid))
+        conn.execute("UPDATE credentials SET password_enc = ?, url = ?, username = ?, last_rotated = date('now'), "
+                     "updated_at = datetime('now') WHERE id = ?", (enc["password_enc"], url, vuser, cid))
     else:
-        cid = conn.execute("INSERT INTO credentials (label, kind, url, device_id, password_enc) VALUES (?, 'Console', ?, ?, ?)",
-                           (f"VNC screen ({dev['name']})", f"vnc://127.0.0.1:{vport}", did, enc["password_enc"])).lastrowid
-    upkeep.save(conn, f"screen:{did}", {"port": vport, "credential_id": cid, "host": host})
-    audit(conn, request, "screen-setup", "devices", did, f"{dev['name']}: x11vnc on {host}, port {vport} (only on the machine)")
-    did_note(conn, did, f"Set up screen sharing (x11vnc) on {host}, port {vport}, only reachable through SSH. Its password is in the vault.")
+        cid = conn.execute("INSERT INTO credentials (label, kind, url, username, device_id, password_enc) VALUES (?, 'Console', ?, ?, ?, ?)",
+                           (f"VNC screen ({dev['name']})", url, vuser, did, enc["password_enc"])).lastrowid
+    upkeep.save(conn, f"screen:{did}", {"port": vport, "credential_id": cid, "host": host, "how": how})
+    where = "on the network, as GNOME shares it" if how == "gnome" else "only on the machine"
+    audit(conn, request, "screen-setup", "devices", did, f"{dev['name']}: {program} on {host}, port {vport} ({where})")
+    did_note(conn, did, f"Set up screen sharing ({program}) on {host}, port {vport}"
+             + (". GNOME shares it on the network." if how == "gnome" else ", only reachable through SSH.") + " Its password is in the vault.")
     conn.commit()
-    return {"ok": True, "port": vport, "credential_id": cid}
+    return {"ok": True, "port": vport, "credential_id": cid, "how": how}
+
+
+@app.post("/api/tunnels")
+async def tunnel_open(request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """A machine's web page through SSH (harm/tunnels.py): a port of HaRM's own, for this browser only, for a while."""
+    if not monitor.settings(conn)["terminal"]:
+        raise HTTPException(403, "The terminal and screen in HaRM are turned off in Settings > Locking and security")
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    did = _coerce(conn, "device_id", "fk:devices", body.get("device_id"))
+    if not did:
+        raise HTTPException(400, "Open a web page from a device")
+    dev = fetch_one(conn, "devices", did)
+    host, port = str(body.get("host") or "").strip(), int(body.get("port") or 22)
+    if host not in collect_targets(did, s, conn)["hosts"]:
+        raise HTTPException(400, "That isn't one of this device's addresses (add it on its Network tab)")
+    target = str(body.get("target") or "127.0.0.1").strip() or "127.0.0.1"
+    try:
+        tport = int(body.get("target_port") or 0)
+    except (TypeError, ValueError):
+        tport = 0
+    if not 0 < tport < 65536:
+        raise HTTPException(400, "Enter the web page's port on the machine (like 80, 443 or 9090)")
+    return await _tunnel(request, s, conn, dev, host, port, body.get("credential_id"), target, tport, bool(body.get("https")),
+                         bool(body.get("trust_new_key")))
+
+
+async def _tunnel(request: Request, s, conn, dev, host: str, port: int, cred, target: str, tport: int, https: bool,
+                  trust: bool, label: str = "") -> dict:
+    user, pw = _machine_login(conn, s, {"credential_id": cred})
+    tunnels.start_reaper(_owner_alive)
+    tunnels.reap(_owner_alive)
+    bind = (request.scope.get("server") or ("0.0.0.0",))[0]
+    try:
+        if trust:
+            await asyncio.to_thread(remote.forget_host, host, port)
+        t = await tunnels.open_tunnel(_owner(request), client_ip(request), bind, label or f"{dev['name']} · {target}:{tport}", dev["id"],
+                                      host, port, user, pw, _hkey(conn, s), target, tport, https)
+    except tunnels.TunnelError as e:
+        raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
+    audit(conn, request, "web-open", "devices", dev["id"], f"{dev['name']}: {'https' if https else 'http'}://{target}:{tport} "
+          f"through SSH as {user}@{host}, on HaRM's port {t.port}")
+    conn.commit()
+    return t.info()
+
+
+HTTPS_PORTS = {443, 8443, 9090, 8006, 9443, 10000, 5001}
+
+
+@app.post("/api/services/{sid}/tunnel")
+async def service_tunnel(sid: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """A service's page through SSH to its device, with the device's first SSH login: for pages that only
+    answer on the machine itself (or on a network only it reaches). One that's open already is reused."""
+    if not monitor.settings(conn)["terminal"]:
+        raise HTTPException(403, "The terminal and screen in HaRM are turned off in Settings > Locking and security")
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    sv = fetch_one(conn, "services", sid)
+    dev = fetch_one(conn, "devices", sv["device_id"])
+    body = await body_json(request)
+    u = urlsplit(sv["url"] or "") if re.match(r"https?://", sv["url"] or "", re.I) else None
+    try:
+        tport = (u.port if u else None) or sv["port"] or (443 if u and u.scheme.lower() == "https" else 80 if u else 0)
+    except ValueError:
+        tport = sv["port"] or 0
+    if not tport:
+        raise HTTPException(400, "Give the service a port or a web address first")
+    target = (u.hostname if u else "") or "127.0.0.1"
+    if target.lower() in ("localhost", "::1"):
+        target = "127.0.0.1"
+    https = u.scheme.lower() == "https" if u else tport in HTTPS_PORTS
+    for t in tunnels.mine(_owner(request)):
+        if t.device_id == dev["id"] and t.target == target and t.tport == tport:
+            return {**t.info(), "path": _url_rest(u)}
+    t = collect_targets(dev["id"], s, conn)
+    logins = [c for c in t["credentials"] if c["username"] and re.search(r"ssh|os", c["kind"] or "", re.I)]
+    if t["is_windows"] or not logins or not t["hosts"]:
+        raise HTTPException(400, f"{dev['name']} needs a saved SSH login with a username (on its Logins tab) to open pages through SSH")
+    info = await _tunnel(request, s, conn, dev, t["hosts"][0], _ssh_port(logins[0]["url"]), logins[0]["id"], target, tport, https,
+                         bool(body.get("trust_new_key")), f"{sv['name']} ({dev['name']})")
+    return {**info, "path": _url_rest(u)}
+
+
+def _url_rest(u) -> str:
+    """The path and query of a service's address, to open the page there."""
+    if not u:
+        return "/"
+    return (u.path or "/") + (f"?{u.query}" if u.query else "")
+
+
+@app.get("/api/tunnels")
+def tunnel_list(request: Request, _s=Depends(require_session)):
+    return [t.info() for t in tunnels.mine(_owner(request))]
+
+
+@app.delete("/api/tunnels/{tid}")
+def tunnel_close(tid: str, request: Request, _s=Depends(require_session), conn=Depends(get_db)):
+    t = tunnels.close(tid, _owner(request))
+    if t:
+        audit(conn, request, "web-close", "devices", t.device_id, t.label)
+        conn.commit()
+    return {"ok": True}
 
 
 @app.post("/api/vnc")
@@ -2144,18 +2273,19 @@ async def files_open(request: Request, s=Depends(require_session), conn=Depends(
     dev = fetch_one(conn, "devices", did) if did else None
     host, port = str(body.get("host") or "").strip(), int(body.get("port") or 22)
     user, pw = _machine_login(conn, s, {"credential_id": body.get("credential_id")})
+    windows = bool(dev and re.search(r"windows", dev["os"] or "", re.I))
     files.start_reaper(_owner_alive)
     files.reap(_owner_alive)
     try:
         if body.get("trust_new_key"):
             await asyncio.to_thread(remote.forget_host, host, port)
         f = await asyncio.to_thread(files.start, _owner(request), f"{user}@{host}", host, port, user, pw, _hkey(conn, s),
-                                    bool(body.get("legacy")))
+                                    bool(body.get("legacy")), windows)
     except files.FilesError as e:
         raise _fs_error(e)
     audit(conn, request, "files-open", "devices" if dev else None, did, f"{dev['name'] + ': ' if dev else ''}{user}@{host}:{port}")
     conn.commit()
-    return {"id": f.id, "label": f.label, "home": f.home, "user": user, "sudo_password": f.has_password}
+    return {"id": f.id, "label": f.label, "home": f.home, "user": user, "sudo_password": f.has_password, "windows": windows}
 
 
 @app.get("/api/files/{sid}/list")
@@ -2265,6 +2395,72 @@ async def files_do(sid: str, request: Request, _s=Depends(require_session), conn
     return r
 
 
+def _fs_name(n) -> str:
+    n = str(n or "")
+    if not n or "/" in n or "\0" in n or n in (".", ".."):
+        raise HTTPException(400, "That isn't a file or folder name")
+    return n
+
+
+@app.get("/api/files/{sid}/zip")
+async def files_zip(sid: str, request: Request, path: str, sudo: bool = False, names: list[str] = Query([]),
+                    _s=Depends(require_session), conn=Depends(get_db)):
+    """A folder (or file) as a .zip: tar on the machine, made into a .zip here, then removed. With names,
+    path is the folder and the .zip holds those things in it."""
+    f = _fs(request, sid)
+    path = _fs_path(path).rstrip("/") or "/"
+    if names:
+        folder, picked = path, [_fs_name(n) for n in names][:500]
+        name = _fs_name((path.rsplit("/", 1)[-1] or "files").rstrip(":") or "files")
+    else:
+        folder, _, name = path.rpartition("/")
+        name = _fs_name(name)
+        picked = [name]
+    where = remote.SSH_DIR if remote.SSH_DIR.exists() else None
+    fd, tar = tempfile.mkstemp(prefix="harm-tar-", dir=where)
+    zfd, zipped = tempfile.mkstemp(prefix="harm-zip-", dir=where)
+    os.close(zfd)
+    try:
+        with os.fdopen(fd, "wb") as out:
+            await asyncio.to_thread(f.tar, folder or "/", picked, out.write, sudo)
+        skipped = await asyncio.to_thread(files.to_zip, tar, zipped)
+    except files.FilesError as e:
+        os.unlink(zipped)
+        raise _fs_error(e)
+    except Exception as e:  # noqa: BLE001  a broken archive
+        os.unlink(zipped)
+        raise HTTPException(400, f"Making the .zip failed: {e}")
+    finally:
+        os.unlink(tar)
+    audit(conn, request, "files-zip", None, None, f"{f.label}: {path}" + (f" ({len(picked)} items)" if names else "") + (" (sudo)" if sudo else ""))
+    conn.commit()
+    return FileResponse(zipped, filename=f"{name.rstrip(':')}.zip", media_type="application/zip",
+                        headers={"X-Harm-Skipped": str(skipped)}, background=BackgroundTask(os.unlink, zipped))
+
+
+@app.post("/api/files/{sid}/copy")
+async def files_copy(sid: str, request: Request, _s=Depends(require_session), conn=Depends(get_db)):
+    """Copy files and folders to another open file browser (another machine): passed through HaRM, not kept."""
+    f = _fs(request, sid)
+    body = await body_json(request)
+    to = _fs(request, str(body.get("to") or ""))
+    folder = _fs_path(body.get("folder"))
+    dest = _fs_path(body.get("dest"))
+    names = [_fs_name(n) for n in (body.get("names") or [])][:500]
+    if not names:
+        raise HTTPException(400, "Pick something to copy")
+    sudo = bool(body.get("sudo"))
+    try:
+        size = await asyncio.to_thread(files.copy_between, f, folder, names, to, dest, sudo)
+    except files.FilesError as e:
+        raise _fs_error(e)
+    what = names[0] if len(names) == 1 else f"{len(names)} items"
+    audit(conn, request, "files-copy", None, None, f"{f.label}: {what} from {folder} to {to.label}:{dest} ({size} bytes)"
+          + (" (sudo)" if sudo else ""))
+    conn.commit()
+    return {"ok": True, "size": size}
+
+
 @app.post("/api/files/{sid}/close")
 async def files_close(sid: str, request: Request, _s=Depends(require_session)):
     try:
@@ -2272,6 +2468,94 @@ async def files_close(sid: str, request: Request, _s=Depends(require_session)):
     except files.FilesError:
         pass
     return {"ok": True}
+
+
+@app.get("/api/run/targets")
+def run_targets(files: bool = False, s=Depends(require_session), conn=Depends(get_db)):
+    """Machines a command can run on: each device with a saved SSH (or OS) login with a username,
+    at its first address. Windows machines are left out (commands are sh scripts), except with files
+    (for copying and comparing files, which work on Windows too)."""
+    out = []
+    for d in conn.execute("SELECT id, name FROM devices ORDER BY name COLLATE NOCASE"):
+        t = collect_targets(d["id"], s, conn)
+        if (t["is_windows"] and not files) or not t["hosts"]:
+            continue
+        logins = [c for c in t["credentials"] if c["username"] and re.search(r"ssh|os", c["kind"] or "", re.I)]
+        if not logins:
+            continue
+        c = logins[0]
+        out.append({"device_id": d["id"], "device": d["name"], "host": t["hosts"][0], "hosts": t["hosts"],
+                    "port": _ssh_port(c["url"]), "credential_id": c["id"], "username": c["username"],
+                    "has_password": bool(c["has_password"]), "windows": t["is_windows"],
+                    "logins": [{"id": x["id"], "label": x["label"], "username": x["username"], "port": _ssh_port(x["url"])} for x in logins]})
+    return out
+
+
+@app.post("/api/devices/{did}/run")
+async def device_run(did: int, request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    """Run a command (an sh script) on one machine with a saved login: its output and exit code."""
+    dev = fetch_one(conn, "devices", did)
+    if DEMO:
+        raise HTTPException(501, DEMO_NO_NETWORK)
+    body = await body_json(request)
+    cmd = str(body.get("command") or "").replace("\r\n", "\n").strip()
+    if not cmd:
+        raise HTTPException(400, "Type a command")
+    if len(cmd) > 20000:
+        raise HTTPException(400, "That command is too long")
+    host, port = str(body.get("host") or "").strip(), int(body.get("port") or 22)
+    if host not in collect_targets(did, s, conn)["hosts"]:
+        raise HTTPException(400, "That isn't one of this device's addresses (add it on its Network tab)")
+    user, pw = _machine_login(conn, s, {"credential_id": body.get("credential_id")})
+    sudo = bool(body.get("sudo"))
+    try:
+        if body.get("trust_new_key"):
+            await asyncio.to_thread(remote.forget_host, host, port)
+        r = await asyncio.to_thread(remote.run_action, host, port, user, pw, "script", cmd + "\n", sudo, False, None, 300,
+                                    key=_hkey(conn, s))
+    except remote.RemoteError as e:
+        raise HTTPException(409 if e.code == "hostkey" else 400, str(e))
+    first = cmd.splitlines()[0][:150] + (" …" if "\n" in cmd or len(cmd.splitlines()[0]) > 150 else "")
+    audit(conn, request, "run-command", "devices", did, f"{dev['name']}: {user}@{host}{' (sudo)' if sudo else ''}: {first} "
+          f"(exit {r['exit_code']})")
+    conn.commit()
+    return r
+
+
+SNIPPETS_AAD = b"meta.snippets"
+
+
+def _snippets(conn, s) -> list[dict]:
+    raw = db.get_meta(conn, "snippets")
+    if not raw:
+        return []
+    try:
+        return json.loads(crypto.unseal(s["dek"], base64.b64decode(raw), SNIPPETS_AAD))
+    except (crypto.DecryptError, ValueError):
+        return []
+
+
+@app.get("/api/snippets")
+def snippets_get(s=Depends(require_session), conn=Depends(get_db)):
+    """Saved commands (for the terminal, Files and Run on machines), kept encrypted."""
+    return _snippets(conn, s)
+
+
+@app.put("/api/snippets")
+async def snippets_put(request: Request, s=Depends(require_session), conn=Depends(get_db)):
+    body = await body_json(request)
+    out = []
+    for x in (body.get("snippets") or [])[:300]:
+        name, cmd = str(x.get("name") or "").strip()[:120], str(x.get("command") or "").replace("\r\n", "\n").strip()[:20000]
+        if not cmd:
+            continue
+        out.append({"id": str(x.get("id") or secrets.token_hex(6))[:24], "name": name or cmd.splitlines()[0][:60],
+                    "command": cmd, "sudo": bool(x.get("sudo"))})
+    db.set_meta(conn, "snippets", base64.b64encode(crypto.seal(s["dek"], json.dumps(out).encode(), SNIPPETS_AAD)).decode()
+                if out else None)
+    audit(conn, request, "snippets-saved", None, None, f"{len(out)} saved command{'' if len(out) == 1 else 's'}")
+    conn.commit()
+    return out
 
 
 @app.post("/api/devices/{did}/collect")
@@ -2551,6 +2835,7 @@ def credential_reveal(cid: int, request: Request, s=Depends(require_session),
     if not row:
         raise HTTPException(404, "Not found")
     out = _secrets_of(s["dek"], row)
+    out["username"] = row["username"]
     out["targets"] = _launch_targets(conn, row)
     audit(conn, request, "reveal", "credentials", cid, row["label"])
     conn.commit()

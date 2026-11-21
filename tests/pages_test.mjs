@@ -99,7 +99,7 @@ try {
   const ids = await ev(`const get = (p) => fetch("/api" + p, { headers: { "X-HaRM": "1" } }).then((r) => r.json());
     const out = {}; for (const k of ["devices", "racks", "locations", "networks", "builds", "clusters"]) out[k] = (await get("/" + k)).map((x) => x.id); return out;`);
   const routes = ["/dashboard", "/status", "/actions", "/uptime", "/devices", "/racks", "/components", "/connections", "/locations",
-    "/networks", "/discover", "/virtual", "/setup", "/builds", "/library", "/export", "/tasks", "/help", "/vault", "/audit", "/settings",
+    "/networks", "/discover", "/virtual", "/setup", "/builds", "/library", "/export", "/tasks", "/help", "/vault", "/audit", "/settings", "/run",
     "/search?q=pve", ...Object.entries(ids).flatMap(([k, list]) => list.map((id) => `/${k === "clusters" ? "clusters" : k}/${id}`))];
 
   console.log(`Pages, tabs and menus (${routes.length} pages)`);

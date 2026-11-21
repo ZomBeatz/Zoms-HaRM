@@ -177,3 +177,43 @@ export function downloadText(name: string, text: string, type: string) {
 
 /* HaRM's own files: the online demo serves them from a sub-folder. */
 export const asset = (p: string) => (window.harmDemo ? 'static/' : '/static/') + p;
+
+/* What changed between two texts, line by line: hunks of [kind, line] where kind is ' ' (same),
+ * '-' (taken out) or '+' (added), with `context` unchanged lines around each change. */
+export type DiffLine = [' ' | '-' | '+', string];
+export function lineDiff(a: string, b: string, context = 3): DiffLine[][] {
+  const x = a.split('\n'), y = b.split('\n');
+  let pre = 0;
+  while (pre < x.length && pre < y.length && x[pre] === y[pre]) pre++;
+  let suf = 0;
+  while (suf < x.length - pre && suf < y.length - pre && x[x.length - 1 - suf] === y[y.length - 1 - suf]) suf++;
+  const xm = x.slice(pre, x.length - suf), ym = y.slice(pre, y.length - suf);
+  let mid: DiffLine[];
+  if (xm.length * ym.length > 4_000_000) {  // too big to line up: all out, all in
+    mid = [...xm.map(l => ['-', l] as DiffLine), ...ym.map(l => ['+', l] as DiffLine)];
+  } else {  // longest common subsequence
+    const n = xm.length, m = ym.length;
+    const t = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) t[i][j] = xm[i] === ym[j] ? t[i + 1][j + 1] + 1 : Math.max(t[i + 1][j], t[i][j + 1]);
+    mid = [];
+    let i = 0, j = 0;
+    while (i < n || j < m) {
+      if (i < n && j < m && xm[i] === ym[j]) { mid.push([' ', xm[i]]); i++; j++; }
+      else if (i < n && (j >= m || t[i + 1][j] >= t[i][j + 1])) mid.push(['-', xm[i++]]);
+      else mid.push(['+', ym[j++]]);
+    }
+  }
+  const all: DiffLine[] = [...x.slice(0, pre).map(l => [' ', l] as DiffLine), ...mid, ...x.slice(x.length - suf).map(l => [' ', l] as DiffLine)];
+  const hunks: DiffLine[][] = [];
+  let cur: DiffLine[] = [], quiet = 0;
+  all.forEach((d, k) => {
+    if (d[0] !== ' ') {
+      if (!cur.length) cur = all.slice(Math.max(0, k - context), k);
+      cur.push(d); quiet = 0;
+    } else if (cur.length) {
+      if (quiet < context) { cur.push(d); quiet++; } else { hunks.push(cur); cur = []; }
+    }
+  });
+  if (cur.length) hunks.push(cur);
+  return hunks;
+}

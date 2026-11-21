@@ -9,6 +9,7 @@ import '@xterm/xterm/css/xterm.css';
 import { api } from '../api/client';
 import { A, Btn, PageHead, Small } from '../ui/bits';
 import { toast } from '../ui/overlay';
+import { SnippetMenu } from '../dialogs/snippets';
 
 const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
@@ -19,6 +20,7 @@ export default function Terminal({ q }: { q: URLSearchParams }) {
   const [keyChanged, setKeyChanged] = useState(false);
   const [run, setRun] = useState(0);  // bumped to reconnect
   const [trust, setTrust] = useState(false);
+  const typeIn = useRef<(t: string) => void>(() => {});  // a saved command, typed in (you press Enter)
   useEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -44,6 +46,7 @@ export default function Terminal({ q }: { q: URLSearchParams }) {
       chain = chain.then(() => api('POST', `/terminal/${id}/input`, { d }).then(() => undefined, () => undefined));
     };
     term.onData(d => { pending += d; if (!timer) timer = window.setTimeout(send, 15); });
+    typeIn.current = t => { pending += t; if (!timer) timer = window.setTimeout(send, 15); term.focus(); };
     const resize = () => { try { fit.fit(); } catch { /* hidden */ } if (id) api('POST', `/terminal/${id}/resize`, { cols: term.cols, rows: term.rows }).catch(() => {}); };
     const ro = new ResizeObserver(resize);
     ro.observe(el);
@@ -83,6 +86,7 @@ export default function Terminal({ q }: { q: URLSearchParams }) {
     <PageHead title={<span className="mono">{label}</span>} sub={<span>Terminal · closes when HaRM locks · {q.get('d') ? <A href={`#/devices/${q.get('d')}`}>Back to the device</A> : null}</span>}>
       {q.get('c') ? <Small label="📁 Files" title="Browse, upload and download files on this machine" onClick={() => {
         location.hash = `#/files?${new URLSearchParams([...q.entries()].filter(([k]) => ['d', 'h', 'p', 'c', 'legacy'].includes(k)))}`; }} /> : null}
+      {!ended ? <SnippetMenu onPick={s => typeIn.current(s.command.replace(/\n/g, '\r'))} /> : null}
       <Small label="⧉ New window" title="Opens another terminal in its own window" onClick={() => { window.open(location.href, '_blank', 'noopener,width=1000,height=640'); }} />
       {ended ? <Btn label="⟳ Connect again" cls="primary" onClick={() => again()} /> : <Small label="✕ Close" onClick={() => { history.length > 1 ? history.back() : (location.hash = '#/dashboard'); }} />}
     </PageHead>

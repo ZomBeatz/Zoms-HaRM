@@ -20,6 +20,8 @@ declare module '@novnc/novnc' {
     focus(): void;
     disconnect(): void;
     sendCtrlAltDel(): void;
+    sendKey(keysym: number, code: string | null, down?: boolean): void;
+    clipboardPasteFrom(text: string): void;
     sendCredentials(c: { username?: string; password?: string }): void;
     addEventListener(type: string, fn: (e: CustomEvent) => void): void;
   }

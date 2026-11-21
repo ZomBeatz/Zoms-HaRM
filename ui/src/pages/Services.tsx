@@ -1,7 +1,8 @@
 /* Services: every web page and port on your devices, as cards or a list. Filter, search, star
  * favorites, sort them into lists, group and size them, and give each card an icon, a color and
- * buttons of its own (open a link, copy something, or run one of your saved actions). How the page
- * looks is kept on each device; favorites, lists and buttons are kept in HaRM for every device. */
+ * buttons of its own (open a link, copy something, or run one of your saved actions). A page that only
+ * answers on its machine (an address like http://localhost:9000) opens through SSH to that machine.
+ * How the page looks is kept on each device; favorites, lists and buttons are kept in HaRM for every device. */
 import { createElement, useMemo, useState } from 'react';
 import { api, GET } from '../api/client';
 import { Pending, useLoad } from '../app/router';
@@ -43,6 +44,32 @@ function loadView(): View {
 export const listsOf = (s: { lists: string | null }) => (s.lists || '').split(',').map(x => x.trim()).filter(Boolean);
 export const addressOf = (s: Svc) => s.url || (s.port && s.host ? `${s.host}:${s.port}` : s.host || '');
 const isWeb = (u: string | null | undefined) => !!u && /^https?:\/\//i.test(u);
+/* An address only the machine itself answers on: the browser can't open it, so it goes through SSH. */
+const isLocal = (u: string | null | undefined) => !!u && /^https?:\/\/(localhost|127\.[\d.]+|\[::1\])(:|\/|$)/i.test(u);
+
+/* Open a service's page through SSH to its device (HaRM opens one of its ports for it, for this browser only). */
+export async function openThroughSsh(s: Svc, trust = false): Promise<void> {
+  const w = window.open('', '_blank');  // opened while it's still a click, so it isn't blocked
+  if (w) { w.opener = null; w.document.title = 'Opening…'; }
+  try {
+    const r = await api('POST', `/services/${s.id}/tunnel`, { trust_new_key: trust });
+    const url = `${r.scheme}://${location.hostname}:${r.port}${r.path || '/'}`;
+    if (w) w.location.href = url; else window.open(url, '_blank', 'noopener');
+  } catch (e) {
+    w?.close();
+    const msg = (e as Error).message;
+    if (/host key changed/i.test(msg)) {
+      if (await choose('The machine’s SSH key changed', 'That’s normal after reinstalling it, but can also mean something is intercepting the connection.',
+        [['no', 'Cancel'], ['yes', 'Trust the new key', 'primary']]) === 'yes') return openThroughSsh(s, true);
+    } else toast(msg, 'bad');
+  }
+}
+/* The service's name (or Open ↗) as a link: through SSH when only its machine answers on that address. */
+function SvcLink({ s, cls, children }: { s: Svc; cls?: string; children: React.ReactNode }) {
+  if (isLocal(s.url)) return <a className={cls} href="#" title="Only its machine answers on this address: opens through SSH"
+    onClick={e => { e.preventDefault(); openThroughSsh(s); }}>{children}</a>;
+  return <a className={cls} href={s.url!} target="_blank" rel="noopener noreferrer">{children}</a>;
+}
 const STATE_ORDER: Record<string, number> = { down: 0, unknown: 1, up: 2 };
 
 /* What a card's own button does; actions keep their own “Ask before running”. */
@@ -70,7 +97,7 @@ export function ServiceCard({ s, board, view, after }: { s: Svc; board: Board; v
     <div className="svc-top">
       <span className="svc-icon">{createElement(Icon, { size: view.size === 's' ? 18 : 24, 'aria-hidden': true })}</span>
       <div className="svc-title">
-        {isWeb(s.url) ? <a className="svc-name" href={s.url!} target="_blank" rel="noopener noreferrer">{s.name}</a> : <b className="svc-name">{s.name}</b>}
+        {isWeb(s.url) ? <SvcLink s={s} cls="svc-name">{s.name}</SvcLink> : <b className="svc-name">{s.name}</b>}
         {sh.device && view.size !== 's' ? <div className="muted small"><A href={`#/devices/${s.device_id}?tab=network`}>{s.device_name}</A>{s.location_name ? ` · ${s.location_name}` : ''}</div> : null}
       </div>
       <button type="button" className={`svc-star${s.favorite ? ' on' : ''}`} title={s.favorite ? 'Remove from favorites' : 'Add to favorites'} aria-label={s.favorite ? 'Remove from favorites' : 'Add to favorites'} onClick={star}>{s.favorite ? '★' : '☆'}</button>
@@ -87,13 +114,14 @@ export function ServiceCard({ s, board, view, after }: { s: Svc; board: Board; v
           : <span className="muted">press ⚡ to check</span>}</div>)}
     </div> : null}
     <div className="svc-buttons">
-      {isWeb(s.url) ? <a className="button sm primary" href={s.url!} target="_blank" rel="noopener noreferrer">Open ↗</a> : null}
+      {isWeb(s.url) ? <SvcLink s={s} cls="button sm primary">{isLocal(s.url) ? '🌐 Open ↗' : 'Open ↗'}</SvcLink> : null}
       {s.buttons.slice(0, view.size === 's' ? 1 : 8).map((b, i) => <Small key={i} label={`${b.kind === 'action' ? '⚡ ' : b.kind === 'copy' ? '📋 ' : ''}${b.label}`}
         title={b.kind === 'action' ? `Runs the action “${board.actions.find(a => a.id === b.action_id)?.name || '?'}”` : b.value} onClick={() => press(b, board, after)} />)}
       <MenuButton label="⋯" items={[
         ['✎ Edit card…', () => editCard(s, board, after)],
         ['⚙ Edit service…', () => editEntity('services', s, after)],
         addr ? ['📋 Copy address', () => copy(addr, 'Address copied')] : null,
+        s.url || s.port ? ['🌐 Open through SSH', () => openThroughSsh(s)] : null,
         ['▤ Open device', () => { location.hash = `#/devices/${s.device_id}?tab=network`; }],
       ]} />
     </div>
@@ -237,7 +265,7 @@ export default function Services() {
     ? <div className={`svc-grid size-${view.size}`}>{rows.map(s => <ServiceCard key={s.id} s={s} board={board} view={view} after={after} />)}</div>
     : <div className="table-wrap"><Table rows={rows as unknown as Row[]} cols={[
       { label: '', nosort: true, get: s => <button type="button" className={`svc-star${s.favorite ? ' on' : ''}`} aria-label="Favorite" onClick={async () => { await api('PUT', `/services/${s.id}`, { favorite: !s.favorite }); after(); }}>{s.favorite ? '★' : '☆'}</button> },
-      { label: 'Service', get: s => <span>{isWeb(s.url) ? <a href={s.url} target="_blank" rel="noopener noreferrer"><b>{s.name}</b></a> : <b>{s.name}</b>}
+      { label: 'Service', get: s => <span>{isWeb(s.url) ? <SvcLink s={s as Svc}><b>{s.name}</b></SvcLink> : <b>{s.name}</b>}
         {view.show.lists && listsOf(s as Svc).length ? <span className="muted small">{` ${listsOf(s as Svc).join(', ')}`}</span> : null}</span>, sort: s => s.name },
       ...(view.show.device ? [{ label: 'Device', get: (s: Row) => <A href={`#/devices/${s.device_id}?tab=network`}>{s.device_name}</A>, sort: (s: Row) => s.device_name }] : []),
       ...(view.show.address ? [{ label: 'Address', get: (s: Row) => <span className="mono small">{addressOf(s as Svc)}</span> }] : []),
@@ -245,7 +273,8 @@ export default function Services() {
       ...(view.show.version ? [{ label: 'Version', get: (s: Row) => s.version || '' }] : []),
       { label: '', nosort: true, get: s => <div className="row-actions">
         {(s.buttons as CardButton[]).slice(0, 3).map((b, i) => <Small key={i} label={`${b.kind === 'action' ? '⚡ ' : ''}${b.label}`} onClick={() => press(b, board, after)} />)}
-        <MenuButton label="⋯" items={[['✎ Edit card…', () => editCard(s as Svc, board, after)], ['⚙ Edit service…', () => editEntity('services', s, after)]]} /></div> },
+        <MenuButton label="⋯" items={[['✎ Edit card…', () => editCard(s as Svc, board, after)], ['⚙ Edit service…', () => editEntity('services', s, after)],
+          s.url || s.port ? ['🌐 Open through SSH', () => openThroughSsh(s as Svc)] : null]} /></div> },
     ]} /></div>;
   return <>
     <PageHead title="Services" sub={`${all.length} on your devices${down ? ` · ${down} not answering` : ''}`}>

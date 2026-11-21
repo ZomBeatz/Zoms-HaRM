@@ -57,6 +57,7 @@ export default function Devices() {
   return <>
     <PageHead title="Devices" sub={`${rows.length} device${rows.length === 1 ? '' : 's'}`}>
       <Btn label="⇪ Export / PDF" onClick={() => { location.hash = '#/export?ids=' + S.devVisible.join(','); }} />
+      <Btn label="⌨ Run on machines" onClick={() => { location.hash = '#/run'; }} />
       <Btn label="+ Add device" onClick={() => editEntity('devices', {}, r => { location.hash = `#/devices/${r.id}`; })} cls="primary" />
     </PageHead>
     <div className="toolbar">

@@ -11,6 +11,7 @@ services:
     restart: unless-stopped
     ports:
       - "8077:8077"
+      - "8078-8087:8078-8087"   # 🔌 Connect > Web page through SSH opens a machine's page on one of these for a while
     volumes:
       - ./data:/data
       # - /mnt/nas/harm-backups:/backup-copies     # a second place for backups: then pick /backup-copies in Settings > Data & backups

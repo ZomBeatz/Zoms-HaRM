@@ -1,6 +1,6 @@
 # Zom's HaRM server image. Starts as root only to fix ./data ownership, then runs as the 'harm' user.
 #  docker compose up -d --build   (see docker-compose.yml and GUIDE.md)
-FROM python:3.13-slim
+FROM python:3.15-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HARM_DB=/data/harm.db HARM_PORT=8077 HARM_TLS=1
 WORKDIR /app
 # tesseract/zbar: reading labels · openssh-client: Import specs over SSH · iproute2/iputils/net-tools: Discover

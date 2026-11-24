@@ -12,6 +12,11 @@
 </p>
 
 <p align="center">
+  <i>Most tools keep either the list of your hardware or the passwords to reach it. HaRM keeps both,<br>
+  so the page that says where a server is also opens its terminal, its files and its screen.</i>
+</p>
+
+<p align="center">
   <a href="https://github.com/ZomBeatz/Zoms-HaRM/releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/Windows-Download-2580c3?style=for-the-badge&logo=windows&logoColor=white"></a>
   <a href="https://github.com/ZomBeatz/Zoms-HaRM/releases/latest"><img alt="Download for Linux" src="https://img.shields.io/badge/Linux-Download-2580c3?style=for-the-badge&logo=linux&logoColor=white"></a>
   <a href="https://docs.zombeatzmedia.com/harm/"><img alt="Read the guide" src="https://img.shields.io/badge/Read_the-Guide-5b6375?style=for-the-badge&logo=readthedocs&logoColor=white"></a>
@@ -50,7 +55,9 @@ The full guide, with pictures, is at **[docs.zombeatzmedia.com/harm](https://doc
 | **Parts and storage** | Spare drives, memory, cards and cables; drive bays with a tap-to-fill map, RAID math, and which spares fit which device. |
 | **Networks** | Subnets and VLANs with an IP map (who uses what, conflicts, next free addresses), interfaces, services and cables. |
 | **Virtual machines** | VMs and containers on their hosts, CPU and memory overcommit, clusters, and a one-click Proxmox import. |
-| **Logins** | Encrypted passwords and 2FA codes. **Open** goes straight to the iDRAC, iLO or web page and copies the password. |
+| **Logins** | Encrypted passwords and 2FA codes. **Open** goes straight to the iDRAC, iLO or web page and copies the password. Import from Bitwarden or Vaultwarden, flag old passwords, and change them on the machines in one go. |
+| **Connect** | A terminal and a VNC screen (with the clipboard) right in HaRM, a Remote Desktop file for Windows, your own SSH app, and the Proxmox console. **Files** on Linux and Windows machines: upload, download, edit, compare across machines and copy between them. A machine's own web pages through SSH. One command on many machines at once, and HaRM's own SSH key on all of them. |
+| **Upkeep** | Disk space, drive health and pending updates over SSH, Docker containers with image updates, and one list of what needs attention across all your machines. |
 | **Fill it in fast** | Import specs over SSH, Discover from any router, UniFi or a network scan, label scanning with the phone camera, and AI Assist from photos. |
 | **Status and actions** | A live page of what's online and which services answer, grouped by place, with 24-hour history, management ports and Wake-on-LAN. Alerts by ntfy, email or webhook, with quiet hours. An uptime report, certificate warnings, a power budget, and a watch for new devices on the networks you pick. Saved SSH commands run with one click, even on old iLO and iDRAC ports. |
 | **Notes and tasks** | A journal on every device, rack and room. Home shows what needs attention. |
@@ -72,6 +79,10 @@ The full guide, with pictures, is at **[docs.zombeatzmedia.com/harm](https://doc
   <tr>
     <td><img src="docs/screenshots/status.png" alt="The Status page: which devices are online, by room"></td>
     <td><img src="docs/screenshots/phone-status.png" alt="The Status page on a phone"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/files.png" alt="Files on a machine: folders, sizes and permissions, with a command box"></td>
+    <td><img src="docs/screenshots/terminal.png" alt="A terminal on a machine, in HaRM"></td>
   </tr>
 </table>
 
@@ -199,7 +210,18 @@ harm/
   certs.py        Local certificate authority and HTTPS certificates
   discover.py     Router lists, UniFi import, network scan
   proxmox.py      Proxmox import
-  remote.py       Import specs over SSH or locally
+  remote.py       Import specs over SSH or locally, and run saved actions
+  terminal.py     A terminal in the page: an SSH session with a saved login
+  files.py        Files on a machine over SSH (sh on Linux and Macs, PowerShell on Windows)
+  vnc.py, screens.py   VNC in the page, and finding or setting up a machine's screen sharing
+  tunnels.py      A machine's web page through SSH
+  sshkey.py       HaRM's own SSH key
+  vaultio.py      Bitwarden import and export, changing passwords on machines
+  tlspin.py       Pinned HTTPS to self-signed boxes (Proxmox, UniFi)
+  monitor.py, netwatch.py   Online checks, Wake-on-LAN, and the watch for new devices
+  alerts.py       Alerts by ntfy, email or webhook
+  machine.py, docker.py, upkeep.py   Machine health, Docker containers, and what needs attention
+  power.py, units.py   Power budgets, and storage and memory sizes
   ai.py, aiproviders.py   AI Assist prompt, parser and services
   pcbuild.py      Parts library (OpenDB) and build compatibility checks
   collect.py      Parser for the spec collector's output
@@ -270,6 +292,8 @@ tests/            smoke.py, full_test.py, unit_test.py, and pages_test.mjs (ever
 **If you lose both the master password and the recovery code, the stored
 logins are unrecoverable.** Your hardware inventory is unaffected because only
 secrets are encrypted.
+
+To report a security problem privately, see [SECURITY.md](SECURITY.md).
 </details>
 
 ## License
